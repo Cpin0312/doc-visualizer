@@ -76,6 +76,7 @@
     if (!doc) return;
     $('welcome').hidden = true; $('doc').hidden = false;
     $('pdf').disabled = false;
+    $('pptx').disabled = !window.DocPptx || !window.PptxGenJS;
     $('presentBtn').disabled = !doc.diagrams.length;
     document.documentElement.style.setProperty('--fs', state.fs + 'px');
     $('status').textContent = '読みこみ：' + state.fileName + '（' + state.meta + '）・図 ' + doc.diagrams.length + ' つ';
@@ -382,6 +383,20 @@
   }
 
   // ---- 印刷（PDF）用のページ。いつも作っておく（Ctrl+P でも同じものが出る） ----
+  // 箱の説明と出どころ（PDF と PowerPoint で同じもの）
+  function noteText(l) { return l.code ? l.code.join('\n') : l.text; }
+  function noteBlocks(doc) {
+    var notes = [], seen = {};
+    doc.diagrams.forEach(function (d) {
+      d.items.forEach(function (it) {
+        var n = noteFor(it.key);
+        if ((!(n && n.lines.length) && !it.sources.length) || seen[it.key]) return;
+        seen[it.key] = true;
+        notes.push({ title: it.label, text: n ? n.lines.map(noteText).join('\n').trim() : '', src: it.sources.length ? '出どころ：' + it.sources.join('／') : '' });
+      });
+    });
+    return notes;
+  }
   function buildPrint(doc) {
     var pages = [], t = esc(title(doc)), hn = hasNoteFn(doc), td = today();
     var cover = '<h1>' + t + '</h1><div class="cards">' + cardsHtml(doc) + '</div>';
@@ -425,16 +440,7 @@
       });
       flush();
     }
-    var notes = [], seen = {};
-    doc.diagrams.forEach(function (d) {
-      d.items.forEach(function (it) {
-        var n = noteFor(it.key);
-        if ((!(n && n.lines.length) && !it.sources.length) || seen[it.key]) return;
-        seen[it.key] = true;
-        notes.push({ title: it.label, text: n ? n.lines.map(lineText).join('\n').trim() : '', src: it.sources.length ? '出どころ：' + it.sources.join('／') : '' });
-      });
-    });
-    paginate('箱の説明と出どころ', notes);
+    paginate('箱の説明と出どころ', noteBlocks(doc));
     paginate('本文', doc.body.map(function (b) { return { title: b.heading || '', text: b.lines.map(lineText).join('\n').trim(), src: '' }; })
       .filter(function (b) { return b.title || b.text; }));
     var N = pages.length;
@@ -494,6 +500,43 @@
       try { window.print(); } catch (e) { showError('印刷を始められませんでした：' + e.message); }
     }, 300);
   });
+  // PowerPoint：作って、ダウンロードで保存する。止められたら赤い帯で理由を出し、PDF を案内する
+  var pptxBusy = false, lastPptx = null;
+  function saveBlob(blob, name) {
+    if (window.navigator.msSaveOrOpenBlob) { window.navigator.msSaveOrOpenBlob(blob, name); return; }
+    var u = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = u; a.download = name; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+  }
+  function pptxFail(e) {
+    showError('PowerPoint を保存できませんでした（理由：' + ((e && e.message) || e || '分からない') + '）。かわりに「PDF」を押して PDF で保存してください。');
+  }
+  $('pptx').addEventListener('click', function () {
+    if (!state.doc || pptxBusy) return;
+    var doc = state.doc, td = today(), hn = hasNoteFn(doc), tmp = document.createElement('div');
+    pptxBusy = true; lastPptx = null; showError(''); toast('PowerPoint を作っています…', 3000);
+    var r;
+    try {
+      r = window.DocPptx.build({
+        title: title(doc), secret: doc.secret || '',
+        cards: [['summary', 'ひとことで'], ['conclusion', '結論'], ['todo', 'すること']].filter(function (c) { return doc[c[0]]; }).map(function (c) { return { kind: c[0], head: c[1], text: doc[c[0]] }; }),
+        list: doc.diagrams.map(function (d) { return d.name || P.TYPES[d.type].label; }),
+        diagrams: doc.diagrams.map(function (d, i) {
+          tmp.innerHTML = legendItems(doc, [d]).join('\u3000');
+          var sc = state.scenes[i];
+          return { name: d.name || P.TYPES[d.type].label, svg: R.svg(d, i, { fs: 15, today: td, hasNote: hn }), legend: tmp.textContent.replace('（押すと出る）', ''),
+            capture: sc ? sc.capture(1200, 675) : null };   // 3D は今の向きで撮りなおす（WebGL がないときは絵なし）
+        }),
+        notes: noteBlocks(doc)
+      });
+    } catch (e) { pptxBusy = false; pptxFail(e); return; }
+    r.pptx.write({ outputType: 'blob', compression: true }).then(function (blob) {
+      saveBlob(blob, r.fileName);
+      lastPptx = { fileName: r.fileName, slides: r.stats.slides, shapes: r.stats.shapes, tiles: r.stats.tiles, pics: r.stats.pics, bytes: blob.size };
+      toast('PowerPoint「' + r.fileName + '」を保存しました（ダウンロードの場所）。保存されないときは「PDF」を使ってください', 7000);
+    }).catch(pptxFail).then(function () { pptxBusy = false; });
+  });
   $('copyPrompt').addEventListener('click', function () {
     copyText(PROMPT).then(function (ok) {
       if (ok) toast('Copilot 用の指示をコピーしました。Copilot に貼り、続けて資料を渡してください');
@@ -546,6 +589,7 @@
     version: '__VERSION__',
     // 試験用に「見るだけ」のもの（中の動きは変えない）
     where3d: function (d, i) { var sc = state.scenes[d]; return sc ? sc.project(i, sc.canvas) : null; },
+    pptx: function () { return lastPptx; },
     // 3D で、図のいちばん小さい文字が画面で何 px に見えるか
     text3d: function (d) { var sc = state.scenes[d], c = sc && sc.canvas; return sc ? +(sc.textScale(c.clientWidth, c.clientHeight) * minFont($('dg' + d).querySelector('.svg-wrap svg').outerHTML)).toFixed(1) : null; },
     mode: function () { return state.mode; }

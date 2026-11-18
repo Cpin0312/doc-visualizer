@@ -28,17 +28,31 @@ function threeClassic() {
   return '(function(){' + src.slice(0, m.index) + '\nwindow.THREE=Object.freeze({' + pairs.join(',') + '});})();';
 }
 const threePkg = JSON.parse(rd('node_modules/three/package.json'));
+const pptxPkg = JSON.parse(rd('node_modules/pptxgenjs/package.json'));
+const jszipPkg = JSON.parse(rd('node_modules/jszip/package.json'));
+// PptxGenJS（MIT。中に JSZip（MIT）が入った版）。最後の sourceMappingURL は外を指すので外す
+const pptxgen = rd('node_modules/pptxgenjs/dist/pptxgen.bundle.js').replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n')
+// 中の文字列 "<script>…" は HTML の <script> とまちがわれるので、文字列のまま <\x73cript と書きかえる（意味は同じ）
+  .split('e.write("<script>').join('e.write("<\\x73cript>');
+if (/<script/i.test(pptxgen)) throw new Error('pptxgen.bundle.js に <script が残っている');
+if (!/var PptxGenJS\s*=/.test(pptxgen) || /sourceMappingURL/.test(pptxgen)) throw new Error('pptxgen.bundle.js の形が思っていたものと違う');
 const licenses = `/*! 入っている部品のライセンス
  * three.js ${threePkg.version} — ${rd('node_modules/three/LICENSE').trim().replace(/\*\//g, '* /').replace(/\n/g, '\n * ')}
+ *
+ * PptxGenJS ${pptxPkg.version} — ${rd('node_modules/pptxgenjs/LICENSE').trim().replace(/\*\//g, '* /').replace(/\n/g, '\n * ')}
+ *
+ * JSZip ${jszipPkg.version}（PptxGenJS の中）— MIT ライセンスを選んで使う（JSZip は MIT と GPLv3 のどちらかを選べる）
  */`;
 
 const scripts = [
   licenses,
   threeClassic(),
+  pptxgen,
   `window.DV_SAMPLES = ${json(samples)};\nwindow.DV_PROMPT = ${json(prompt)};`,
   rd('src/parse.js'),
   rd('src/render2d.js'),
   rd('src/scene3d.js'),
+  rd('src/pptx.js'),
   rd('src/app.js')
 ].map(code).join('\n;\n');
 

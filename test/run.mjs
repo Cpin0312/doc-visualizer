@@ -7,6 +7,8 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { launch, sleep } from './cdp.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -444,6 +446,61 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   ok('文字 11px：3D（15 段の流れ・日程・08 の図7つ）は、いちばん小さい文字が 11px 以上に見える', t3.length === 9 && t3.every(v => v >= 10.95), t3.join(' / '));
 }
 
+// ---------- PowerPoint（R3）：ダウンロードで保存 → python-pptx で読み返す ----------
+const dlDir = join(out, 'dl');
+async function savePptx(T, md, tag) {
+  rmSync(dlDir, { recursive: true, force: true }); mkdirSync(dlDir, { recursive: true });
+  const done = [];
+  T.on(m => { if (m.method === 'Browser.downloadProgress' && m.params.state !== 'inProgress') done.push(m.params.state); });
+  await T.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dlDir, eventsEnabled: true });
+  const { root: d0 } = await T.send('DOM.getDocument', { depth: 1 });
+  const { nodeId } = await T.send('DOM.querySelector', { nodeId: d0.nodeId, selector: '#file' });
+  await T.send('DOM.setFileInputFiles', { nodeId, files: [md] });
+  const name = md.split(/[\\/]/).pop();
+  for (let t = 0; t < 80; t++) { if (await T.evalJs(`document.getElementById('status').textContent.includes(${JSON.stringify(name)}) && !document.getElementById('pptx').disabled`).catch(() => false)) break; await sleep(100); }
+  await T.evalJs(`document.getElementById('pptx').click()`);
+  let st = null;
+  for (let t = 0; t < 300 && !(st && done.length); t++) { st = st || await T.evalJs('DocVisualizer.pptx()').catch(() => null); await sleep(100); }
+  const files = existsSync(dlDir) ? readdirSync(dlDir).filter(f => f.endsWith('.pptx')) : [];
+  let rd = null;
+  if (files.length) {
+    const py = process.platform === 'win32' ? 'python' : 'python3';
+    const r = spawnSync(py, [join(root, 'test', 'pptx_check.py'), join(dlDir, files[0])], { encoding: 'utf8' });
+    if (r.status === 0) rd = JSON.parse(r.stdout); else console.log('   python-pptx で読めない（pip install --user python-pptx）：' + (r.stderr || r.error || '').toString().slice(0, 200));
+    try { writeFileSync(join(out, tag + '.pptx'), readFileSync(join(dlDir, files[0]))); } catch {}
+  }
+  return { st, done, files, rd };
+}
+{
+  const { st, done, files, rd } = await savePptx(B, join(root, 'samples', '08_copilot_wrapped.md'), '08_copilot_wrapped');
+  writeFileSync(join(out, '08_pptx.json'), JSON.stringify(rd, null, 1));
+  ok('PowerPoint：ダウンロードで保存できる（名前は <題名>.pptx）', done.includes('completed') && files[0] === '新しい受付のしくみ（架空の例・Copilot の出し方）.pptx', JSON.stringify({ done, files, st }));
+  const S = rd ? rd.slides : [];
+  ok('PowerPoint：16:9・枚数（表紙＋図7つ＋3D の絵7つ＋箱の説明2つ＝17）', rd && rd.w === 13.333 && rd.h === 7.5 && S.length === 17 && st && st.slides === 17, rd && `${rd.w}×${rd.h}・${S.length} 枚`);
+  ok('PowerPoint：表紙に題名・ひとことで・結論・すること', S[0] && ['新しい受付のしくみ', 'ひとことで', '結論', 'すること', '受付を1つの窓口にまとめ'].every(k => S[0].texts.join('\n').includes(k)), S[0] && S[0].texts.join(' / ').slice(0, 120));
+  const dg = [1, 3, 5, 7, 9, 11, 13].map(i => S[i] || {});
+  ok('PowerPoint：図7つ（流れ・担当・日程・木・グラフ・数字・比べる）は直せる図形と文字（絵ではない）', dg.every(x => x.pics === 0 && x.geo >= 3 && x.texts.length >= 4) && dg[0].cust >= 4 && dg[0].arrows >= 4, dg.map(x => `図形${x.geo}・線${x.cust}・矢印${x.arrows}・文字${x.texts && x.texts.length}`).join(' | '));
+  ok('PowerPoint：図の箱の名前が文字で入る（受付・振り分け・説明会・410・85%・1つにまとめる）', dg[0].texts.includes('振り分け') && dg[2].texts.includes('説明会') && dg[4].texts.includes('410') && dg[5].texts.includes('85%') && dg[6].texts.includes('1つにまとめる'));
+  ok('PowerPoint：3D の絵が図ごとに1枚', [2, 4, 6, 8, 10, 12, 14].every(i => S[i] && S[i].pics === 1 && S[i].texts[0].endsWith('（3D）')), S.map(x => x.pics).join(''));
+  ok('PowerPoint：箱の説明は1つずつ、出どころは下に', S[15] && S[15].texts[0] === '受付' && S[15].texts.some(t => t.startsWith('出どころ：受付の見直し案')) && S[16] && S[16].texts[0] === '振り分け', S.slice(15).map(x => x.texts.slice(0, 3).join(' / ')).join(' | '));
+  ok('PowerPoint：全スライドに社外秘の印とページ番号', S.length && S.every((x, i) => x.secret && x.texts.includes('関係者限り') && x.texts.includes(`${i + 1} / ${S.length}`)), S.map(x => x.secret ? '○' : '×').join(''));
+  ok('PowerPoint：字体は Yu Gothic UI・文字は 11pt 以上', S.length && S.every(x => x.fonts.join() === 'Yu Gothic UI' && x.minPt >= 11), S.map(x => x.minPt).join(' '));
+}
+{
+  const { rd } = await savePptx(B, join(root, 'test', 'fixtures', 'flow15.md'), 'flow15');
+  const S = rd ? rd.slides : [];
+  ok('PowerPoint：大きな図（15 段の流れ）はスライドを分け、文字は 11pt 以上', S.filter(x => /（[12]\/2）$/.test(x.texts[0] || '')).length === 2 && S.every(x => x.minPt >= 11), S.map(x => (x.texts[0] || '') + ' ' + x.minPt).join(' | '));
+}
+{
+  const fn = await B.evalJs(`[DocPptx.fileName('a/b:c*?"<>|d'), DocPptx.fileName('CON'), DocPptx.fileName('  '), DocPptx.fileName('題名. ')]`);
+  ok('PowerPoint：Windows で使えない文字は _（予約の名前・空・末尾の点も）', fn.join('|') === 'a_b_c______d.pptx|_CON.pptx|DocVisualizer.pptx|題名.pptx', fn.join(' | '));
+  // 保存が止められたとき：赤い帯で理由と PDF の案内
+  await B.evalJs(`window.__cou = URL.createObjectURL; URL.createObjectURL = () => { throw new Error('ダウンロードが止められた（試験）'); }; document.getElementById('pptx').click()`);
+  const band = await waitFor(`!document.getElementById('error').hidden && document.getElementById('error').textContent`, 20000);
+  await B.evalJs(`URL.createObjectURL = window.__cou; document.getElementById('error').hidden = true`);
+  ok('PowerPoint：保存できないときは赤い帯で理由を出し、PDF を案内する', band && band.includes('止められた') && band.includes('PDF') && (await B.evalJs(`getComputedStyle(document.getElementById('error')).backgroundColor`)) !== 'rgba(0, 0, 0, 0)', band);
+}
+
 // 確かめ役の md（verify/md があれば、読むだけ。直さない）：落ちず、エラーを出さない
 if (existsSync(join(root, 'verify', 'md'))) {
   for (const f of readdirSync(join(root, 'verify', 'md')).sort()) {
@@ -484,6 +541,11 @@ B.close();
   ok('WebGL なし：発表は 2D で動く', await N.evalJs(`!document.getElementById('present').hidden && document.querySelectorAll('#pStage svg').length === 1`));
   const r = await N.send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(join(out, 'nogl_present.png'), Buffer.from(r.data, 'base64'));
+  {
+    await N.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    const { st: ps, rd } = await savePptx(N, join(root, 'samples', '08_copilot_wrapped.md'), 'nogl_08');
+    ok('WebGL なし：PowerPoint は 3D の絵なしで作れる（10 枚）', ps && ps.pics === 0 && rd && rd.slides.length === 10 && rd.slides.every(x => x.pics === 0), JSON.stringify(ps));
+  }
   ok('WebGL なし：エラーが 0 件', nErr.length === 0, nErr.slice(0, 2).join(' | '));
   N.close();
 }
