@@ -140,6 +140,7 @@ button.act[aria-pressed="true"] { background: #e8f0fe; border-color: #3b6fd8; fo
 .lane-acts { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.8rem; }
 body.linking .svg-wrap .item { cursor: crosshair; }
 .svg-wrap svg g.lane rect.drop-to { fill: #dbe7ff; stroke: #3b6fd8; stroke-width: 2; stroke-dasharray: 6 4; }
+.dirty { align-self: center; color: #c0392b; font-size: 0.85rem; font-weight: 600; margin-right: 4px; }
 </style>
 </head>
 <body>
@@ -157,6 +158,7 @@ body.linking .svg-wrap .item { cursor: crosshair; }
   </span>
   <button id="presentBtn" class="btn" type="button" disabled title="発表（P キーでも始まる）">発表</button>
   <span class="sep"></span>
+  <button id="save" class="btn" type="button" disabled title="直した md をファイルに書く（Ctrl+S）">保存</button><span id="dirty" class="dirty" hidden>● 未保存</span>
   <button id="pdf" class="btn" type="button" disabled>PDF</button>
   <button id="pptx" class="btn" type="button" disabled title="PowerPoint（.pptx）で保存する。図はあとで直せる図形と文字">PowerPoint</button>
   <button id="copyPrompt" class="btn" type="button" title="Copilot に貼る指示文をコピーする">Copilot 用の指示をコピー</button>
@@ -1033,7 +1035,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (!obj || d.layoutIndex == null || !obj.diagrams[d.layoutIndex]) return obj;
     var parts = obj.diagrams[d.layoutIndex].parts || {}, out = {};
     Object.keys(parts).forEach(function (k) {
-      var nk2 = k.split('>').map(function (x) { var m = /^(.*?)(#\d+)?$/.exec(x); return m[1] === oldPk ? newPk + (m[2] || '') : x; }).join('>');
+      var nk2 = k.split('>').map(function (x) { var m = /^(.*?)(#\d+)?$/.exec(x); return nk(m[1]) === oldPk ? newPk + (m[2] || '') : x; }).join('>');
       out[nk2] = parts[k];
     });
     obj.diagrams[d.layoutIndex].parts = out;
@@ -1164,6 +1166,15 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     replaceSpans(t, edits);
     return joinText(t);
   }
+  // layout から、あう部品（pk）を消して書き直す。何も消えなければ text のまま
+  function dropLayoutParts(text, doc, d, hit) {
+    if (d.layoutIndex == null || !doc.layout || !doc.layout.diagrams[d.layoutIndex]) return text;
+    var obj = JSON.parse(JSON.stringify(doc.layout)), L = obj.diagrams[d.layoutIndex], parts = L.parts || {}, gone = false;
+    Object.keys(parts).forEach(function (k) { if (hit(k)) { delete parts[k]; gone = true; } });
+    if (!gone) return text;
+    if (!Object.keys(parts).length) obj.diagrams.splice(d.layoutIndex, 1);
+    return writeLayout(text, parseDoc(text), obj);
+  }
   function subtree(d, id) {
     var out = [id];
     for (var k = 0; k < out.length; k++) d.items.forEach(function (x) { if (x.parent === out[k] && out.indexOf(x.id) < 0) out.push(x.id); });
@@ -1175,7 +1186,9 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
     var plan = {}, ids = d.type === 'tree' ? subtree(d, id) : [id];   // 木は、下の箱も一緒に消す（残すと、ちがう親の下に入るため）
     ids.forEach(function (k) { (d.items[k].spans || []).forEach(function (sp) { if (!sp.bad) (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); }); });
-    return cutLines(text, d, plan);
+    var keys = ids.map(function (k) { return d.items[k].key; });
+    // その箱の置き場所・形と、その箱につながる線の置き場所も消す（残すと、同じ名前を足したとき前の場所に出る）
+    return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').some(function (x) { return keys.indexOf(nk(x.replace(/#\d+$/, ''))) >= 0; }); });
   }
   // 線を消す（その線が書かれた所すべて）
   function removeEdge(text, doc, di, eid) {
@@ -1183,7 +1196,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (!e || !e.occ || !e.occ.length) throw new Error('この線の場所が md の中で分からない');
     var plan = {};
     e.occ.forEach(function (o) { (plan[o.line] = plan[o.line] || { brk: [] }).brk.push(o.seg); });
-    return cutLines(text, d, plan);
+    return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').map(function (x) { return nk(x); }).join('>') === e.pk; });
   }
   // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
   function writeLayout(text, doc, obj) {
@@ -1215,21 +1228,83 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
 
   // ---- 文字コード：BOM → UTF-8 → Shift_JIS / EUC-JP ----
   function decodeBytes(u8) {
-    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return { text: new TextDecoder('utf-8').decode(u8.subarray(3)), encoding: 'UTF-8（BOM つき）', warn: '' };
-    if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(u8.subarray(2)), encoding: 'UTF-16', warn: '' };
-    if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(u8.subarray(2)), encoding: 'UTF-16', warn: '' };
-    try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(u8), encoding: 'UTF-8', warn: '' }; } catch (e) { /* 次を試す */ }
+    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return { text: new TextDecoder('utf-8').decode(u8.subarray(3)), encoding: 'UTF-8（BOM つき）', key: 'utf8bom', warn: '' };
+    if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(u8.subarray(2)), encoding: 'UTF-16', key: 'utf16le', warn: '' };
+    if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(u8.subarray(2)), encoding: 'UTF-16', key: 'utf16be', warn: '' };
+    try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(u8), encoding: 'UTF-8', key: 'utf8', warn: '' }; } catch (e) { /* 次を試す */ }
     var cands = [['shift_jis', 'Shift_JIS'], ['euc-jp', 'EUC-JP']].map(function (c) {
       try {
         var t = new TextDecoder(c[0], { fatal: true }).decode(u8);
         var nonAscii = t.replace(/[\x00-\x7F]/g, '').length || 1;
         var hw = (t.match(/[\uFF61-\uFF9F]/g) || []).length;  // 半角カナだらけ＝たぶん読みまちがい
-        return { text: t, encoding: c[1], score: hw / nonAscii };
+        return { text: t, encoding: c[1], key: c[0] === 'shift_jis' ? 'sjis' : 'eucjp', score: hw / nonAscii };
       } catch (e) { return null; }
     }).filter(Boolean).sort(function (a, b) { return a.score - b.score; });
-    if (cands.length && cands[0].score < 0.3) return { text: cands[0].text, encoding: cands[0].encoding, warn: '' };
+    if (cands.length && cands[0].score < 0.3) return { text: cands[0].text, encoding: cands[0].encoding, key: cands[0].key, warn: '' };
     var lossy = cands.length ? cands[0] : { text: new TextDecoder('shift_jis').decode(u8), encoding: '不明' };
-    return { text: lossy.text, encoding: '不明', warn: '文字コードが分からないので、読めた範囲で出した（UTF-8 で保存し直すと確実）' };
+    return { text: lossy.text, encoding: '不明', key: 'unknown', warn: '文字コードが分からないので、読めた範囲で出した（UTF-8 で保存し直すと確実）' };
+  }
+
+  // ---- 保存（R8c）：md の文字をバイトに。表せない字があれば { bad } を返し、書かない ----
+  var sjisMap = null;
+  function sjisTable() {
+    if (sjisMap) return sjisMap;
+    var dec = new TextDecoder('shift_jis'), m = new Map();
+    for (var lead = 0x81; lead <= 0xFC; lead++) {
+      if (lead > 0x9F && lead < 0xE0) continue;
+      for (var tr = 0x40; tr <= 0xFC; tr++) {
+        if (tr === 0x7F) continue;
+        var ptr = (lead - (lead < 0xA0 ? 0x81 : 0xC1)) * 188 + tr - (tr < 0x7F ? 0x40 : 0x41);
+        if (ptr >= 8272 && ptr <= 8835) continue;   // NEC 選定 IBM 拡張（ED40〜EEFC）は使わない（WHATWG と Windows の決まり）
+        var ch = dec.decode(new Uint8Array([lead, tr]));
+        if (ch.length && ch !== '\uFFFD' && !m.has(ch)) m.set(ch, [lead, tr]);
+      }
+    }
+    sjisMap = m;
+    return m;
+  }
+  function encodeSjis(line, no, bad, out) {
+    var T = sjisTable();
+    for (var ch of line) {
+      var c = ch.codePointAt(0);
+      if (c < 0x80) out.push(c);
+      else if (c >= 0xFF61 && c <= 0xFF9F) out.push(c - 0xFF61 + 0xA1);
+      else if (c === 0xA5) out.push(0x5C);
+      else if (c === 0x203E) out.push(0x7E);
+      else { var b = T.get(c === 0x2212 ? '\uFF0D' : ch); if (b) out.push(b[0], b[1]); else bad.push({ ch: ch, line: no }); }
+    }
+  }
+  // key：decodeBytes が返したもの。orig：読んだときのバイト（Shift_JIS は、同じ文字の行なら元のバイトを使う）
+  function encodeText(text, key, orig) {
+    text = String(text);
+    if (key === 'utf8' || key === 'utf8bom') {
+      var u = new TextEncoder().encode(text);
+      if (key === 'utf8') return { bytes: u };
+      var w = new Uint8Array(u.length + 3); w.set([0xEF, 0xBB, 0xBF]); w.set(u, 3); return { bytes: w };
+    }
+    if (key === 'utf16le' || key === 'utf16be') {
+      var le = key === 'utf16le', o16 = new Uint8Array(2 + text.length * 2);
+      o16[0] = le ? 0xFF : 0xFE; o16[1] = le ? 0xFE : 0xFF;
+      for (var k = 0; k < text.length; k++) { var cu = text.charCodeAt(k); o16[2 + k * 2] = le ? cu & 255 : cu >> 8; o16[3 + k * 2] = le ? cu >> 8 : cu & 255; }
+      return { bytes: o16 };
+    }
+    if (key !== 'sjis') throw new Error('この文字コード（' + key + '）では書けない');
+    var reuse = new Map();
+    if (orig && orig.length) {
+      var dec = new TextDecoder('shift_jis'), st = 0;
+      for (var i = 0; i <= orig.length; i++) if (i === orig.length || orig[i] === 0x0A) {
+        var lb = orig.subarray(st, i), lt = dec.decode(lb);
+        if (!reuse.has(lt) && lt.indexOf('\uFFFD') < 0) reuse.set(lt, lb);
+        st = i + 1;
+      }
+    }
+    var out = [], bad = [];
+    text.split('\n').forEach(function (line, n) {
+      if (n) out.push(0x0A);
+      var r = reuse.get(line);
+      if (r) for (var j = 0; j < r.length; j++) out.push(r[j]); else encodeSjis(line, n + 1, bad, out);
+    });
+    return bad.length ? { bad: bad } : { bytes: new Uint8Array(out) };
   }
 
   function check(text) {
@@ -1242,7 +1317,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     };
   }
 
-  var api = { subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -2526,6 +2601,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
           if (!drag.moved) return;
           var g1 = ground0(e, el);
           if (g1) { drag.delta = [g1[0] - drag.g0[0], g1[1] - drag.g0[1]]; items[drag.item].group.position.copy(P(drag.delta[0], drag.delta[1], 0).sub(P(0, 0, 0))); }
+          if (drag.delta && opts.dropRect) showDrop(opts.dropRect(drag.item, drag.delta[0], drag.delta[1]));
           if (redraw) redraw();
           return;
         }
@@ -2535,12 +2611,32 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       });
       el.addEventListener('pointerup', function (e) {
         var d = drag; drag = null;
+        showDrop(null);
         if (d && d.item != null && d.moved) { if (d.delta && opts.onMove) opts.onMove(d.item, d.delta[0], d.delta[1]); else items[d.item].group.position.set(0, 0, 0); return; }
         if (d && !d.moved && opts.onPick) opts.onPick(pick(e, el), e);   // 何もない所なら null（窓の外を押した）
       });
       el.addEventListener('dblclick', function () { view.dAz = 0; view.dEl = 0; if (redraw) redraw(); });
     }
 
+    // 落とす先（別の帯）を板の上に光らせる。2D と同じ色（面 #dbe7ff・縁 #3b6fd8 の点線）
+    var dropMesh = null, dropKey = '';
+    function showDrop(r) {
+      var key = r ? [r.x, r.y, r.w, r.h].join() : '';
+      if (key === dropKey) return;
+      dropKey = key;
+      if (dropMesh) { rootG.remove(dropMesh); dropMesh.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); dropMesh = null; }
+      if (!r) return;
+      var g = new T.Group(), w = r.w * S, h = r.h * S;
+      var face = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ color: 0xdbe7ff, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+      var pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2]].map(function (p) { return new T.Vector3(p[0], p[1], 0.01); });
+      var edge = new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineDashedMaterial({ color: 0x3b6fd8, dashSize: 6 * S, gapSize: 4 * S }));
+      edge.computeLineDistances();
+      g.add(face); g.add(edge);
+      g.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, 0.3));
+      orient(g);
+      rootG.add(g);
+      dropMesh = g;
+    }
     function select(i) {
       items.forEach(function (x) { if (x) x.mats.forEach(function (m) { m.emissive.setHex(0x000000); }); });
       if (i != null && items[i]) items[i].mats.forEach(function (m) { m.emissive.setHex(0x2b5fd0); m.emissiveIntensity = 0.35; });
@@ -2568,6 +2664,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       busy: function () { return !!tween; },
       // 配置を変えて作り直すとき、回した向きを残す
       getView: function () { return { dAz: view.dAz, dEl: view.dEl }; },
+      dropShown: function () { return dropKey; },   // 試験用：光らせている帯（なければ ''）
       setView: function (v) { if (v) { view.dAz = v.dAz; view.dEl = v.dEl; } },
       // 全体を見る向きで、図が画面の上で横長・縦長どちらに見えるか（幅÷高さ）。画面の形をこれに合わせると、むだな余白がなくなる
       shape: function () {
@@ -2963,8 +3060,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   }
 
   // ---- 読みこみ ----
-  function loadFile(file) {
-    if (!file) return;
+  function loadFile(file, handleP) {
+    if (!file || !leaveOk()) return;
     showError('');
     if (!OK_EXT.test(file.name)) { showError('「' + file.name + '」は md ではないので読みませんでした（.md・.markdown・.txt を選んでください）。画面は前のままです。'); return; }
     if (file.size === 0) { showError('「' + file.name + '」は空のファイルです。画面は前のままです。'); return; }
@@ -2975,20 +3072,74 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       if (!utf16 && Array.prototype.indexOf.call(head, 0) >= 0) { showError('「' + file.name + '」は文字のファイルではないようです。画面は前のままです。'); return; }
       var dec = P.decodeBytes(u8);
       var eol = /\r\n/.test(dec.text) ? 'CRLF' : /\r/.test(dec.text) ? 'CR' : 'LF';
-      show(dec.text, file.name, dec.encoding + '・改行 ' + eol, dec.warn);
+      return Promise.resolve(handleP).catch(function () { return null; }).then(function (h) {
+        show(dec.text, file.name, dec.encoding + '・改行 ' + eol, dec.warn, { key: dec.key, orig: u8, handle: h && h.kind === 'file' ? h : null });
+      });
     }).catch(function (e) { showError('読みこめませんでした：' + (e && e.message || e)); });
   }
 
-  function show(text, fileName, meta, decodeWarn) {
+  function show(text, fileName, meta, decodeWarn, src) {
     var doc;
     try { doc = P.parseDoc(text); } catch (e) { showError('読みとりの途中で止まりました：' + e.message + '。画面は前のままです。'); return; }
     if (decodeWarn) doc.warnings.unshift({ line: 0, msg: decodeWarn, kind: 'fix' });
     showError('');
     state.doc = doc; state.text = String(text); state.undo = []; state.redo = []; state.fileName = fileName; state.meta = meta; state.sel = null;
+    src = src || {}; state.key = src.key || null; state.orig = src.orig || null; state.handle = src.handle || null; state.sample = !!src.sample; state.saved = state.text;
+    updateDirty();
     closePanel();
     render();
     window.scrollTo(0, 0);
   }
+
+  // ---- 保存（R8c）：上書き（File System Access）か、できなければ「（編集）」つきでダウンロード ----
+  function isDirty() { return !!state.doc && state.text !== state.saved; }
+  function updateDirty() { $('dirty').hidden = !isDirty(); $('save').disabled = !state.doc; }
+  function leaveOk() { return !isDirty() || window.confirm('保存していない直しがあります。保存せずに別の md を開きますか？'); }
+  function editedName(n) { var m = /^(.*?)(\.[^.]*)?$/.exec(n || 'doc.md'); return m[1] + '（編集）' + (m[2] || '.md'); }
+  function writeHandle(h, bytes) {
+    var ask = h.queryPermission ? h.queryPermission({ mode: 'readwrite' }).then(function (p) { return p === 'granted' ? p : h.requestPermission({ mode: 'readwrite' }); }) : Promise.resolve('granted');
+    return ask.then(function (p) {
+      if (p !== 'granted') throw new Error('書きこみが許可されませんでした');
+      return h.createWritable().then(function (w) { return w.write(bytes).then(function () { return w.close(); }); });
+    });
+  }
+  var saving = false;
+  function save() {
+    if (!state.doc || saving) return;
+    var text = state.text, key = state.key || 'utf8', r;   // 書いている間に直しても、書くのはこの写し
+    if (key === 'eucjp' || key === 'unknown') {
+      if (!window.confirm('この md の文字コード（' + (key === 'eucjp' ? 'EUC-JP' : '分からない') + '）では書けないので、UTF-8 で保存します。よいですか？')) return;
+      key = 'utf8';
+    }
+    try { r = P.encodeText(text, key, state.orig); } catch (e) { showError('保存できませんでした：' + e.message + '。md は画面に残っています。'); return; }
+    if (r.bad) {
+      var list = r.bad.slice(0, 8).map(function (b) { return '「' + b.ch + '」（' + b.line + ' 行目）'; }).join('・') + (r.bad.length > 8 ? ' ほか ' + (r.bad.length - 8) + ' 字' : '');
+      if (!window.confirm('Shift_JIS では表せない字があります：' + list + '。UTF-8 で保存しますか？（やめると保存しません）')) { showError('保存しませんでした。Shift_JIS で表せない字：' + list + '。その字を直すか、UTF-8 で保存してください。'); return; }
+      key = 'utf8'; r = P.encodeText(text, key);
+    }
+    var bytes = r.bytes, name = state.fileName || 'doc.md';
+    var done = function (how) {
+      state.saved = text; state.key = key; state.orig = bytes;
+      updateDirty(); showError('');
+      toast(how, 6000);
+    };
+    var download = function (why) {
+      saveBlob(new Blob([bytes], { type: 'text/markdown' }), editedName(name));
+      done((why ? why + '。' : '') + '「' + editedName(name) + '」としてダウンロードしました（ダウンロードの一覧に出ないときは、会社の設定で止められています）');
+    };
+    if (state.sample) { download('見本は上書きしません'); return; }
+    var h = state.handle;
+    var pick = h ? Promise.resolve(h) : window.showSaveFilePicker ? window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'md', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }] }) : null;
+    if (!pick) { download('このブラウザは上書きできません'); return; }
+    saving = true;
+    pick.then(function (hh) {
+      return writeHandle(hh, bytes).then(function () { state.handle = hh; done('「' + hh.name + '」に保存しました'); });
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') { toast('保存をやめました', 2500); return; }
+      download('上書きできませんでした（' + ((e && e.message) || e) + '）');
+    }).then(function () { saving = false; });
+  }
+  window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   // ---- 表示 ----
   function hasNoteFn(doc) {
@@ -3063,6 +3214,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (pushUndo) state.redo = [];
     var oldText = state.text;
     state.text = text; state.doc = doc;
+    updateDirty();
     // layout の区画のほかが変わった（名前・印・行を直した）ときは、全部を描き直す
     var bare = function (t, dc) { try { return P.writeLayout(t, dc, null); } catch (e) { return t; } };
     if (doc.diagrams.length !== old.diagrams.length || bare(text, doc) !== bare(oldText, old)) { closePanel(); render(); return true; }
@@ -3131,11 +3283,11 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       if (act === 'rename') { startRename(sd, si); return; }
       if (act === 'del') { deleteItem(sd, si); return; }
       if (act === 'link') { startLink(sd, si); return; }
-      if (act === 'mark' && editMd(function () { return P.toggleMark(state.text, state.doc, sd, si, av); }, '印を変え', '印を変えました')) {
+      if (act === 'mark' && editMd(function () { return P.toggleMark(state.text, state.doc, sd, si, av); }, '印を変えられ', '印を変えました')) {
         openItem(sd, si); var mb = $('panelBody').querySelector('button[data-act=mark][data-v="' + av + '"]'); if (mb) mb.focus();
         return;
       }
-      if (act === 'lane' && editMd(function () { return P.setLane(state.text, state.doc, sd, si, av); }, '担当を変え', '「' + sit.label + '」の担当を「' + av + '」にしました')) { openItem(sd, si); return; }
+      if (act === 'lane' && editMd(function () { return P.setLane(state.text, state.doc, sd, si, av); }, '担当を変えられ', '「' + sit.label + '」の担当を「' + av + '」にしました')) { openItem(sd, si); return; }
       return;
     }
     if (ab && state.selEdge && ab.getAttribute('data-act') === 'del-edge') { deleteEdge(state.selEdge.d, state.selEdge.pk); return; }
@@ -3166,7 +3318,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   });
 
   // ---- 名前を直す（R8b-3）：箱を2回押すか、ポップアップの「名前を直す」。Enter で決める、Esc でやめる ----
-  function startRename(d, i) {
+  // fresh：「＋ 箱」で足したばかり。名前を決めると足したのと1つの「戻す」にまとめ、やめると箱を足す前に戻す
+  function startRename(d, i, fresh) {
     var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]'), it = state.doc.diagrams[d].items[i];
     if (!g || !it) return;
     closePanel();
@@ -3178,15 +3331,16 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     function end(ok) {
       if (done) return; done = true;
       var v = inp.value; inp.remove();
+      if (fresh && (!ok || !P.safeName(v))) { var before = state.undo.pop(); if (before != null) applyText(before, false); toast('箱を足すのをやめました', 2000); return; }
       if (!ok || !P.safeName(v) || v === it.label) { g.focus && g.focus(); return; }
       var nn = P.safeName(v), same = state.doc.diagrams[d].items.filter(function (x) { return x.id !== i && x.key === nn.normalize('NFKC').replace(/\s+/g, '').toLowerCase(); })[0];
       if (same && !window.confirm('「' + same.label + '」と同じ名前なので、2つの箱が1つにまとまります。よいですか？')) return;
       var text;
       try { text = P.renameItem(state.text, state.doc, d, i, v); } catch (e) { showError('名前を直せませんでした：' + e.message + '。md は前のままです。'); return; }
-      applyText(text, true);
+      applyText(text, true, !!fresh);
       toast('名前を「' + nn + '」に直しました（Ctrl+Z で戻せます）', 2500);
     }
-    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
     inp.addEventListener('blur', function () { end(false); });
   }
   $('diagrams').addEventListener('dblclick', function (e) {
@@ -3298,7 +3452,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var d = state.doc.diagrams[i], rs = $('dg' + i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child'), r = rs[k];
     if (d.type !== 'lanes' || !r || laneHas(r, band)) return false;
     var it = d.items.filter(function (x) { return x.pk === pk; })[0], to = d.lanes[k];
-    if (!it || !editMd(function () { return P.setLane(state.text, state.doc, i, it.id, to); }, '担当を変え', '「' + it.label + '」の担当を「' + to + '」にしました')) return false;
+    if (!it || !editMd(function () { return P.setLane(state.text, state.doc, i, it.id, to); }, '担当を変えられ', '「' + it.label + '」の担当を「' + to + '」にしました')) return false;
     var y0 = +r.getAttribute('y'), y1 = y0 + +r.getAttribute('height');
     setLayout(i, pk, { x: x, y: Math.round(Math.max(y0, Math.min(cy - h / 2, y1 - h))) }, true);
     return true;
@@ -3449,7 +3603,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   // md を書きかえて描き直す。失敗したら md は前のまま
   function editMd(fn, what, done) {
     var text;
-    try { text = fn(); } catch (e) { showError(what + 'できませんでした：' + e.message + '。md は前のままです。'); return false; }
+    try { text = fn(); } catch (e) { showError(what + 'ませんでした：' + e.message + '。md は前のままです。'); return false; }
     if (text === state.text) return false;
     applyText(text, true);
     toast(done + '（Ctrl+Z で戻せます）', 2500);
@@ -3459,13 +3613,13 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var diag = state.doc.diagrams[d], it = diag.items[i], under = diag.type === 'tree' && it ? P.subtree(diag, i).length - 1 : 0;
     if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + '（Ctrl+Z で戻せます）。よいですか？')) return;
     closePanel();
-    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消', '箱「' + it.label + '」を消しました');
+    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました');
   }
   function deleteEdge(d, pk) {
     var diag = state.doc.diagrams[d], e = diag.edges.filter(function (x) { return x.pk === pk; })[0];
     if (!e || !window.confirm('線「' + diag.items[e.from].label + ' → ' + diag.items[e.to].label + '」を消します。よいですか？')) return;
     closePanel();
-    editMd(function () { return P.removeEdge(state.text, state.doc, d, e.id); }, '線を消', '線を消しました');
+    editMd(function () { return P.removeEdge(state.text, state.doc, d, e.id); }, '線を消せ', '線を消しました');
   }
   // 線を引く：次に押した箱へつなぐ。Esc でやめる
   function startLink(d, i) {
@@ -3569,6 +3723,15 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
           onPick: function (it, e) { if (it == null) closePanel(); else press(i, it, { x: e.clientX, y: e.clientY, w: 0, h: 0 }, false); },
           // 箱を地面の上で動かす（動かせる図だけ）。離したら md の配置に書く
           canMove: P.MOVABLE[d.type] ? function () { return true; } : null,
+          // lanes で別の帯の上にいるとき、その帯（SVG の座標）を返す。3D が光らせる
+          dropRect: d.type === 'lanes' ? function (it, dx, dy) {
+            var gi = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"]'), g = gi && gi.querySelector('.box'), bb = g && g.getBBox();
+            var band = gi && (gi.getAttribute('data-band') || '').split(' ').map(Number);
+            if (!bb || !band || band.length !== 2) return null;
+            var cy = bb.y + bb.height / 2 + dy, rs = $('dg' + i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child');
+            for (var q = 0; q < rs.length; q++) { var ry = +rs[q].getAttribute('y'), rh = +rs[q].getAttribute('height'); if (cy >= ry && cy < ry + rh) return laneHas(rs[q], band) ? null : { x: +rs[q].getAttribute('x'), y: ry, w: +rs[q].getAttribute('width'), h: rh }; }
+            return null;
+          } : null,
           onMove: function (it, dx, dy) {
             var gi = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"]'), g = gi && gi.querySelector('.box'), bb = g && g.getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
             if (!bb) return;
@@ -3867,7 +4030,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   });
   $('sample').addEventListener('change', function (e) {
     var s = SAMPLES[+e.target.value];
-    if (s) show(s.text, s.name, '見本', '');
+    if (s && leaveOk()) show(s.text, s.name, '見本', '', { sample: true });
     e.target.value = '';
   });
   Array.prototype.forEach.call(document.querySelectorAll('.fs'), function (b) {
@@ -3880,6 +4043,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       if (sel) openItem(sel.d, sel.i);
     });
   });
+  $('save').addEventListener('click', save);
   $('pdf').addEventListener('click', function () {
     if (!state.doc) return;
     toast('印刷の窓で、送り先を「PDF に保存」に、用紙を「A4・横」にしてください', 7000);
@@ -3943,7 +4107,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       try { r = P.addBox(state.text, state.doc, nd); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
       applyText(r.text, true);
       var ni = state.doc.diagrams[nd].items.filter(function (x) { return x.label === r.name; })[0];
-      if (ni) startRename(nd, ni.id);   // すぐ名前を入れられるように
+      if (ni) startRename(nd, ni.id, true);   // すぐ名前を入れられるように
       return;
     }
     var g = e.target.closest && e.target.closest('.item');
@@ -3980,6 +4144,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     }
     var tag = (e.target && e.target.tagName || '').toLowerCase();
     var typing = tag === 'input' || tag === 'select' || tag === 'textarea' || (e.target && e.target.isContentEditable);
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 's') { e.preventDefault(); save(); return; }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
       var k = (e.key || '').toLowerCase();
       if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(true); return; }
@@ -4006,8 +4171,11 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
   window.addEventListener('drop', function (e) {
     e.preventDefault(); dragDepth = 0; $('drop').hidden = true;
-    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) loadFile(f);
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0], it = e.dataTransfer && e.dataTransfer.items && e.dataTransfer.items[0];
+    // 上書きの先（Edge・Chrome）。drop の中ですぐ聞かないと、あとでは取れない
+    var hp = null;
+    try { hp = it && it.getAsFileSystemHandle ? it.getAsFileSystemHandle() : null; } catch (er) { hp = null; }
+    if (f) loadFile(f, hp);
   });
   window.DocVisualizer = {
     version: '0.1.0',
@@ -4018,7 +4186,9 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     text3d: function (d) { var sc = state.scenes[d], c = sc && sc.canvas; return sc ? +(sc.textScale(c.clientWidth, c.clientHeight) * minFont($('dg' + d).querySelector('.svg-wrap svg').outerHTML)).toFixed(1) : null; },
     mode: function () { return state.mode; },
     text: function () { return state.text; },
-    canUndo: function () { return [state.undo.length, state.redo.length]; }
+    drop3d: function (d) { var sc = state.scenes[d]; return sc && sc.dropShown ? sc.dropShown() : null; },
+    canUndo: function () { return [state.undo.length, state.redo.length]; },
+    dirty: isDirty
   };
 })();
 
