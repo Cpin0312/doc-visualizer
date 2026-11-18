@@ -577,7 +577,7 @@
       (d.edges || []).forEach(function (e) { var b = d.items[e.from].pk + '>' + d.items[e.to].pk, n = eseen[b] = (eseen[b] || 0) + 1; e.pk = n > 1 ? b + '#' + n : b; });
     });
   }
-  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, timeline: 1, kpi: 1 };
   function isPair(v) { return Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]) && typeof v[0] === 'number' && typeof v[1] === 'number'; }
   function cleanPart(p) {
     var o = {}, bad = false;

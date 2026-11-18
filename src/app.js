@@ -117,7 +117,9 @@
   // 1つの図だけを描き直す（2D と 3D）。動かしている間は 3D を作り直さない
   function redrawDiagram(i, no3d) {
     var box = $('dg' + i), d = state.doc.diagrams[i], w = box.querySelector('.svg-wrap');
+    var ae = document.activeElement, fi = ae && w.contains(ae) && ae.getAttribute('data-i');
     w.innerHTML = svgOf(d, i);
+    if (fi != null) { var f = w.querySelector('.item[data-i="' + fi + '"]'); if (f) f.focus({ preventScroll: true }); }
     fitWide(w);
     var rb = box.querySelector('.reset-layout'); if (rb) rb.hidden = !hasLayout(d);
     if (!no3d) build3dOne(state.doc, i);
@@ -125,11 +127,12 @@
   }
 
   // ---- 配置を変える（R8a）：正本は md の文字だけ。書きかえ → 読み直し → 変わった図だけ描き直す ----
-  function applyText(text, pushUndo) {
+  function applyText(text, pushUndo, merge) {
     var doc;
     try { doc = P.parseDoc(text); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return false; }
     var old = state.doc;
-    if (pushUndo) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); state.redo = []; }
+    if (pushUndo && !(merge && state.undo.length)) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); }
+    if (pushUndo) state.redo = [];
     state.text = text; state.doc = doc;
     if (doc.diagrams.length !== old.diagrams.length) { render(); return true; }
     var changed = false;
@@ -139,7 +142,7 @@
     return true;
   }
   // 図 i の部品 pk の配置を変える（patch が null なら、その図の配置を全部消す）
-  function setLayout(i, pk, patch) {
+  function setLayout(i, pk, patch, merge) {
     var doc = state.doc, d = doc.diagrams[i];
     var obj = doc.layout ? JSON.parse(JSON.stringify(doc.layout)) : { v: 1, diagrams: [] };
     var k = d.layoutIndex;
@@ -154,7 +157,21 @@
     }
     var text;
     try { text = P.writeLayout(state.text, doc, obj); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return; }
-    applyText(text, true);
+    applyText(text, true, merge);
+  }
+  // 矢印キーで箱を動かす（8、Shift で 1）。続けて押した同じ箱の動きは、戻す1回にまとめる
+  var lastKey = null;
+  function keyMove(g, dx, dy) {
+    var i = +g.getAttribute('data-d'), d = state.doc.diagrams[i];
+    if (!P.MOVABLE[d.type]) return false;
+    var svg = g.ownerSVGElement, bb = g.querySelector('.box').getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
+    var band = (g.getAttribute('data-band') || '').split(' ').map(Number), y0 = band.length === 2 ? band[0] : 0, y1 = band.length === 2 ? band[1] : H;
+    var pk = d.items[+g.getAttribute('data-i')].pk, now = Date.now();
+    var merge = !!(lastKey && lastKey.i === i && lastKey.pk === pk && now - lastKey.t < 800);
+    lastKey = { i: i, pk: pk, t: now };
+    closePanel();
+    setLayout(i, pk, { x: Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), y: Math.round(Math.max(y0, Math.min(bb.y + dy, y1 - bb.height))) }, merge);
+    return true;
   }
   function undoRedo(back) {
     var from = back ? state.undo : state.redo, to = back ? state.redo : state.undo;
@@ -814,6 +831,8 @@
   $('diagrams').addEventListener('keydown', function (e) {
     var g = e.target.closest && e.target.closest('.item');
     if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), true); }
+    var AK = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (g && AK && !e.ctrlKey && !e.metaKey && !e.altKey) { var st = e.shiftKey ? 1 : 8; if (keyMove(g, AK[0] * st, AK[1] * st)) e.preventDefault(); }
   });
   $('panelClose').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) {

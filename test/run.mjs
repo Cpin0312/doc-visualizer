@@ -809,6 +809,38 @@ async function savePptx(T, md, tag) {
   await shot('r7fix', true);
   if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8b-1：矢印キーで動かす（続けて押した分は戻す1回）・日程の札・数字のカードを動かす
+{
+  const mdb = ['# R8b-1', '', '~~~flow 流れ', '受付 -> 確認', '~~~', '', '~~~timeline 日程', '2027-01-10 説明会', '2027-02-01 本番', '~~~', '', '~~~kpi 数字', '件数 : 10件 → 5件 : 半分', '時間 : 6日 → 2日', '~~~', ''].join('\n');
+  const fb = join(out, 'r8b1.md'); writeFileSync(fb, mdb);
+  await pick(fb); await waitFor(`document.getElementById('status').textContent.includes('r8b1.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const bb = (dg, n) => B.evalJs(`(() => { const b = document.querySelector('#dg${dg} .item[aria-label="${n}"] .box'); return [+b.getBBox().x.toFixed(1), +b.getBBox().y.toFixed(1)]; })()`);
+  const k0 = await bb(0, '受付');
+  await B.evalJs(`document.querySelector('#dg0 .item[aria-label="受付"]').focus()`);
+  for (let k = 0; k < 3; k++) await keyPress('ArrowDown', 'ArrowDown', 40);
+  await sleep(200);
+  const k1 = await bb(0, '受付'), foc = await B.evalJs(`document.activeElement && document.activeElement.getAttribute('aria-label')`), tk = await B.evalJs('DocVisualizer.text()');
+  const ctrl = async (k, code, vk) => { const mods = process.platform === 'darwin' ? 4 : 2; await B.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods }); await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods }); await sleep(250); };
+  await ctrl('z', 'KeyZ', 90);
+  const k2 = await bb(0, '受付'), tz = await B.evalJs('DocVisualizer.text()');
+  ok('矢印キー：3回で 24 動き、フォーカスは同じ箱のまま。Ctrl+Z 1回で元の場所（md も元どおり）', Math.abs(k1[1] - k0[1] - 24) < 0.6 && k1[0] === k0[0] && foc === '受付' && /"受付":\{"x":\d+,"y":\d+\}/.test(tk) && Math.abs(k2[1] - k0[1]) < 0.6 && tz === mdb, JSON.stringify({ k0, k1, k2, foc, back: tz === mdb }));
+  // 日程の札・数字のカードをドラッグ
+  const dragBy = async (x, y, dx, dy) => {
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let k = 1; k <= 8; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx * k / 8, y: y + dy * k / 8, button: 'left', buttons: 1 });
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + dx, y: y + dy, button: 'left', buttons: 0, clickCount: 1 }); await sleep(300);
+  };
+  const ctr = (dg, n) => B.evalJs(`(() => { document.getElementById('dg${dg}').scrollIntoView({ block: 'center' }); const b = document.querySelector('#dg${dg} .item[aria-label="${n}"] .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  const t0 = await bb(1, '説明会'), c1 = await ctr(1, '説明会'); await dragBy(c1.x, c1.y, 60, 0);
+  const t1 = await bb(1, '説明会'), stem = await B.evalJs(`(() => { const g = document.querySelector('#dg1 .item[aria-label="説明会"]'), l = g.querySelector('line'), b = g.querySelector('.box').getBBox(); return { x2: +l.getAttribute('x2'), y2: +l.getAttribute('y2'), bx: b.x, bw: b.width, by: b.y, bh: b.height, cx: +g.querySelector('circle').getAttribute('cx') }; })()`);
+  const tc0 = await bb(2, '時間'), c2 = await ctr(2, '時間'); await dragBy(c2.x, c2.y, -80, 0);
+  const tc1 = await bb(2, '時間'), tt = await B.evalJs('DocVisualizer.text()');
+  const pr = await B.evalJs(`(() => { const e = document.querySelector('#print .item[aria-label="時間"] .box'); return e ? +e.getAttribute('x') : null; })()`);
+  ok('日程の札・数字のカードもドラッグで動く。日付の点は線の上のまま、点から札へ線がつながる。PDF にも出る', t1[0] > t0[0] + 20 && stem.x2 >= stem.bx - 0.5 && stem.x2 <= stem.bx + stem.bw + 0.5 && stem.cx < t1[0] + 1 && tc1[0] < tc0[0] - 20 && /"説明会":\{"x":\d+,"y":\d+\}/.test(tt) && /"時間":\{"x":\d+,"y":\d+\}/.test(tt) && Math.abs(pr - tc1[0]) < 1 && tt.includes('2027-01-10 説明会'), JSON.stringify({ t0, t1, stem, tc0, tc1, pr }));
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

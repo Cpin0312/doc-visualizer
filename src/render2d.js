@@ -344,25 +344,28 @@
       body += '<g class="today"><line x1="' + r(tx) + '" x2="' + r(tx) + '" y1="10" y2="' + r(height - 36) + '" stroke="' + C.red + '" stroke-width="2" stroke-dasharray="6 4"/>' +
         '<text x="' + r(tx + 4) + '" y="18" font-size="' + tf + '" fill="' + C.red + '" font-weight="bold">今日</text></g>';
     }
+    var TW = Math.max.apply(null, items.map(function (it, i) { return X(dayNum(it.date)) + labelW[i]; }).concat([width])) + 20, lay = diag.layout || {};
     items.forEach(function (it, i) {
       var cx = X(dayNum(it.date)), k = strongest(it), col = k ? MARK_COLOR[k] : C.accent;
-      var ly = axisY + lv[i] * rowH, top = lv[i] < 0, h = fs * 2.7, by = top ? ly - h / 2 : ly - h / 2;
+      var ly = axisY + lv[i] * rowH, top = lv[i] < 0, h = fs * 2.7, by = top ? ly - h / 2 : ly - h / 2, bx = cx - 2, p = lay[it.pk];
+      // 動かした札：日付の点は線の上のまま。点から札のいちばん近いふちへ線を引く
+      if (p && p.x != null) { bx = Math.max(0, Math.min(p.x, TW - labelW[i])); by = Math.max(0, Math.min(p.y, height - h)); }
+      var sx = Math.max(bx, Math.min(cx, bx + labelW[i])), sy = axisY < by ? by : axisY > by + h ? by + h : axisY;
       var s = itemOpen(d, it);
       if (it.end) {
         var ex = X(dayNum(it.end));
         s += '<rect x="' + r(cx) + '" y="' + r(axisY - 6) + '" width="' + r(Math.max(ex - cx, 4)) + '" height="12" rx="6" fill="' + col + '" opacity="0.55"/>';
       }
-      s += '<line x1="' + r(cx) + '" x2="' + r(cx) + '" y1="' + r(axisY) + '" y2="' + r(top ? by + h : by) + '" stroke="' + col + '" stroke-width="2"/>' +
+      s += '<line x1="' + r(cx) + '" x2="' + r(p && p.x != null ? sx : cx) + '" y1="' + r(axisY) + '" y2="' + r(p && p.x != null ? sy : top ? by + h : by) + '" stroke="' + col + '" stroke-width="2"/>' +
         '<circle cx="' + r(cx) + '" cy="' + r(axisY) + '" r="6" fill="#fff" stroke="' + col + '" stroke-width="3"/>' +
-        '<rect class="box" x="' + r(cx - 2) + '" y="' + r(by) + '" width="' + r(labelW[i]) + '" height="' + r(h) + '" rx="8" fill="#fff" stroke="' + col + '" stroke-width="' + (k ? 2.2 : 1.4) + '"/>' +
-        (info(it, opts) ? cornerDot(cx - 2 + labelW[i] - 1, by + 1) : '') +
-        '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.3) + '" font-size="' + r(Math.max(11, fs * 0.82)) + '" dominant-baseline="central" fill="' + C.sub + '">' + esc(it.dateText) + '</text>' +
-        '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.68) + '" font-size="' + fs + '" font-weight="bold" dominant-baseline="central" fill="' + C.text + '">' + esc(it.label) + '</text>' +
-        badges(it, cx - 2 + labelW[i], by - 3, fs, true) + '</g>';
+        '<rect class="box" x="' + r(bx) + '" y="' + r(by) + '" width="' + r(labelW[i]) + '" height="' + r(h) + '" rx="8" fill="#fff" stroke="' + col + '" stroke-width="' + (k ? 2.2 : 1.4) + '"/>' +
+        (info(it, opts) ? cornerDot(bx + labelW[i] - 1, by + 1) : '') +
+        '<text x="' + r(bx + 10) + '" y="' + r(by + h * 0.3) + '" font-size="' + r(Math.max(11, fs * 0.82)) + '" dominant-baseline="central" fill="' + C.sub + '">' + esc(it.dateText) + '</text>' +
+        '<text x="' + r(bx + 10) + '" y="' + r(by + h * 0.68) + '" font-size="' + fs + '" font-weight="bold" dominant-baseline="central" fill="' + C.text + '">' + esc(it.label) + '</text>' +
+        badges(it, bx + labelW[i], by - 3, fs, true) + '</g>';
       body += s;
     });
-    var maxX = Math.max.apply(null, items.map(function (it, i) { return X(dayNum(it.date)) + labelW[i]; }).concat([width]));
-    return wrapSvg(maxX + 20, height, body, 'timeline');
+    return wrapSvg(TW, height, body, 'timeline');
   }
 
   // ---- 木 ----
@@ -697,9 +700,11 @@
   // ---- 大事な数字（カード） ----
   function kpi(diag, d, opts) {
     var fs = opts.fs, items = diag.items, per = Math.min(items.length, items.length > 4 ? (items.length === 6 ? 3 : 4) : items.length);
-    var cw = fs * 17, ch = fs * 9.6, gap = fs * 1.4, body = '';
+    var cw = fs * 17, ch = fs * 9.6, gap = fs * 1.4, body = '', lay = diag.layout || {};
+    var rows = Math.ceil(items.length / per), KW = 20 + per * (cw + gap) - gap, KH = 34 + rows * (ch + gap);
     items.forEach(function (it, i) {
-      var x = 10 + (i % per) * (cw + gap), y = 24 + Math.floor(i / per) * (ch + gap), k = strongest(it);
+      var x = 10 + (i % per) * (cw + gap), y = 24 + Math.floor(i / per) * (ch + gap), k = strongest(it), p = lay[it.pk];
+      if (p && p.x != null) { x = Math.max(0, Math.min(p.x, KW - cw)); y = Math.max(0, Math.min(p.y, KH - ch)); }
       var vf = fs * 2.3;
       while (vf > fs && tw(it.valueText, vf, true) > cw - fs * 2) vf -= 1;
       var tc = it.trend === 'up' ? C.green : it.trend === 'down' ? C.red : C.sub;
@@ -712,8 +717,7 @@
         (it.note ? textEl(wrap((it.trend === 'up' ? '▲ ' : it.trend === 'down' ? '▼ ' : '') + it.note, Math.max(11, Math.round(fs * 0.9)), cw - fs * 2, 2), x + fs, y + ch - fs * 1.7, Math.max(11, Math.round(fs * 0.9)), { anchor: 'start', fill: tc, bold: !!it.trend }) : '') +
         badges(it, x + cw - 6, y - 3, fs, true) + '</g>';
     });
-    var rows = Math.ceil(items.length / per);
-    return wrapSvg(20 + per * (cw + gap) - gap, 34 + rows * (ch + gap), body, 'kpi');
+    return wrapSvg(KW, KH, body, 'kpi');
   }
 
   // ---- 比べる（表） ----
