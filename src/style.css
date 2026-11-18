@@ -156,3 +156,7 @@ body.split .secret { left: calc(40vw + 14px); }
 textarea.rename.area { resize: vertical; font: inherit; line-height: 1.6; }
 #body p.para { cursor: text; border-radius: 4px; }
 #body p.para:hover { background: #f3f6fc; }
+/* 書きかえを止めている間（R8d）：帯を出し、右の書きかえの入口を隠す */
+.lockbar { position: sticky; top: 56px; z-index: 15; margin: 8px 0; padding: 8px 12px; border: 2px solid #c98a00; border-radius: 8px; background: #fff6dc; color: #5a3d00; font-weight: bold; }
+body.locked .add-box, body.locked details.dg-menu, body.locked .add-dg, body.locked .card-add, body.locked #panelBody p.acts, body.locked #panelBody .lane-acts, body.locked .reset-layout, body.locked #panelBody details.styl { display: none !important; }
+@media print { .lockbar { display: none !important; } }

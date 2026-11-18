@@ -1209,6 +1209,48 @@ async function savePptx(T, md, tag) {
   const ed = await B.evalJs(`[...document.querySelectorAll('#body p')].map(p => (p.getAttribute('data-l') || '-') + ':' + p.textContent.slice(0, 6)).join(' | ')`);
   ok('本文（画面）：出どころ（[元：…]）を外して出した段落と、出どころだけの行をはさむ段落は直せない（直すと出どころが消えるため）。ふつうの段落は直せる', !/^9-/.test(ed) && !/11-13/.test(ed) && /15-15:ふつう/.test(ed) && (await B.evalJs(`document.querySelectorAll('#body p.para').length`)) === 1, ed);
 }
+// R8d-6：md に壊れた所（閉じがない・layout が読めない）があれば、画面（右）からの書きかえを止め、帯を出す。左で直すと自動で戻る
+{
+  const mu = ['# 止める', '', '~~~flow 流れ', '受付 -> 確認', '', '## 本文', '大事な文', ''].join('\n');
+  const fu = join(out, 'r8d6_unclosed.md'); writeFileSync(fu, mu);
+  await B.evalJs('window.confirm = () => true');
+  await pick(fu); await waitFor(`document.getElementById('status').textContent.includes('r8d6_unclosed.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const T = () => B.evalJs('DocVisualizer.text()');
+  const st = () => B.evalJs(`({ bar: !document.getElementById('lockbar').hidden && document.getElementById('lockbar').textContent, add: !!document.querySelector('#dg0 .add-box') && getComputedStyle(document.querySelector('#dg0 .add-box')).display !== 'none' })`);
+  const s1 = await st();
+  // 矢印キーで動かす・2回押して名前を直す、のどちらも書かない
+  await B.evalJs(`document.querySelector('#dg0 .item[aria-label="受付"]').focus()`); await keyPress('ArrowRight', 'ArrowRight', 39); await sleep(400);
+  const t1 = await T();
+  const r = await B.evalJs(`(() => { const b = document.querySelector('#dg0 .item[aria-label="確認"] .box').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
+  for (const c of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: c });
+  await sleep(300); const inp = await B.evalJs(`!!document.querySelector('input.rename')`);
+  ok('壊れた md：閉じのない図があると帯が出て、＋ 箱が消え、矢印キー・2回押しでも md を書かない', /閉じがない/.test(s1.bar) && !s1.add && t1 === mu && !inp, JSON.stringify({ s1, inp }));
+  // 左で閉じを足すと、自動で戻る。左の打ちかけは、右を押すと先に入る
+  await keyPress('Escape', 'Escape', 27);
+  await clickAt('#editMd'); await sleep(300);
+  await B.evalJs(`(() => { const ta = document.getElementById('src'), i = ta.value.indexOf('\\n\\n## 本文'); ta.setSelectionRange(i, i); })()`);
+  await B.send('Input.insertText', { text: '\n~~~' }); await sleep(900);
+  const s2 = await st();
+  await B.evalJs(`(() => { const ta = document.getElementById('src'), i = ta.value.lastIndexOf('\\n~~~'); ta.setSelectionRange(i, i); })()`);
+  await B.send('Input.insertText', { text: '\n確認 -> 完了' });
+  await clickAt('#dg0 .add-box'); await sleep(300);
+  const stale = await B.evalJs(`({ inp: !!document.querySelector('input.rename'), toast: document.getElementById('toast').textContent, done: DocVisualizer.text().includes('確認 -> 完了') })`);
+  await clickAt('#dg0 .add-box'); await waitFor(`document.querySelector('input.rename')`, 2000);
+  await B.evalJs(`document.querySelector('input.rename').value = '右の箱'`); await keyPress('Enter', 'Enter', 13); await sleep(400);
+  const t2 = await T();
+  ok('壊れた md：左で閉じを足すと帯が消えて書きかえが戻る。左で打った直後に右を押すと、左の分を先に入れて「もう一度押して」と知らせ（古い絵の押しは使わない）、次の押しで足す', !s2.bar && s2.add && !stale.inp && stale.done && /もう一度/.test(stale.toast) && t2 === mu.replace('受付 -> 確認\n', '受付 -> 確認\n確認 -> 完了\n右の箱\n~~~\n'), JSON.stringify({ s2, stale, t2: t2.split('\n').slice(2, 8) }));
+  await clickAt('#editMd'); await sleep(300);
+  // 読めない layout も止める（書くと読めない layout が上書きされて消えるため）
+  const mlb = ['# 配置', '', '~~~flow 流れ', 'A -> B', '~~~', '', '~~~layout', '{"v":1,"diagrams":[ {こわれた', '~~~', ''].join('\n');
+  const fl2 = join(out, 'r8d6_layout.md'); writeFileSync(fl2, mlb);
+  await pick(fl2); await waitFor(`document.getElementById('status').textContent.includes('r8d6_layout.md')`);
+  await B.evalJs(`document.querySelector('#dg0 .item[aria-label="A"]').focus()`); await keyPress('ArrowRight', 'ArrowRight', 39); await sleep(400);
+  const s3 = await st();
+  ok('壊れた md：読めない layout があると止め、矢印キーで動かしても layout を上書きしない', /layout/.test(s3.bar) && (await T()) === mlb, JSON.stringify(s3));
+  if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R8d-3：md を直接直す（左右の画面）と、新しい md
 {
   const ms = ['# 左右', '', '~~~flow 流れ', '受付 -> 確認', '~~~', ''].join('\r\n');   // CRLF の md でも、改行はそのまま

@@ -59,9 +59,9 @@
     try { doc = P.parseDoc(text); } catch (e) { showError('読みとりの途中で止まりました：' + e.message + '。画面は前のままです。'); return; }
     if (decodeWarn) doc.warnings.unshift({ line: 0, msg: decodeWarn, kind: 'fix' });
     showError('');
-    state.doc = doc; state.text = String(text); state.undo = []; state.redo = []; state.fileName = fileName; state.meta = meta; state.sel = null;
+    state.doc = doc; state.text = String(text); state.undo = []; state.redo = [];  state.fileName = fileName; state.meta = meta; state.sel = null;
     src = src || {}; state.key = src.key || null; state.orig = src.orig || null; state.handle = src.handle || null; state.sample = !!src.sample; state.fresh = !!src.fresh; state.saved = state.text;
-    updateDirty(); syncSrc(true);
+    updateDirty(); syncSrc(true); updateLock();
     closePanel();
     render();
     window.scrollTo(0, 0);
@@ -131,7 +131,7 @@
     var v = srcEol($('src').value);
     if (v === state.text) return;
     var now = Date.now();
-    applyText(v, true, now - srcLast < 3000);   // 続けて打った分は、戻す1回にまとめる
+    applyText(v, true, now - srcLast < 3000, true);   // 続けて打った分は、戻す1回にまとめる
     srcLast = now;
   }
   function placeSrc() { var b = document.querySelector('header.bar').getBoundingClientRect(); $('srcPane').style.top = Math.max(0, Math.round(b.bottom)) + 'px'; }
@@ -144,6 +144,13 @@
   $('editMd').addEventListener('click', function () { setSplit($('srcPane').hidden); });
   $('src').addEventListener('input', function () { clearTimeout(srcTimer); srcTimer = setTimeout(applySrc, 500); });
   $('src').addEventListener('blur', applySrc);
+  // 左で打った分がまだ右に入っていないうちに右を押したら、先に入れる（古い md に右から書かないように）
+  // 右の絵はまだ古いので、その押しは使わずに知らせる（押した物は描き直しで作り直される）
+  document.addEventListener('pointerdown', function (e) {
+    if (!srcTimer || (e.target.closest && e.target.closest('#srcPane'))) return;
+    applySrc(); e.stopPropagation();
+    toast('左の直しを右に入れました。もう一度押してください', 2500);
+  }, true);
   window.addEventListener('resize', function () { if (!$('srcPane').hidden) placeSrc(); });
   $('newMd').addEventListener('click', function () {
     if (!leaveOk()) return;
@@ -224,8 +231,18 @@
   }
 
   // ---- 配置を変える（R8a）：正本は md の文字だけ。書きかえ → 読み直し → 変わった図だけ描き直す ----
-  function applyText(text, pushUndo, merge) {
+  // 画面（右）からの書きかえを止める理由。md の閉じがない・layout が読めないときは、書くと md を壊すので止める（左で直すと戻る）
+  function lockReason() { var u = state.doc && state.doc.unsafe; return u && u.length ? u.join('・') : ''; }
+  function updateLock() {
+    var r = lockReason();
+    document.body.classList.toggle('locked', !!r);
+    $('lockbar').hidden = !r;
+    $('lockbar').textContent = r ? '画面からの書きかえを止めています（' + r + '）。md を直すと、自動で戻ります。' : '';
+  }
+  function applyText(text, pushUndo, merge, fromSrc) {
     var doc;
+    // 関所：右からの書きかえは、今の md に壊れた所があれば書かない（戻す・やり直す・左の文字欄からは通す）
+    if (pushUndo && !fromSrc && lockReason()) { showError('書きかえませんでした。' + $('lockbar').textContent); render(); return false; }
     try { doc = P.parseDoc(text); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return false; }
     var old = state.doc;
     if (pushUndo && !(merge && state.undo.length)) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); }
@@ -233,6 +250,7 @@
     var oldText = state.text;
     state.text = text; state.doc = doc;
     updateDirty(); syncSrc(false);
+    updateLock();
     // layout の区画のほかが変わった（名前・印・行を直した）ときは、全部を描き直す
     var bare = function (t, dc) { try { return P.writeLayout(t, dc, null); } catch (e) { return t; } };
     if (doc.diagrams.length !== old.diagrams.length || bare(text, doc) !== bare(oldText, old)) { closePanel(); render(); return true; }
@@ -338,6 +356,7 @@
   // ---- 題名・カードを直す（R8d）：2回押すか「＋」→ 入力欄。Enter で決める、Esc でやめる。空にするとカードを消す ----
   var CARD_NAME = { summary: 'ひとことで', conclusion: '結論', todo: 'すること', secret: '社外秘' };
   function editInline(el, cur, label, commit) {
+    if (lockReason()) { toast($('lockbar').textContent, 4000); return; }
     var b = el.getBoundingClientRect(), inp = document.createElement('input');
     inp.className = 'rename'; inp.value = cur; inp.setAttribute('aria-label', label);
     inp.style.left = Math.round(b.left) + 'px'; inp.style.top = Math.round(b.top + Math.min(b.height, 60) / 2 - 18) + 'px'; inp.style.width = Math.round(Math.max(Math.min(b.width, 640), 240)) + 'px';
@@ -349,6 +368,7 @@
   }
   // 何行もの文を直す（本文の段落）。Ctrl+Enter か外を押すと決まり、Esc でやめる
   function editArea(el, cur, label, commit) {
+    if (lockReason()) { toast($('lockbar').textContent, 4000); return; }
     var b = el.getBoundingClientRect(), ta = document.createElement('textarea');
     ta.className = 'rename area'; ta.value = cur; ta.setAttribute('aria-label', label + '（Ctrl+Enter で決める・Esc でやめる）');
     ta.style.left = Math.round(b.left) + 'px'; ta.style.top = Math.round(b.top) + 'px'; ta.style.width = Math.round(Math.max(b.width, 320)) + 'px'; ta.style.height = Math.round(Math.min(Math.max(b.height + 40, 90), 360)) + 'px';
@@ -387,6 +407,7 @@
   // ---- 名前を直す（R8b-3）：箱を2回押すか、ポップアップの「名前を直す」。Enter で決める、Esc でやめる ----
   // fresh：「＋ 箱」で足したばかり。名前を決めると足したのと1つの「戻す」にまとめ、やめると箱を足す前に戻す
   function startRename(d, i, fresh) {
+    if (lockReason()) { toast($('lockbar').textContent, 4000); return; }
     var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]'), it = state.doc.diagrams[d].items[i];
     if (!g || !it) return;
     closePanel();
@@ -456,7 +477,7 @@
     return hit;
   }
   function startDrag2(e) {
-    if (e.button !== 0 || present.on || !state.doc) return;
+    if (e.button !== 0 || present.on || !state.doc || lockReason()) return;   // 止めている間は動かさない（押すと説明は出る）
     var svg = e.target.closest && e.target.closest('.svg-wrap svg'), box = svg && svg.closest('.diagram-box');
     if (!svg) return;
     var i = +box.id.slice(2), d = state.doc.diagrams[i];

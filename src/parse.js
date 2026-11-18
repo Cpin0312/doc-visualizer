@@ -498,7 +498,7 @@
           inner.push(lines[j]);
         }
         var info = fenceInfo(fm[2]);
-        if (!closed) warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、最後までを中身とみなした', 'fix');
+        if (!closed) { warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、最後までを中身とみなした', 'fix'); (doc.unsafe = doc.unsafe || []).push(ln.no + ' 行目の「' + fm[1] + '」に閉じがない'); }
         if (nk(info.word) === 'layout') {
           if (doc.layoutAt) warn(ln.no, '配置（layout）が2つ以上あるので、はじめの1つだけを使った', 'skip');
           else { doc.layoutAt = { start: ln.no, end: closed ? lines[j].no : null }; doc.layoutSrc = inner.map(function (x) { return x.text; }).join('\n'); }
@@ -624,8 +624,8 @@
   function readLayout(doc, warn) {
     if (!doc.layoutAt) return;
     var no = doc.layoutAt.start, obj;
-    try { obj = JSON.parse(doc.layoutSrc || '{}'); } catch (e) { warn(no, '配置（layout）が JSON として読めないので、自動の並べ方で出した（動かすと、正しい形で書き直す）', 'fix'); doc.layoutBroken = true; return; }
-    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.diagrams)) { warn(no, '配置（layout）の形がちがうので、自動の並べ方で出した（{"v":1,"diagrams":[…]} の形）', 'fix'); doc.layoutBroken = true; return; }
+    try { obj = JSON.parse(doc.layoutSrc || '{}'); } catch (e) { warn(no, '配置（layout）が JSON として読めないので、自動の並べ方で出した（直すまで、画面からの書きかえは止める）', 'fix'); doc.layoutBroken = true; (doc.unsafe = doc.unsafe || []).push(no + ' 行目の配置（layout）が読めない'); return; }
+    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.diagrams)) { warn(no, '配置（layout）の形がちがうので、自動の並べ方で出した（{"v":1,"diagrams":[…]} の形。直すまで、画面からの書きかえは止める）', 'fix'); doc.layoutBroken = true; (doc.unsafe = doc.unsafe || []).push(no + ' 行目の配置（layout）の形がちがう'); return; }
     doc.layout = obj;
     var used = [], bad = false;
     doc.diagrams.forEach(function (d) {
