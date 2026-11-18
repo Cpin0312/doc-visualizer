@@ -72,7 +72,15 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 }
 
 // ---------- 2) ブラウザで本物の道 ----------
-const B = await launch();
+let B;
+try { B = await launch(); } catch (e) {
+  // ブラウザがないときは落ちずに知らせて止まる（node の読みとりの結果は残す）
+  console.log('\n× ブラウザの試験を始められない：' + e.message);
+  const bad = results.filter(r => !r.ok);
+  writeFileSync(join(out, 'result.json'), JSON.stringify({ when: new Date().toISOString(), platform: process.platform, browser: null, browserError: e.message, pass: results.length - bad.length, fail: bad.length, results }, null, 2));
+  console.log(`読みとり ${results.length - bad.length} ○ / ${bad.length} ×。ブラウザの試験は未確認（終わりの番号 2）`);
+  process.exit(2);
+}
 console.log('ブラウザ：' + B.exe);
 const net = [], errors = [];
 B.on(m => {

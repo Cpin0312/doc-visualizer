@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export function findBrowser() {
-  if (process.env.CHROME_PATH) {
-    if (existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
-    throw new Error('CHROME_PATH の場所にブラウザがない：' + process.env.CHROME_PATH);
+  for (const k of ['CHROME_PATH', 'EDGE_PATH']) {
+    if (!process.env[k]) continue;
+    if (existsSync(process.env[k])) return process.env[k];
+    throw new Error(k + ' の場所にブラウザがない：' + process.env[k]);
   }
   const env = process.env, c = [];
   if (process.platform === 'win32') {
@@ -23,7 +24,7 @@ export function findBrowser() {
     c.push('/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge', '/snap/bin/chromium');
   }
   const hit = c.find(p => existsSync(p));
-  if (!hit) throw new Error('Chrome も Edge も見つからない。CHROME_PATH に場所を入れてください。探した場所：\n' + c.join('\n'));
+  if (!hit) throw new Error('Chrome も Edge も見つからない。CHROME_PATH か EDGE_PATH に場所を入れてください。探した場所：\n' + c.join('\n'));
   return hit;
 }
 
