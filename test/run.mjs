@@ -355,6 +355,8 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   const p2d = await waitFor(`!document.getElementById('present').hidden && ({ svg: document.querySelectorAll('#pStage svg').length, sel: document.querySelectorAll('#pStage .item.sel').length, dim: document.querySelectorAll('#pStage .item.dim').length })`);
   ok('発表（2D）：その箱を目立たせ、ほかを薄くする', p2d && p2d.svg === 1 && p2d.sel === 1 && p2d.dim >= 1, JSON.stringify(p2d));
   // R2 の直し：発表に社外秘の印。2D の図は枠いっぱい（文字は 11px 以上）
+  // 下の画面のスクロールバーが消えると、枠は次の描画で広がり ResizeObserver が合わせ直す。それを待ってから測る
+  await sleep(250);
   const pf = await B.evalJs(`(() => { const st = document.getElementById('pStage'), s = st.querySelector('svg'), b = s.getBoundingClientRect(), k = b.width / +s.getAttribute('data-w');
     const mf = Math.min(...Array.from(s.querySelectorAll('text')).map(t => +t.getAttribute('font-size')));
     return { secret: document.getElementById('pSecret').hidden ? '' : document.getElementById('pSecret').textContent, w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32, minPx: +(mf * k).toFixed(1) }; })()`);
