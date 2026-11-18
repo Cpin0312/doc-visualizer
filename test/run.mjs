@@ -126,6 +126,8 @@ B.on(m => {
   if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push('console.error：' + JSON.stringify(m.params.args).slice(0, 300));
   if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') errors.push('ログ：' + m.params.entry.text);
 });
+// 頭なしのブラウザは、ページの「フォーカス」を落とすことがある（入力欄が勝手に閉じる）。人が使う窓と同じく、いつもフォーカスがある扱いにする
+await B.send('Emulation.setFocusEmulationEnabled', { enabled: true });
 await B.send('Network.enable'); await B.send('Runtime.enable'); await B.send('Log.enable'); await B.send('Page.enable'); await B.send('DOM.enable');
 await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: DSF, mobile: false });
 const hi = process.argv.indexOf('--html');
@@ -141,9 +143,14 @@ async function keyPress(k, code, vk) {
   await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
 }
 async function pick(path) {
-  const { root: doc } = await B.send('DOM.getDocument', { depth: 1 });
-  const { nodeId } = await B.send('DOM.querySelector', { nodeId: doc.nodeId, selector: '#file' });
-  await B.send('DOM.setFileInputFiles', { nodeId, files: [path] });
+  // 画面が作り直された直後は node id が古くなることがあるので、取り直して3回まで
+  for (let k = 0; ; k++) {
+    try {
+      const { root: doc } = await B.send('DOM.getDocument', { depth: 1 });
+      const { nodeId } = await B.send('DOM.querySelector', { nodeId: doc.nodeId, selector: '#file' });
+      return await B.send('DOM.setFileInputFiles', { nodeId, files: [path] });
+    } catch (e) { if (k >= 2 || !/Could not find node/.test(e.message)) throw e; await sleep(200); }
+  }
 }
 async function waitFor(expr, ms = 5000) {
   for (let t = 0; t < ms; t += 100) { const v = await B.evalJs(expr).catch(() => null); if (v) return v; await sleep(100); }
@@ -959,6 +966,14 @@ async function savePptx(T, md, tag) {
   const tmd = '~~~tree 組織\n- 本部 !重要\n  - 営業部\n    - 一課\n  - 経理部\n- 支店\n~~~\n', td = P.parseDoc(tmd), tid = l => td.diagrams[0].items.find(i => i.label === l).id;
   const tr1 = P.renameItem(tmd, td, 0, tid('営業部'), '販売部'), tr2 = P.removeItem(tmd, td, 0, tid('営業部')), tr3 = P.toggleMark(tmd, td, 0, tid('一課'), 'green'), tr4 = P.addBox(tmd, td, 0).text;
   ok('木：名前を直す・印・足す（「- 新しい箱」）・消す（下の箱も一緒に。残りの親子は変わらない）。線は引けない', tr1.split('\n')[2] === '  - 販売部' && tr2 === '~~~tree 組織\n- 本部 !重要\n  - 経理部\n- 支店\n~~~\n' && tr3.split('\n')[3] === '    - 一課 +完了' && tr4.split('\n')[6] === '- 新しい箱' && P.parseDoc(tr2).diagrams[0].items.find(i => i.label === '経理部').parent === 0 && (() => { try { P.addEdge(tmd, td, 0, 0, 1); return false; } catch (e) { return true; } })(), JSON.stringify([tr1.split('\n')[2], tr2]));
+  {
+    let ml = '~~~flow\nA -> B -> C\n~~~\n'; const dl0 = P.parseDoc(ml);
+    ml = P.writeLayout(ml, dl0, { v: 1, diagrams: [{ type: 'flow', name: '', parts: { a: { x: 10, y: 10 }, b: { x: 50, y: 60, color: 'red' }, 'a>b': { bend: [3, 4] }, 'b>c': { dash: true } } }] });
+    const dl = P.parseDoc(ml), lay = t => JSON.stringify(P.parseDoc(t).diagrams[0].layout || null);
+    const r1 = P.removeItem(ml, dl, 0, 1), r2 = P.removeEdge(ml, dl, 0, dl.diagrams[0].edges[1].id), r3 = P.renameItem(ml, dl, 0, 1, 'Bx');
+    const back = P.addBox(r1, P.parseDoc(r1), 0);   // 消したあとに同じ名前を足しても、前の場所は残っていない
+    ok('消す・名前を直す：箱を消すと、その箱とつながる線の置き場所も layout から消える。線を消すとその線の分だけ。名前を直すと置き場所は新しい名前へ移る', lay(r1) === '{"a":{"x":10,"y":10}}' && lay(r2) === '{"a":{"x":10,"y":10},"b":{"x":50,"y":60,"color":"red"},"a>b":{"bend":[3,4]}}' && lay(r3) === '{"a":{"x":10,"y":10},"bx":{"x":50,"y":60,"color":"red"},"a>bx":{"bend":[3,4]},"bx>c":{"dash":true}}' && !/"b"/.test(lay(P.renameItem(back.text, P.parseDoc(back.text), 0, 2, 'B'))), JSON.stringify([lay(r1), lay(r3)]));
+  }
   const crlf = '\uFEFF~~~flow\r\nA -> B -> C\r\n~~~\r\n', dc = P.parseDoc(crlf);
   ok('消す：BOM と CRLF をそのまま残す', P.removeItem(crlf, dc, 0, 1) === '\uFEFF~~~flow\r\nA\r\nC\r\n~~~\r\n');
 }
@@ -978,8 +993,23 @@ async function savePptx(T, md, tag) {
   await B.evalJs(`document.querySelector('input.rename').value = '発送'`); await keyPress('Enter', 'Enter', 13); await sleep(400);
   let t = await T();
   ok('＋ 箱：図の終わりに1行足して、すぐ名前を入れられる（Enter で決まる）', ri === '新しい箱' && t.split('\n')[5] === '[営業] 発送' && t.split('\n').length === 8 && !!(await B.evalJs(`!!document.querySelector('${box('発送')}')`)), JSON.stringify(t.split('\n')[5]));
-  await undo(); await undo();
-  ok('＋ 箱：Ctrl+Z 2回（名前・足す）で md が元どおり', (await T()) === mdl);
+  await undo();
+  ok('＋ 箱：足して名前を決めたのは、Ctrl+Z の1回で md が元どおり', (await T()) === mdl);
+  await clickAt('#dg0 .add-box'); await waitFor(`document.querySelector('input.rename')`, 2000); await keyPress('Escape', 'Escape', 27); await sleep(400);
+  ok('＋ 箱：名前の入力を Esc でやめると、箱は残らない（md は元どおり、戻すも増えない）', (await T()) === mdl && !(await B.evalJs(`!!document.querySelector('#dg0 .item[aria-label="新しい箱"]')`)) && (await B.evalJs('DocVisualizer.canUndo()[0]')) === 0, String(await B.evalJs('DocVisualizer.canUndo()')));
+  // 日本語の入力：変換を確定する Enter（keyCode 229）では決まらない。そのあとの Enter で決まる
+  await clickAt('#dg0 .add-box'); await waitFor(`document.querySelector('input.rename')`, 2000);
+  await B.evalJs(`document.querySelector('input.rename').value = ''`);
+  await B.send('Input.imeSetComposition', { text: 'はっそう', selectionStart: 4, selectionEnd: 4 });
+  await B.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229, nativeVirtualKeyCode: 229 });
+  await B.send('Input.insertText', { text: '発送' });
+  await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await sleep(200);
+  const imeOpen = await B.evalJs(`!!document.querySelector('input.rename') && document.querySelector('input.rename').value`);
+  await keyPress('Enter', 'Enter', 13); await sleep(400);
+  const imeT = await T();
+  ok('日本語の入力：変換を確定する Enter では名前が決まらず、もう一度の Enter で決まる', typeof imeOpen === 'string' && imeOpen.endsWith('発送') && imeT.split('\n')[5] === '[営業] ' + imeOpen, JSON.stringify({ imeOpen, l: imeT.split('\n')[5] }));
+  await undo();
   // 印
   await open('確認'); await clickAt('#panelBody button[data-act=mark][data-v=red]'); await sleep(400); t = await T();
   const pressed = await B.evalJs(`(document.querySelector('#panelBody button[data-act=mark][data-v=red]') || {}).getAttribute && document.querySelector('#panelBody button[data-act=mark][data-v=red]').getAttribute('aria-pressed')`);
@@ -1029,11 +1059,12 @@ async function savePptx(T, md, tag) {
   if (p0 && p1) {
     await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p0.x, y: p0.y, button: 'left', buttons: 1, clickCount: 1 });
     for (let k = 1; k <= 10; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p0.x + (p1.x - p0.x) * k / 10, y: p0.y + (p1.y - p0.y) * k / 10 + 6, button: 'left', buttons: 1 });
+    await sleep(100); var lit3 = await B.evalJs('DocVisualizer.drop3d(0)');
     await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p1.x, y: p1.y + 6, button: 'left', buttons: 0, clickCount: 1 }); await sleep(600);
   }
   t = await T();
   const d3 = P.parseDoc(t).diagrams[0];
-  ok('帯をまたぐ（3D）：別の帯の上へドラッグすると、md の担当が変わる。Ctrl+Z の1回で元どおり', !!p0 && d3.items.find(i => i.label === '確認').lane === '経理' && d3.items.find(i => i.label === '受付').lane === '営業', JSON.stringify({ p0, p1, l: t.split('\n')[3] }));
+  ok('帯をまたぐ（3D）：別の帯の上へドラッグすると、その帯が光り（2D と同じ色）、md の担当が変わる', !!p0 && !!lit3 && d3.items.find(i => i.label === '確認').lane === '経理' && d3.items.find(i => i.label === '受付').lane === '営業', JSON.stringify({ p0, p1, lit3: typeof lit3 !== 'undefined' ? lit3 : null, l: t.split('\n')[3] }));
   await undo();
   ok('帯をまたぐ（3D）：Ctrl+Z の1回で md が元どおり', (await T()) === mdl);
   await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);

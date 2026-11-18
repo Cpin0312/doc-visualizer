@@ -678,7 +678,7 @@
     if (!obj || d.layoutIndex == null || !obj.diagrams[d.layoutIndex]) return obj;
     var parts = obj.diagrams[d.layoutIndex].parts || {}, out = {};
     Object.keys(parts).forEach(function (k) {
-      var nk2 = k.split('>').map(function (x) { var m = /^(.*?)(#\d+)?$/.exec(x); return m[1] === oldPk ? newPk + (m[2] || '') : x; }).join('>');
+      var nk2 = k.split('>').map(function (x) { var m = /^(.*?)(#\d+)?$/.exec(x); return nk(m[1]) === oldPk ? newPk + (m[2] || '') : x; }).join('>');
       out[nk2] = parts[k];
     });
     obj.diagrams[d.layoutIndex].parts = out;
@@ -809,6 +809,15 @@
     replaceSpans(t, edits);
     return joinText(t);
   }
+  // layout から、あう部品（pk）を消して書き直す。何も消えなければ text のまま
+  function dropLayoutParts(text, doc, d, hit) {
+    if (d.layoutIndex == null || !doc.layout || !doc.layout.diagrams[d.layoutIndex]) return text;
+    var obj = JSON.parse(JSON.stringify(doc.layout)), L = obj.diagrams[d.layoutIndex], parts = L.parts || {}, gone = false;
+    Object.keys(parts).forEach(function (k) { if (hit(k)) { delete parts[k]; gone = true; } });
+    if (!gone) return text;
+    if (!Object.keys(parts).length) obj.diagrams.splice(d.layoutIndex, 1);
+    return writeLayout(text, parseDoc(text), obj);
+  }
   function subtree(d, id) {
     var out = [id];
     for (var k = 0; k < out.length; k++) d.items.forEach(function (x) { if (x.parent === out[k] && out.indexOf(x.id) < 0) out.push(x.id); });
@@ -820,7 +829,9 @@
     if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
     var plan = {}, ids = d.type === 'tree' ? subtree(d, id) : [id];   // 木は、下の箱も一緒に消す（残すと、ちがう親の下に入るため）
     ids.forEach(function (k) { (d.items[k].spans || []).forEach(function (sp) { if (!sp.bad) (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); }); });
-    return cutLines(text, d, plan);
+    var keys = ids.map(function (k) { return d.items[k].key; });
+    // その箱の置き場所・形と、その箱につながる線の置き場所も消す（残すと、同じ名前を足したとき前の場所に出る）
+    return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').some(function (x) { return keys.indexOf(nk(x.replace(/#\d+$/, ''))) >= 0; }); });
   }
   // 線を消す（その線が書かれた所すべて）
   function removeEdge(text, doc, di, eid) {
@@ -828,7 +839,7 @@
     if (!e || !e.occ || !e.occ.length) throw new Error('この線の場所が md の中で分からない');
     var plan = {};
     e.occ.forEach(function (o) { (plan[o.line] = plan[o.line] || { brk: [] }).brk.push(o.seg); });
-    return cutLines(text, d, plan);
+    return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').map(function (x) { return nk(x); }).join('>') === e.pk; });
   }
   // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
   function writeLayout(text, doc, obj) {

@@ -259,11 +259,11 @@
       if (act === 'rename') { startRename(sd, si); return; }
       if (act === 'del') { deleteItem(sd, si); return; }
       if (act === 'link') { startLink(sd, si); return; }
-      if (act === 'mark' && editMd(function () { return P.toggleMark(state.text, state.doc, sd, si, av); }, '印を変え', '印を変えました')) {
+      if (act === 'mark' && editMd(function () { return P.toggleMark(state.text, state.doc, sd, si, av); }, '印を変えられ', '印を変えました')) {
         openItem(sd, si); var mb = $('panelBody').querySelector('button[data-act=mark][data-v="' + av + '"]'); if (mb) mb.focus();
         return;
       }
-      if (act === 'lane' && editMd(function () { return P.setLane(state.text, state.doc, sd, si, av); }, '担当を変え', '「' + sit.label + '」の担当を「' + av + '」にしました')) { openItem(sd, si); return; }
+      if (act === 'lane' && editMd(function () { return P.setLane(state.text, state.doc, sd, si, av); }, '担当を変えられ', '「' + sit.label + '」の担当を「' + av + '」にしました')) { openItem(sd, si); return; }
       return;
     }
     if (ab && state.selEdge && ab.getAttribute('data-act') === 'del-edge') { deleteEdge(state.selEdge.d, state.selEdge.pk); return; }
@@ -294,7 +294,8 @@
   });
 
   // ---- 名前を直す（R8b-3）：箱を2回押すか、ポップアップの「名前を直す」。Enter で決める、Esc でやめる ----
-  function startRename(d, i) {
+  // fresh：「＋ 箱」で足したばかり。名前を決めると足したのと1つの「戻す」にまとめ、やめると箱を足す前に戻す
+  function startRename(d, i, fresh) {
     var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]'), it = state.doc.diagrams[d].items[i];
     if (!g || !it) return;
     closePanel();
@@ -306,15 +307,16 @@
     function end(ok) {
       if (done) return; done = true;
       var v = inp.value; inp.remove();
+      if (fresh && (!ok || !P.safeName(v))) { var before = state.undo.pop(); if (before != null) applyText(before, false); toast('箱を足すのをやめました', 2000); return; }
       if (!ok || !P.safeName(v) || v === it.label) { g.focus && g.focus(); return; }
       var nn = P.safeName(v), same = state.doc.diagrams[d].items.filter(function (x) { return x.id !== i && x.key === nn.normalize('NFKC').replace(/\s+/g, '').toLowerCase(); })[0];
       if (same && !window.confirm('「' + same.label + '」と同じ名前なので、2つの箱が1つにまとまります。よいですか？')) return;
       var text;
       try { text = P.renameItem(state.text, state.doc, d, i, v); } catch (e) { showError('名前を直せませんでした：' + e.message + '。md は前のままです。'); return; }
-      applyText(text, true);
+      applyText(text, true, !!fresh);
       toast('名前を「' + nn + '」に直しました（Ctrl+Z で戻せます）', 2500);
     }
-    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
     inp.addEventListener('blur', function () { end(false); });
   }
   $('diagrams').addEventListener('dblclick', function (e) {
@@ -426,7 +428,7 @@
     var d = state.doc.diagrams[i], rs = $('dg' + i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child'), r = rs[k];
     if (d.type !== 'lanes' || !r || laneHas(r, band)) return false;
     var it = d.items.filter(function (x) { return x.pk === pk; })[0], to = d.lanes[k];
-    if (!it || !editMd(function () { return P.setLane(state.text, state.doc, i, it.id, to); }, '担当を変え', '「' + it.label + '」の担当を「' + to + '」にしました')) return false;
+    if (!it || !editMd(function () { return P.setLane(state.text, state.doc, i, it.id, to); }, '担当を変えられ', '「' + it.label + '」の担当を「' + to + '」にしました')) return false;
     var y0 = +r.getAttribute('y'), y1 = y0 + +r.getAttribute('height');
     setLayout(i, pk, { x: x, y: Math.round(Math.max(y0, Math.min(cy - h / 2, y1 - h))) }, true);
     return true;
@@ -577,7 +579,7 @@
   // md を書きかえて描き直す。失敗したら md は前のまま
   function editMd(fn, what, done) {
     var text;
-    try { text = fn(); } catch (e) { showError(what + 'できませんでした：' + e.message + '。md は前のままです。'); return false; }
+    try { text = fn(); } catch (e) { showError(what + 'ませんでした：' + e.message + '。md は前のままです。'); return false; }
     if (text === state.text) return false;
     applyText(text, true);
     toast(done + '（Ctrl+Z で戻せます）', 2500);
@@ -587,13 +589,13 @@
     var diag = state.doc.diagrams[d], it = diag.items[i], under = diag.type === 'tree' && it ? P.subtree(diag, i).length - 1 : 0;
     if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + '（Ctrl+Z で戻せます）。よいですか？')) return;
     closePanel();
-    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消', '箱「' + it.label + '」を消しました');
+    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました');
   }
   function deleteEdge(d, pk) {
     var diag = state.doc.diagrams[d], e = diag.edges.filter(function (x) { return x.pk === pk; })[0];
     if (!e || !window.confirm('線「' + diag.items[e.from].label + ' → ' + diag.items[e.to].label + '」を消します。よいですか？')) return;
     closePanel();
-    editMd(function () { return P.removeEdge(state.text, state.doc, d, e.id); }, '線を消', '線を消しました');
+    editMd(function () { return P.removeEdge(state.text, state.doc, d, e.id); }, '線を消せ', '線を消しました');
   }
   // 線を引く：次に押した箱へつなぐ。Esc でやめる
   function startLink(d, i) {
@@ -697,6 +699,15 @@
           onPick: function (it, e) { if (it == null) closePanel(); else press(i, it, { x: e.clientX, y: e.clientY, w: 0, h: 0 }, false); },
           // 箱を地面の上で動かす（動かせる図だけ）。離したら md の配置に書く
           canMove: P.MOVABLE[d.type] ? function () { return true; } : null,
+          // lanes で別の帯の上にいるとき、その帯（SVG の座標）を返す。3D が光らせる
+          dropRect: d.type === 'lanes' ? function (it, dx, dy) {
+            var gi = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"]'), g = gi && gi.querySelector('.box'), bb = g && g.getBBox();
+            var band = gi && (gi.getAttribute('data-band') || '').split(' ').map(Number);
+            if (!bb || !band || band.length !== 2) return null;
+            var cy = bb.y + bb.height / 2 + dy, rs = $('dg' + i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child');
+            for (var q = 0; q < rs.length; q++) { var ry = +rs[q].getAttribute('y'), rh = +rs[q].getAttribute('height'); if (cy >= ry && cy < ry + rh) return laneHas(rs[q], band) ? null : { x: +rs[q].getAttribute('x'), y: ry, w: +rs[q].getAttribute('width'), h: rh }; }
+            return null;
+          } : null,
           onMove: function (it, dx, dy) {
             var gi = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"]'), g = gi && gi.querySelector('.box'), bb = g && g.getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
             if (!bb) return;
@@ -1072,7 +1083,7 @@
       try { r = P.addBox(state.text, state.doc, nd); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
       applyText(r.text, true);
       var ni = state.doc.diagrams[nd].items.filter(function (x) { return x.label === r.name; })[0];
-      if (ni) startRename(nd, ni.id);   // すぐ名前を入れられるように
+      if (ni) startRename(nd, ni.id, true);   // すぐ名前を入れられるように
       return;
     }
     var g = e.target.closest && e.target.closest('.item');
@@ -1151,6 +1162,7 @@
     text3d: function (d) { var sc = state.scenes[d], c = sc && sc.canvas; return sc ? +(sc.textScale(c.clientWidth, c.clientHeight) * minFont($('dg' + d).querySelector('.svg-wrap svg').outerHTML)).toFixed(1) : null; },
     mode: function () { return state.mode; },
     text: function () { return state.text; },
+    drop3d: function (d) { var sc = state.scenes[d]; return sc && sc.dropShown ? sc.dropShown() : null; },
     canUndo: function () { return [state.undo.length, state.redo.length]; },
     dirty: isDirty
   };

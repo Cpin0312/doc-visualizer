@@ -424,6 +424,7 @@
           if (!drag.moved) return;
           var g1 = ground0(e, el);
           if (g1) { drag.delta = [g1[0] - drag.g0[0], g1[1] - drag.g0[1]]; items[drag.item].group.position.copy(P(drag.delta[0], drag.delta[1], 0).sub(P(0, 0, 0))); }
+          if (drag.delta && opts.dropRect) showDrop(opts.dropRect(drag.item, drag.delta[0], drag.delta[1]));
           if (redraw) redraw();
           return;
         }
@@ -433,12 +434,32 @@
       });
       el.addEventListener('pointerup', function (e) {
         var d = drag; drag = null;
+        showDrop(null);
         if (d && d.item != null && d.moved) { if (d.delta && opts.onMove) opts.onMove(d.item, d.delta[0], d.delta[1]); else items[d.item].group.position.set(0, 0, 0); return; }
         if (d && !d.moved && opts.onPick) opts.onPick(pick(e, el), e);   // 何もない所なら null（窓の外を押した）
       });
       el.addEventListener('dblclick', function () { view.dAz = 0; view.dEl = 0; if (redraw) redraw(); });
     }
 
+    // 落とす先（別の帯）を板の上に光らせる。2D と同じ色（面 #dbe7ff・縁 #3b6fd8 の点線）
+    var dropMesh = null, dropKey = '';
+    function showDrop(r) {
+      var key = r ? [r.x, r.y, r.w, r.h].join() : '';
+      if (key === dropKey) return;
+      dropKey = key;
+      if (dropMesh) { rootG.remove(dropMesh); dropMesh.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); dropMesh = null; }
+      if (!r) return;
+      var g = new T.Group(), w = r.w * S, h = r.h * S;
+      var face = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ color: 0xdbe7ff, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+      var pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2]].map(function (p) { return new T.Vector3(p[0], p[1], 0.01); });
+      var edge = new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineDashedMaterial({ color: 0x3b6fd8, dashSize: 6 * S, gapSize: 4 * S }));
+      edge.computeLineDistances();
+      g.add(face); g.add(edge);
+      g.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, 0.3));
+      orient(g);
+      rootG.add(g);
+      dropMesh = g;
+    }
     function select(i) {
       items.forEach(function (x) { if (x) x.mats.forEach(function (m) { m.emissive.setHex(0x000000); }); });
       if (i != null && items[i]) items[i].mats.forEach(function (m) { m.emissive.setHex(0x2b5fd0); m.emissiveIntensity = 0.35; });
@@ -466,6 +487,7 @@
       busy: function () { return !!tween; },
       // 配置を変えて作り直すとき、回した向きを残す
       getView: function () { return { dAz: view.dAz, dEl: view.dEl }; },
+      dropShown: function () { return dropKey; },   // 試験用：光らせている帯（なければ ''）
       setView: function (v) { if (v) { view.dAz = v.dAz; view.dEl = v.dEl; } },
       // 全体を見る向きで、図が画面の上で横長・縦長どちらに見えるか（幅÷高さ）。画面の形をこれに合わせると、むだな余白がなくなる
       shape: function () {
