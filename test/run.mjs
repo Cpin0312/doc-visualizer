@@ -228,6 +228,7 @@ async function clickAt(sel) {
   const p = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
   ok('箱を押す → 説明と出どころが横に出る', p && p.includes('台帳に書く') && p.includes('注文の手順（架空）2ページ'), (p || '').replace(/\n/g, ' ').slice(0, 80));
   await shot('click_panel');
+  await keyPress('Escape', 'Escape', 27); await sleep(200);   // 開いた説明が次の箱を隠すことがあるので、閉じてから押す
   await clickAt('#dg0 .item[aria-label="承認"] .box');
   const p2 = await waitFor(`document.getElementById('panelBody').innerText.includes('承認') && document.getElementById('panelBody').innerText`);
   ok('印のある箱：印が説明に出る', p2 && p2.includes('期限'));
@@ -1227,6 +1228,36 @@ async function savePptx(T, md, tag) {
   await clickAt('#hideNotes'); await sleep(300);
   const n3 = await B.evalJs(`document.querySelectorAll('#diagrams .sticky').length`);
   ok('付箋（2D）：箱に付けた付箋は箱の右上、ほかは図の下に出て、図の枠に収まる。「付箋を隠す」で消え、もう一度で戻る', n1.n === 4 && n1.near && n1.inside && n2 === 0 && n3 === 4, JSON.stringify({ n1, n2, n3 }));
+  // R8e-2：画面で貼る・付ける・直す・色・消す。どれも md の付箋の行を書き、Ctrl+Z の1回で元どおり
+  {
+    const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+    const mods = process.platform === 'darwin' ? 4 : 2, ctrlEnter = async () => { for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: mods }); await sleep(400); };
+    const L = () => T().then(t => t.split('\n'));
+    await clickAt('#dg0 .add-note'); await waitFor(`document.querySelector('textarea.rename')`, 2000);
+    await B.evalJs(`document.querySelector('textarea.rename').value = '新しい\\nメモ'`); await ctrlEnter();
+    const a1 = (await L())[8], na = await B.evalJs(`document.querySelectorAll('#dg0 .sticky').length`);
+    await undo();
+    await clickAt('#dg0 .item[aria-label="受付"] .box'); await waitFor(`document.querySelector('#panelBody [data-act=note-add]')`, 2000);
+    await clickAt('#panelBody [data-act=note-add]'); await waitFor(`document.querySelector('textarea.rename')`, 2000);
+    await B.evalJs(`document.querySelector('textarea.rename').value = '受付のメモ'`); await ctrlEnter();
+    const a2 = (await L())[8];
+    await undo();
+    ok('付箋（画面）：「＋ 付箋」で図に、箱のポップアップの「＋ 付箋を付ける」で箱に付けて貼れる（md に1行。改行は \\n）。Ctrl+Z で元どおり', a1 === 'note 新しい\\nメモ @黄' && na === 4 && a2 === 'note 受付 : 受付のメモ @黄' && (await T()) === mt, JSON.stringify([a1, a2, na]));
+    await clickAt('#dg0 .sticky[data-n="0"] .box'); await waitFor(`!document.getElementById('panel').hidden && document.querySelector('#panelBody [data-act=note-color]')`, 2000);
+    await clickAt('#panelBody [data-act=note-color][data-v=green]'); await sleep(400);
+    const c1 = (await L())[4];
+    await undo();
+    const dbl = async sel => { const r = await B.evalJs(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`); for (const c of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: c }); };
+    await dbl('#dg0 .sticky[data-n="0"] .box'); const cur = await waitFor(`document.querySelector('textarea.rename') && document.querySelector('textarea.rename').value`, 2000);
+    await B.evalJs(`document.querySelector('textarea.rename').value = '期限は月末'`); await ctrlEnter();
+    const e1 = (await L())[4];
+    await undo();
+    await clickAt('#dg0 .sticky[data-n="1"] .box'); await waitFor(`document.querySelector('#panelBody [data-act=note-del]')`, 2000);
+    await clickAt('#panelBody [data-act=note-del]'); await sleep(400);
+    const d1 = await T();
+    await undo();
+    ok('付箋（画面）：押すと色・直す・消すが出る。色を変える・2回押して文を直す・消すは、その行だけ変わり、Ctrl+Z で元どおり', c1 === 'note 承認 : 期限を確かめる @緑' && cur === '期限を確かめる' && e1 === 'note 承認 : 期限は月末 @ピンク' && d1 === mt.replace('note 全体の\\nメモ @黄\n', '') && (await T()) === mt, JSON.stringify([c1, cur, e1]));
+  }
   await clickAt('#mode'); await sleep(800);
   const e3 = await B.evalJs('DocVisualizer.mode()');
   if (e3 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }

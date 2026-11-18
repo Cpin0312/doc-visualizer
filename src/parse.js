@@ -996,6 +996,41 @@
     if (at + block.length + (at > 0 ? 1 : 0) >= L.length) L.push('');   // 終わりは改行で
     return joinText(t);
   }
+  // ---- 付箋を書く（R8e）。書いたら読み直して、同じ付箋になるかを確かめる（ならなければ書かない） ----
+  function noteLine(d, n) {
+    var body = String(n.text).replace(/\r\n?/g, '\n').replace(/^\s+|\s+$/g, '').replace(/\n/g, '\\n');
+    if (!body) throw new Error('付箋の文が空');
+    if (!NOTE_WORD[n.color]) throw new Error('知らない色');
+    return 'note ' + (n.to != null ? d.items[n.to].label + ' : ' : '') + body + ' @' + NOTE_WORD[n.color];
+  }
+  function checkNote(text, di, line, want) {
+    var nd = parseDoc(text).diagrams[di], got = nd && (nd.stickies || []).filter(function (x) { return x.line === line; })[0];
+    if (!got || got.text !== want.text.replace(/^\s+|\s+$/g, '') || got.color !== want.color || (got.to == null) !== (want.to == null)) throw new Error('付箋の行が読み直せない形になる（文の「:」や「@」を見直してください）');
+    return text;
+  }
+  function addSticky(text, doc, di, n) {
+    var d = blockOf(doc, di), t = splitText(text);
+    t.lines.splice(d.end - 1, 0, noteLine(d, n));
+    return checkNote(joinText(t), di, d.end, n);
+  }
+  function setSticky(text, doc, di, k, patch) {
+    var d = doc.diagrams[di], n = d && d.stickies && d.stickies[k];
+    if (!n) throw new Error('その付箋がない');
+    var nn = { text: patch.text != null ? patch.text : n.text, color: patch.color || n.color, to: n.to }, t = splitText(text);
+    var ind = /^[ \t\u3000]*/.exec(t.lines[n.line - 1])[0];
+    t.lines[n.line - 1] = ind + noteLine(d, nn);
+    var out = checkNote(joinText(t), di, n.line, nn), nd = parseDoc(out), m = nd.diagrams[di].stickies.filter(function (x) { return x.line === n.line; })[0];
+    if (m.pk === n.pk || !doc.layout || d.layoutIndex == null) return out;
+    var obj = JSON.parse(JSON.stringify(doc.layout)), P = obj.diagrams[d.layoutIndex].parts || {};   // 文を直したら、置き場所の鍵も新しい文へ
+    if (P[n.pk]) { P[m.pk] = P[n.pk]; delete P[n.pk]; }
+    return writeLayout(out, nd, obj);
+  }
+  function removeSticky(text, doc, di, k) {
+    var d = doc.diagrams[di], n = d && d.stickies && d.stickies[k];
+    if (!n) throw new Error('その付箋がない');
+    var t = splitText(text); t.lines.splice(n.line - 1, 1);
+    return dropLayoutParts(joinText(t), doc, d, function (pk) { return pk === n.pk; });
+  }
   function removeDiagram(text, doc, di) {
     var d = blockOf(doc, di), t = splitText(text), s0 = d.line - 1, n = d.end - s0;
     if (s0 > 0 && t.lines[s0 - 1] === '' && t.lines[d.end] === '') n++;   // 前後の空行が2つ続かないように、後ろの1つも消す
@@ -1121,6 +1156,6 @@
     };
   }
 
-  var api = { NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

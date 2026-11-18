@@ -192,6 +192,7 @@
     $('diagrams').innerHTML = doc.diagrams.map(function (d, i) {
       return '<section class="diagram-box" id="dg' + i + '"><h2>' + esc(d.name || P.TYPES[d.type].label) + '<span class="kind">' + esc(P.TYPES[d.type].label) + '・' + d.items.length + '</span>' +
         (P.EDITABLE[d.type] ? '<button type="button" class="add-box" data-d="' + i + '">＋ 箱</button>' : '') +
+        (d.end ? '<button type="button" class="add-box add-note" data-d="' + i + '">＋ 付箋</button>' : '') +
         (P.MOVABLE[d.type] ? '<button type="button" class="reset-layout" data-d="' + i + '"' + (hasLayout(d) ? '' : ' hidden') + '>元の配置に戻す</button>' : '') +
         '<details class="dg-menu"><summary aria-label="図「' + esc(d.name || P.TYPES[d.type].label) + '」の操作">…</summary><div class="dg-acts">' +
         (i > 0 ? '<button type="button" data-dg="up" data-d="' + i + '">上へ</button>' : '') + (i < doc.diagrams.length - 1 ? '<button type="button" data-dg="down" data-d="' + i + '">下へ</button>' : '') +
@@ -320,9 +321,17 @@
   }
   $('panel').addEventListener('click', function (e) {
     var ab = e.target.closest && e.target.closest('button.act');
+    if (ab && state.selNote) {
+      var na = ab.getAttribute('data-act'), nd = state.selNote.d, nk2 = state.selNote.k;
+      if (na === 'note-color') editMd(function () { return P.setSticky(state.text, state.doc, nd, nk2, { color: ab.getAttribute('data-v') }); }, '付箋の色を変えられ', '付箋の色を変えました');
+      else if (na === 'note-edit') editNote(nd, nk2, ab.parentNode);
+      else if (na === 'note-del') editMd(function () { return P.removeSticky(state.text, state.doc, nd, nk2); }, '付箋を消せ', '付箋を消しました');
+      return;
+    }
     if (ab && state.sel) {
       var act = ab.getAttribute('data-act'), sd = state.sel.d, si = state.sel.i, sit = state.doc.diagrams[sd].items[si], av = ab.getAttribute('data-v');
       if (act === 'rename') { startRename(sd, si); return; }
+      if (act === 'note-add') { editArea(ab.parentNode, '', '「' + sit.label + '」に付ける付箋の文', function (v) { if (v.trim()) editMd(function () { return P.addSticky(state.text, state.doc, sd, { text: v, color: 'yellow', to: si }); }, '付箋を付けられ', '付箋を付けました'); }); return; }
       if (act === 'add-note') { editArea(ab.parentNode, '', '「' + sit.label + '」の説明', function (v) { if (v.trim()) editMd(function () { return P.addNote(state.text, state.doc, sit.label, v); }, '説明を書け', '「' + sit.label + '」の説明を書きました'); }); return; }
       if (act === 'del') { deleteItem(sd, si); return; }
       if (act === 'link') { startLink(sd, si); return; }
@@ -439,6 +448,8 @@
     inp.addEventListener('blur', function () { end(false); });
   }
   $('diagrams').addEventListener('dblclick', function (e) {
+    var sg = e.target.closest && e.target.closest('.sticky');
+    if (sg) { e.preventDefault(); editNote(+sg.getAttribute('data-d'), +sg.getAttribute('data-n'), sg); return; }
     var g = e.target.closest && e.target.closest('.svg-wrap .item'), box = g && g.closest('.diagram-box');
     if (!g || !STYLABLE[state.doc.diagrams[+box.id.slice(2)].type]) return;
     e.preventDefault();
@@ -677,10 +688,11 @@
       if (outs.length) extra.push('次：' + outs.join('・'));
     }
     if (extra.length) h += '<p>' + extra.join('<br>') + '</p>';
+    if (diag.end && !STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="note-add">＋ 付箋</button></p>';
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>' + (n ? '' : '<p class="acts note-add"><button type="button" class="act" data-act="add-note">＋ 説明を書く</button></p>');
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
-    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + '</p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
+    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + (diag.end ? '<button type="button" class="act" data-act="note-add">＋ 付箋</button>' : '') + '</p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();
@@ -770,13 +782,29 @@
   function toggleItem(d, i) {
     if (state.sel && state.sel.d === d && state.sel.i === i && !$('panel').hidden) closePanel(); else openItem(d, i);
   }
+  // 付箋のポップアップ（R8e）：文・色・直す・消す
+  function openSticky(d, k, anchor) {
+    var n = state.doc.diagrams[d].stickies[k];
+    if (!n) return;
+    closePanel();
+    state.selNote = { d: d, k: k }; state.anchor = anchor;
+    $('panelBody').innerHTML = '<h2>付箋</h2><p>' + esc(n.text).replace(/\n/g, '<br>') + '</p>' +
+      '<p class="acts">' + ['yellow', 'pink', 'blue', 'green'].map(function (c) { return '<button type="button" class="act note-c ' + c + '" data-act="note-color" data-v="' + c + '" aria-pressed="' + (n.color === c) + '">' + P.NOTE_WORD[c] + '</button>'; }).join('') +
+      '<button type="button" class="act" data-act="note-edit">文を直す</button><button type="button" class="act" data-act="note-del">この付箋を消す</button></p>';
+    $('panel').hidden = false;
+    placePanel();
+  }
+  function editNote(d, k, el) {
+    var n = state.doc.diagrams[d].stickies[k];
+    editArea(el, n.text, '付箋の文', function (v) { if (v.trim()) editMd(function () { return P.setSticky(state.text, state.doc, d, k, { text: v }); }, '付箋を直せ', '付箋を直しました'); });
+  }
   function closePanel() {
     var was = state.sel, wasOpen = !$('panel').hidden;
     $('panel').hidden = true;
     if (wasOpen && was && state.byKey) { var g0 = document.querySelector('#dg' + was.d + ' .item[data-i="' + was.i + '"]'); if (g0) g0.focus(); }
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(null); redraw(k); } });
     Array.prototype.forEach.call(document.querySelectorAll('.item.sel'), function (e) { e.classList.remove('sel'); });
-    state.sel = null;
+    state.sel = null; state.selNote = null;
   }
 
   // ---- 3D ----
@@ -1232,6 +1260,10 @@
     if (rb) { setLayout(+rb.getAttribute('data-d'), null, null); toast('元の配置に戻しました（Ctrl+Z で取り消せます）', 2500); return; }
     var tb = e.target.closest && e.target.closest('[data-dg=type]');
     if (tb) { var td = +tb.getAttribute('data-d'), ty = tb.getAttribute('data-t'); editMd(function () { return P.setDiagramHead(state.text, state.doc, td, ty); }, '図の種類を変えられ', '図の種類を「' + P.TYPES[ty].label + '」にしました'); return; }
+    var an = e.target.closest && e.target.closest('.add-note');
+    if (an) { var ad = +an.getAttribute('data-d'); editArea(an, '', '新しい付箋の文', function (v) { if (v.trim()) editMd(function () { return P.addSticky(state.text, state.doc, ad, { text: v, color: 'yellow', to: null }); }, '付箋を貼れ', '付箋を貼りました'); }); return; }
+    var sg = e.target.closest && e.target.closest('.sticky');
+    if (sg) { openSticky(+sg.getAttribute('data-d'), +sg.getAttribute('data-n'), anchorOf(sg)); return; }
     var mb = e.target.closest && e.target.closest('[data-dg]');
     if (mb) { diagramAct(+mb.getAttribute('data-d'), mb.getAttribute('data-dg')); return; }
     var nb = e.target.closest && e.target.closest('.add-box');
