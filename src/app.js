@@ -347,6 +347,17 @@
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
     inp.addEventListener('blur', function () { end(false); });
   }
+  // 何行もの文を直す（本文の段落）。Ctrl+Enter か外を押すと決まり、Esc でやめる
+  function editArea(el, cur, label, commit) {
+    var b = el.getBoundingClientRect(), ta = document.createElement('textarea');
+    ta.className = 'rename area'; ta.value = cur; ta.setAttribute('aria-label', label + '（Ctrl+Enter で決める・Esc でやめる）');
+    ta.style.left = Math.round(b.left) + 'px'; ta.style.top = Math.round(b.top) + 'px'; ta.style.width = Math.round(Math.max(b.width, 320)) + 'px'; ta.style.height = Math.round(Math.min(Math.max(b.height + 40, 90), 360)) + 'px';
+    document.body.appendChild(ta); ta.focus();
+    var done = false;
+    function end(ok) { if (done) return; done = true; var v = ta.value; ta.remove(); if (ok && v !== cur) commit(v); }
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
+    ta.addEventListener('blur', function () { end(true); });   // 長い文をうっかり失わないよう、外を押したら決める
+  }
   function editCard(key, el) {
     editInline(el, state.doc[key] || '', CARD_NAME[key] + 'の文', function (v) {
       editMd(function () { return P.setCard(state.text, state.doc, key, v); }, CARD_NAME[key] + 'を直せ', v.trim() ? CARD_NAME[key] + 'を直しました' : CARD_NAME[key] + 'を消しました');
@@ -355,6 +366,13 @@
   $('doc').addEventListener('dblclick', function (e) {
     var c = e.target.closest && e.target.closest('#cards .card[data-k]');
     if (c) { e.preventDefault(); editCard(c.getAttribute('data-k'), c); return; }
+    var pp = e.target.closest && e.target.closest('#body p.para[data-l]');
+    if (pp) {
+      e.preventDefault();
+      var r = pp.getAttribute('data-l').split('-').map(Number), lines = state.text.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).slice(r[0] - 1, r[1]);
+      editArea(pp, lines.join('\n'), '本文の段落', function (v) { editMd(function () { return P.setLines(state.text, r[0], r[1], v); }, '本文を直せ', v.trim() ? '本文を直しました' : '段落を消しました'); });
+      return;
+    }
     if (e.target.closest && e.target.closest('#title')) {
       e.preventDefault();
       editInline($('title'), title(state.doc), '題名', function (v) { editMd(function () { return P.setTitle(state.text, state.doc, v); }, '題名を直せ', '題名を直しました'); });
@@ -567,9 +585,10 @@
     return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/__([^_]+)__/g, '<b>$1</b>');
   }
   function md(lines) {
-    var html = '', list = null, para = [], table = [];
+    var html = '', list = null, para = [], table = [], pno = [], pq = false;
     function flush() {
-      if (para.length) { html += '<p>' + para.map(inline).join('<br>') + '</p>'; para = []; }
+      // 段落には md の行の範囲を付ける（2回押して直すため。「>」の行を含む段落は付けない）
+      if (para.length) { html += '<p' + (pno.length && !pq && pno.every(function (n) { return n; }) ? ' class="para" data-l="' + pno[0] + '-' + pno[pno.length - 1] + '" title="2回押すと直せます"' : '') + '>' + para.map(inline).join('<br>') + '</p>'; para = []; pno = []; pq = false; }
       if (list) { html += '</' + list + '>'; list = null; }
       if (table.length) {
         html += '<table>' + table.filter(function (r) { return !/^[\s|｜:：\-－]+$/.test(r); }).map(function (r, i) {
@@ -593,8 +612,8 @@
         html += '<li>' + inline(m[2]) + '</li>'; return;
       }
       if (list) { html += '</' + list + '>'; list = null; }
-      if ((m = /^\s*>\s?(.*)$/.exec(t))) { para.push(m[1]); return; }
-      para.push(t);
+      if ((m = /^\s*>\s?(.*)$/.exec(t))) { para.push(m[1]); pno.push(l.no); pq = true; return; }
+      para.push(t); pno.push(l.no);
     });
     flush();
     return html;

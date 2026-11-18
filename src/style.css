@@ -124,7 +124,7 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 .styl .sw.blue::before { background: #3b6fd8; } .styl .sw.green::before { background: #2f9e5b; } .styl .sw.yellow::before { background: #c99400; }
 .styl .sw.red::before { background: #d64545; } .styl .sw.gray::before { background: #7a8699; } .styl .sw.purple::before { background: #7b52c7; }
 /* R8b-3：名前を直す入力欄（箱の上に重ねる） */
-input.rename { position: fixed; z-index: 80; font: inherit; font-size: 1rem; padding: 6px 8px; border: 2px solid #3b6fd8; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+input.rename, textarea.rename { position: fixed; z-index: 80; font: inherit; font-size: 1rem; padding: 6px 8px; border: 2px solid #3b6fd8; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
 button.act { font: inherit; font-size: 0.8rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
 details.dg-menu { display: inline-block; position: relative; margin-left: 8px; font-size: 0.75rem; font-weight: normal; }
 details.dg-menu > summary { list-style: none; cursor: pointer; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
@@ -153,3 +153,6 @@ body.linking .svg-wrap .item { cursor: crosshair; }
 body.split main { margin-left: 40vw; max-width: none; }
 body.split .secret { left: calc(40vw + 14px); }
 @media print { .src-pane { display: none !important; } body.split main { margin-left: 0; } }
+textarea.rename.area { resize: vertical; font: inherit; line-height: 1.6; }
+#body p.para { cursor: text; border-radius: 4px; }
+#body p.para:hover { background: #f3f6fc; }

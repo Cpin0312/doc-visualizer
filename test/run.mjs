@@ -1183,6 +1183,27 @@ async function savePptx(T, md, tag) {
   await B.evalJs('window.confirm = () => true; HTMLAnchorElement.prototype.click = window.__click; delete window.showSaveFilePicker');
   if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8d-5：本文の段落を2回押して直す（その段落の行だけが変わる）。空にすると段落ごと消える
+{
+  const mb = ['# 本文', '', '~~~flow 流れ', 'A -> B', '~~~', '', '## 進め方', '', '一つ目の段落の', '二行目。', '', '二つ目の段落。', ''].join('\n');
+  ok('本文（関数）：段落を書きかえる・空で消す（空行が2つ続かない）', P.setLines(mb, 9, 10, '新しい文') === mb.replace('一つ目の段落の\n二行目。', '新しい文') && P.setLines(mb, 9, 10, '  ') === mb.replace('一つ目の段落の\n二行目。\n\n', ''));
+  const fb = join(out, 'r8d5_body.md'); writeFileSync(fb, mb);
+  await B.evalJs('window.confirm = () => true');
+  await pick(fb); await waitFor(`document.getElementById('status').textContent.includes('r8d5_body.md')`);
+  const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+  const dbl = async sel => { const r = await B.evalJs(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.x + 20, y: b.y + b.height / 2 }; })()`); await sleep(150); for (const c of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: c }); };
+  await dbl('#body p.para[data-l="9-10"]');
+  const cur = await waitFor(`document.querySelector('textarea.rename') && document.querySelector('textarea.rename').value`, 2000);
+  await B.evalJs(`document.querySelector('textarea.rename').value = '直した一行目\\n直した二行目'`);
+  const mods = process.platform === 'darwin' ? 4 : 2;
+  for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: mods });
+  await sleep(400);
+  ok('本文（画面）：段落を2回押すと、その行の文が出て、Ctrl+Enter で md のその行だけが変わる', cur === '一つ目の段落の\n二行目。' && (await T()) === mb.replace('一つ目の段落の\n二行目。', '直した一行目\n直した二行目'), JSON.stringify(cur));
+  await undo(); ok('本文（画面）：Ctrl+Z の1回で元どおり', (await T()) === mb);
+  await dbl('#body p.para[data-l="12-12"]'); await waitFor(`document.querySelector('textarea.rename')`, 2000);
+  await B.evalJs(`document.querySelector('textarea.rename').value = 'ちがう文'`); await keyPress('Escape', 'Escape', 27); await sleep(300);
+  ok('本文（画面）：Esc でやめると md は変わらない', (await T()) === mb && !(await B.evalJs(`!!document.querySelector('textarea.rename')`)));
+}
 // R8d-3：md を直接直す（左右の画面）と、新しい md
 {
   const ms = ['# 左右', '', '~~~flow 流れ', '受付 -> 確認', '~~~', ''].join('\r\n');   // CRLF の md でも、改行はそのまま

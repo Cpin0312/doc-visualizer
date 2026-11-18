@@ -833,6 +833,15 @@
   // ---- カードと題名（R8d）：値の所だけを書きかえる。空にすると行を消す。ないものは「> 結論：…」の行を足す ----
   var CARD_LABEL = { summary: 'ひとことで', conclusion: '結論', todo: 'すること', secret: '社外秘' };
   function oneLine(v) { return trim(String(v == null ? '' : v).replace(/[\r\n]+/g, ' ')); }
+  // 本文の段落（a〜b 行目）を書きかえる。空にすると行ごと消し、前後の空行が2つ続かないようにする
+  function setLines(text, a, b, value) {
+    var t = splitText(text), L = t.lines;
+    if (!(a >= 1 && b >= a && b <= L.length)) throw new Error('その行がない');
+    var v = String(value).replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    if (!trim(v)) { var n = b - a + 1; if (a > 1 && L[a - 2] === '' && L[b] === '') n++; L.splice(a - 1, n); }
+    else L.splice.apply(L, [a - 1, b - a + 1].concat(v.split('\n')));
+    return joinText(t);
+  }
   function setCard(text, doc, key, value) {
     if (!CARD_LABEL[key]) throw new Error('カードの種類が分からない');
     var v = oneLine(value), at = (doc.cardLines || {})[key] || [], t = splitText(text);
@@ -1082,6 +1091,6 @@
     };
   }
 
-  var api = { setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);
