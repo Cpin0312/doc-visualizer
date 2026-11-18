@@ -956,6 +956,67 @@ async function savePptx(T, md, tag) {
   const crlf = '\uFEFF~~~flow\r\nA -> B -> C\r\n~~~\r\n', dc = P.parseDoc(crlf);
   ok('消す：BOM と CRLF をそのまま残す', P.removeItem(crlf, dc, 0, 1) === '\uFEFF~~~flow\r\nA\r\nC\r\n~~~\r\n');
 }
+// R8b-3：画面から md を書きかえる（＋ 箱・印・線を引く・消す・担当・帯をまたぐドラッグ）。どれも Ctrl+Z の1回で元に戻る
+{
+  const mdl = ['# R8b-3 画面', '', '~~~lanes 帯', '[営業] 受付 -> 確認', '[経理] 請求 -> 入金', '~~~', ''].join('\n');
+  const fl = join(out, 'r8b3_edit.md'); writeFileSync(fl, mdl);
+  await pick(fl); await waitFor(`document.getElementById('status').textContent.includes('r8b3_edit.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  await B.evalJs('window.confirm = () => true');
+  const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+  const box = n => `#dg0 .item[aria-label="${n}"]`, open = async n => { await clickAt(box(n) + ' .box'); return waitFor(`!document.getElementById('panel').hidden && document.querySelector('#panelBody h2').textContent === ${JSON.stringify(n)}`, 2000); };
+  // ＋ 箱 → 入力欄 → Enter
+  await clickAt('#dg0 .add-box');
+  const ri = await waitFor(`document.querySelector('input.rename') && document.querySelector('input.rename').value`, 2000);
+  await B.evalJs(`document.querySelector('input.rename').value = '発送'`); await keyPress('Enter', 'Enter', 13); await sleep(400);
+  let t = await T();
+  ok('＋ 箱：図の終わりに1行足して、すぐ名前を入れられる（Enter で決まる）', ri === '新しい箱' && t.split('\n')[5] === '[営業] 発送' && t.split('\n').length === 8 && !!(await B.evalJs(`!!document.querySelector('${box('発送')}')`)), JSON.stringify(t.split('\n')[5]));
+  await undo(); await undo();
+  ok('＋ 箱：Ctrl+Z 2回（名前・足す）で md が元どおり', (await T()) === mdl);
+  // 印
+  await open('確認'); await clickAt('#panelBody button[data-act=mark][data-v=red]'); await sleep(400); t = await T();
+  const pressed = await B.evalJs(`(document.querySelector('#panelBody button[data-act=mark][data-v=red]') || {}).getAttribute && document.querySelector('#panelBody button[data-act=mark][data-v=red]').getAttribute('aria-pressed')`);
+  ok('印：「! 注意」を押すと md の名前の後ろに「!注意」が付き、ボタンが押された形になる', t.split('\n')[3] === '[営業] 受付 -> 確認 !注意' && pressed === 'true', t.split('\n')[3] + ' ' + pressed);
+  await undo(); ok('印：Ctrl+Z で元どおり', (await T()) === mdl);
+  // 線を引く
+  await open('確認'); await clickAt('#panelBody button[data-act=link]'); await sleep(200); await clickAt(box('請求') + ' .box'); await sleep(400); t = await T();
+  ok('線を引く：「線を引く」→ つなぐ先の箱を押すと「A -> B」の行が足される', t.split('\n')[5] === '[営業] 確認 -> [経理] 請求' && (await B.evalJs(`document.querySelectorAll('#dg0 .edge').length`)) >= 3, JSON.stringify(t.split('\n')[5]));
+  await undo(); ok('線を引く：Ctrl+Z で元どおり', (await T()) === mdl);
+  // 担当のボタン
+  await open('確認'); await clickAt('#panelBody button[data-act=lane][data-v="経理"]'); await sleep(400); t = await T();
+  const d1 = P.parseDoc(t).diagrams[0];
+  ok('担当：ボタンで「確認」だけが経理の帯に移る（受付はそのまま）', d1.items.map(i => i.label + '/' + i.lane).join() === '受付/営業,確認/経理,請求/経理,入金/経理', t.split('\n')[3]);
+  await undo(); ok('担当：Ctrl+Z で元どおり', (await T()) === mdl);
+  // 帯をまたぐドラッグ
+  const c = await B.evalJs(`(() => { document.getElementById('dg0').scrollIntoView({ block: 'center' }); const b = document.querySelector('${box('確認')} .box').getBoundingClientRect(), rs = document.querySelectorAll('#dg0 g.lane > rect:first-child'), r = rs[1].getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, ty: r.top + r.height / 2 }; })()`);
+  await sleep(300);
+  await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c.x, y: c.y, button: 'left', buttons: 1, clickCount: 1 });
+  for (let k = 1; k <= 8; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c.x, y: c.y + (c.ty - c.y) * k / 8, button: 'left', buttons: 1 });
+  await sleep(100);
+  const hi = await B.evalJs(`!!document.querySelector('#dg0 g.lane > rect:first-child.drop-to')`);
+  await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.x, y: c.ty, button: 'left', buttons: 0, clickCount: 1 }); await sleep(500); t = await T();
+  const d2 = P.parseDoc(t).diagrams[0], inBand = await B.evalJs(`(() => { const b = document.querySelector('${box('確認')} .box').getBoundingClientRect(), r = document.querySelectorAll('#dg0 g.lane > rect:first-child')[1].getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom <= r.bottom + 1; })()`);
+  ok('帯をまたぐ：別の帯へドラッグすると、その帯が光り、落とすと md の担当が変わって箱がその帯に入る', hi && d2.items.find(i => i.label === '確認').lane === '経理' && d2.items.find(i => i.label === '受付').lane === '営業' && inBand && /~~~layout/.test(t), JSON.stringify({ hi, inBand, l: t.split('\n')[3] }));
+  await undo(); ok('帯をまたぐ：Ctrl+Z の1回で、担当と置き場所の両方が元どおり', (await T()) === mdl);
+  // 消す（Delete）
+  await B.evalJs(`document.querySelector('${box('受付')}').focus()`); await keyPress('Delete', 'Delete', 46); await sleep(400); t = await T();
+  ok('消す：箱にフォーカスして Delete（確かめのあと）で、その箱が md から消える', t.split('\n')[3] === '[営業] 確認' && !(await B.evalJs(`!!document.querySelector('${box('受付')}')`)), JSON.stringify(t.split('\n')[3]));
+  await undo(); ok('消す：Ctrl+Z で元どおり', (await T()) === mdl);
+  await open('請求');
+  const e0 = await B.evalJs(`(() => { const p = document.querySelector('#dg0 .edge[data-ek="請求>入金"] path, #dg0 [data-ek="請求>入金"]'); if (!p) return null; const b = p.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  await keyPress('Escape', 'Escape', 27);
+  if (e0) {
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: e0.x, y: e0.y, button: 'right', buttons: 2, clickCount: 1 });
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: e0.x, y: e0.y, button: 'right', buttons: 0, clickCount: 1 });
+    await waitFor(`!document.getElementById('panel').hidden && !!document.querySelector('#panelBody button[data-act=del-edge]')`, 2000);
+    await clickAt('#panelBody button[data-act=del-edge]'); await sleep(400);
+  }
+  t = await T();
+  ok('消す：線のポップアップの「この線を消す」で、その矢印の所で行が分かれる', t.split('\n')[4] === '[経理] 請求' && t.split('\n')[5] === '[経理] 入金', JSON.stringify({ e0, l: t.split('\n').slice(4, 6) }));
+  await undo(); ok('消す：線も Ctrl+Z で元どおり', (await T()) === mdl);
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

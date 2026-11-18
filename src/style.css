@@ -126,3 +126,9 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 /* R8b-3：名前を直す入力欄（箱の上に重ねる） */
 input.rename { position: fixed; z-index: 80; font: inherit; font-size: 1rem; padding: 6px 8px; border: 2px solid #3b6fd8; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
 button.act { font: inherit; font-size: 0.8rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+button.add-box { font: inherit; font-size: 0.75rem; margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+p.acts { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+button.act[aria-pressed="true"] { background: #e8f0fe; border-color: #3b6fd8; font-weight: 600; }
+.lane-acts { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.8rem; }
+body.linking .svg-wrap .item { cursor: crosshair; }
+.svg-wrap svg g.lane rect.drop-to { fill: #dbe7ff; stroke: #3b6fd8; stroke-width: 2; stroke-dasharray: 6 4; }

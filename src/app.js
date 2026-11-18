@@ -87,6 +87,7 @@
     var hn = hasNoteFn(doc), td = today();
     $('diagrams').innerHTML = doc.diagrams.map(function (d, i) {
       return '<section class="diagram-box" id="dg' + i + '"><h2>' + esc(d.name || P.TYPES[d.type].label) + '<span class="kind">' + esc(P.TYPES[d.type].label) + '・' + d.items.length + '</span>' +
+        (P.EDITABLE[d.type] ? '<button type="button" class="add-box" data-d="' + i + '">＋ 箱</button>' : '') +
         (P.MOVABLE[d.type] ? '<button type="button" class="reset-layout" data-d="' + i + '"' + (hasLayout(d) ? '' : ' hidden') + '>元の配置に戻す</button>' : '') + '</h2>' +
         '<div class="svg-wrap' + (P.MOVABLE[d.type] ? ' movable' : '') + '">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
     }).join('');
@@ -192,13 +193,25 @@
     var nm = function (k) { var it = diag.items.filter(function (x) { return x.pk === k; })[0]; return it ? it.label : k; };
     closePanel();
     state.anchor = anchor; state.byKey = false; state.selEdge = { d: d, pk: pk };
-    $('panelBody').innerHTML = '<h2>線：' + esc(nm(ends[0])) + ' → ' + esc(nm(ends[1])) + '</h2>' + styleHtml(d, pk, partNow(diag, pk), true);
+    $('panelBody').innerHTML = '<h2>線：' + esc(nm(ends[0])) + ' → ' + esc(nm(ends[1])) + '</h2>' + (P.EDITABLE[diag.type] ? '<p class="acts"><button type="button" class="act" data-act="del-edge">この線を消す</button></p>' : '') + styleHtml(d, pk, partNow(diag, pk), true);
     $('panel').hidden = false;
     placePanel();
   }
   $('panel').addEventListener('click', function (e) {
     var ab = e.target.closest && e.target.closest('button.act');
-    if (ab && state.sel && ab.getAttribute('data-act') === 'rename') { startRename(state.sel.d, state.sel.i); return; }
+    if (ab && state.sel) {
+      var act = ab.getAttribute('data-act'), sd = state.sel.d, si = state.sel.i, sit = state.doc.diagrams[sd].items[si], av = ab.getAttribute('data-v');
+      if (act === 'rename') { startRename(sd, si); return; }
+      if (act === 'del') { deleteItem(sd, si); return; }
+      if (act === 'link') { startLink(sd, si); return; }
+      if (act === 'mark' && editMd(function () { return P.toggleMark(state.text, state.doc, sd, si, av); }, '印を変え', '印を変えました')) {
+        openItem(sd, si); var mb = $('panelBody').querySelector('button[data-act=mark][data-v="' + av + '"]'); if (mb) mb.focus();
+        return;
+      }
+      if (act === 'lane' && editMd(function () { return P.setLane(state.text, state.doc, sd, si, av); }, '担当を変え', '「' + sit.label + '」の担当を「' + av + '」にしました')) { openItem(sd, si); return; }
+      return;
+    }
+    if (ab && state.selEdge && ab.getAttribute('data-act') === 'del-edge') { deleteEdge(state.selEdge.d, state.selEdge.pk); return; }
     var b = e.target.closest && e.target.closest('.styl button');
     if (!b) return;
     var box = b.closest('.styl'), d = +box.getAttribute('data-d'), pk = box.getAttribute('data-pk'), k = b.getAttribute('data-k'), v = JSON.parse(b.getAttribute('data-v')), patch = {};
@@ -337,15 +350,40 @@
     t.moving = true; closePanel();
     var svg = $('dg' + t.i).querySelector('.svg-wrap svg');
     t.v = dragValue(t, svg, e.clientX, e.clientY);
-    if (!t.raf) t.raf = requestAnimationFrame(function () { t.raf = 0; if (drag2 === t) previewDrag(t, t.v); });
+    t.lane = t.kind === 'box' && t.band ? laneAt(svg, e.clientX, e.clientY) : -1;
+    if (!t.raf) t.raf = requestAnimationFrame(function () {
+      t.raf = 0; if (drag2 !== t) return;
+      previewDrag(t, t.v);
+      var rs = $('dg' + t.i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child');
+      if (rs[t.lane] && !laneHas(rs[t.lane], t.band)) rs[t.lane].classList.add('drop-to');   // 別の帯に落とすと担当が変わる
+    });
   });
   window.addEventListener('pointerup', function () {
     var t = drag2; drag2 = null;
     if (!t || !t.moving) return;
     if (t.raf) cancelAnimationFrame(t.raf);
     swallowClick = true; setTimeout(function () { swallowClick = false; }, 0);
+    var d = state.doc.diagrams[t.i], rs = $('dg' + t.i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child');
+    if (t.kind === 'box' && d.type === 'lanes' && rs[t.lane] && !laneHas(rs[t.lane], t.band)) {
+      // 別の帯に落とした：md の [担当] を書きかえ、置き場所も同じ「戻す1回」にまとめる
+      var it = d.items.filter(function (x) { return x.pk === t.pk; })[0], to = d.lanes[t.lane];
+      if (it && editMd(function () { return P.setLane(state.text, state.doc, t.i, it.id, to); }, '担当を変え', '「' + it.label + '」の担当を「' + to + '」にしました')) {
+        var r = rs[t.lane], y0 = +r.getAttribute('y'), y1 = y0 + +r.getAttribute('height');
+        setLayout(t.i, t.pk, { x: t.v.x, y: Math.round(Math.max(y0, Math.min(t.py - t.h / 2, y1 - t.h))) }, true);
+        return;
+      }
+    }
     setLayout(t.i, t.pk, t.v);
   });
+  // 画面の点がどの帯（担当）の上か。帯がなければ -1
+  function laneAt(svg, x, y) {
+    var p = svgPoint(svg, x, y), rs = svg.querySelectorAll('g.lane > rect:first-child');
+    if (!p) return -1;
+    drag2 && (drag2.py = p[1]);
+    for (var k = 0; k < rs.length; k++) { var y0 = +rs[k].getAttribute('y'); if (p[1] >= y0 && p[1] < y0 + +rs[k].getAttribute('height')) return k; }
+    return -1;
+  }
+  function laneHas(r, band) { var y0 = +r.getAttribute('y'), y1 = y0 + +r.getAttribute('height'); return band[0] >= y0 - 1 && band[1] <= y1 + 1; }
 
   function cardsHtml(doc) {
     var c = [['summary', 'ひとことで', ''], ['conclusion', '結論', 'conclusion'], ['todo', 'すること', 'todo']];
@@ -464,11 +502,51 @@
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>';
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
-    if (STYLABLE[diag.type]) h += '<p><button type="button" class="act" data-act="rename">名前を直す</button></p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
+    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + '</p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();
   }
+  // 箱の md を書きかえるボタン（R8b-3）：印・線を引く・担当・消す
+  var MARKS = [['red', '!', '注意'], ['yellow', '?', '確認'], ['green', '+', '完了']];
+  function editActs(diag, it) {
+    return MARKS.map(function (m) {
+      var on = it.marks.some(function (x) { return x.kind === m[0]; });
+      return '<button type="button" class="act mark ' + m[0] + '" data-act="mark" data-v="' + m[0] + '" aria-pressed="' + on + '">' + m[1] + ' ' + m[2] + '</button>';
+    }).join('') + '<button type="button" class="act" data-act="link">線を引く</button><button type="button" class="act" data-act="del">この箱を消す</button>' +
+      (diag.type === 'lanes' && diag.lanes.length > 1 ? '<span class="lane-acts" role="group" aria-label="担当">担当：' + diag.lanes.map(function (l) {
+        return '<button type="button" class="act" data-act="lane" data-v="' + esc(l) + '" aria-pressed="' + (it.lane === l) + '">' + esc(l) + '</button>';
+      }).join('') + '</span>' : '');
+  }
+  // md を書きかえて描き直す。失敗したら md は前のまま
+  function editMd(fn, what, done) {
+    var text;
+    try { text = fn(); } catch (e) { showError(what + 'できませんでした：' + e.message + '。md は前のままです。'); return false; }
+    if (text === state.text) return false;
+    applyText(text, true);
+    toast(done + '（Ctrl+Z で戻せます）', 2500);
+    return true;
+  }
+  function deleteItem(d, i) {
+    var it = state.doc.diagrams[d].items[i];
+    if (!it || !window.confirm('箱「' + it.label + '」を消します。つながっている線も消えます（Ctrl+Z で戻せます）。よいですか？')) return;
+    closePanel();
+    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消', '箱「' + it.label + '」を消しました');
+  }
+  function deleteEdge(d, pk) {
+    var diag = state.doc.diagrams[d], e = diag.edges.filter(function (x) { return x.pk === pk; })[0];
+    if (!e || !window.confirm('線「' + diag.items[e.from].label + ' → ' + diag.items[e.to].label + '」を消します。よいですか？')) return;
+    closePanel();
+    editMd(function () { return P.removeEdge(state.text, state.doc, d, e.id); }, '線を消', '線を消しました');
+  }
+  // 線を引く：次に押した箱へつなぐ。Esc でやめる
+  function startLink(d, i) {
+    closePanel();
+    state.link = { d: d, i: i };
+    document.body.classList.add('linking');
+    toast('つなぐ先の箱を押してください（Esc でやめる）', 6000);
+  }
+  function endLink() { state.link = null; document.body.classList.remove('linking'); }
   // 窓は押した所の近くに出す。下 → 上 → 右 → 左の順に、入る所を選ぶ。押した所と上の帯には重ねない。
   // どこにも入らないときは、いちばん広い側に合わせて窓を小さくし、中を縦にスクロールさせる
   function placePanel() {
@@ -499,6 +577,12 @@
   if (window.ResizeObserver) new ResizeObserver(function () { if (!$('panel').hidden) placePanel(); }).observe($('panelBody'));
   // 押したことの判定は、ここ1か所（2D のクリック・キーボード・3D）。あとで「動かす」と区別するのもここ
   function press(d, i, anchor, byKey) {
+    if (state.link) {
+      var lk = state.link; endLink();
+      if (lk.d !== d) { toast('ちがう図の箱にはつなげません', 3000); return; }
+      if (lk.i !== i) editMd(function () { return P.addEdge(state.text, state.doc, d, lk.i, i); }, '線を引け', '線を引きました');
+      return;
+    }
     state.anchor = anchor; state.byKey = byKey;
     toggleItem(d, i);
     if (byKey && !$('panel').hidden) $('panelClose').focus();
@@ -920,6 +1004,15 @@
     if (swallowClick) { swallowClick = false; return; }
     var rb = e.target.closest && e.target.closest('.reset-layout');
     if (rb) { setLayout(+rb.getAttribute('data-d'), null, null); toast('元の配置に戻しました（Ctrl+Z で取り消せます）', 2500); return; }
+    var nb = e.target.closest && e.target.closest('.add-box');
+    if (nb) {
+      var nd = +nb.getAttribute('data-d'), r;
+      try { r = P.addBox(state.text, state.doc, nd); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
+      applyText(r.text, true);
+      var ni = state.doc.diagrams[nd].items.filter(function (x) { return x.label === r.name; })[0];
+      if (ni) startRename(nd, ni.id);   // すぐ名前を入れられるように
+      return;
+    }
     var g = e.target.closest && e.target.closest('.item');
     if (g) press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), false);
   });
@@ -934,6 +1027,7 @@
   $('diagrams').addEventListener('keydown', function (e) {
     var g = e.target.closest && e.target.closest('.item');
     if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), true); }
+    if (g && e.key === 'Delete' && P.EDITABLE[state.doc.diagrams[+g.getAttribute('data-d')].type]) { e.preventDefault(); deleteItem(+g.getAttribute('data-d'), +g.getAttribute('data-i')); }
     var AK = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
     if (g && AK && !e.ctrlKey && !e.metaKey && !e.altKey) { var st = e.shiftKey ? 1 : 8; if (keyMove(g, AK[0] * st, AK[1] * st)) e.preventDefault(); }
   });
@@ -945,7 +1039,12 @@
       else if (e.key === 'Escape') { e.preventDefault(); endPresent(); }
       return;
     }
-    if (e.key === 'Escape') closePanel();
+    if (e.key === 'Escape') { if (state.link) { endLink(); toast('線を引くのをやめました', 2000); } closePanel(); }
+    var tg = (e.target && e.target.tagName || '').toLowerCase();
+    if (e.key === 'Delete' && !$('panel').hidden && tg !== 'input' && tg !== 'textarea' && !(e.target.closest && e.target.closest('#diagrams .item'))) {
+      if (state.sel && P.EDITABLE[state.doc.diagrams[state.sel.d].type]) { e.preventDefault(); deleteItem(state.sel.d, state.sel.i); return; }
+      if (state.selEdge && P.EDITABLE[state.doc.diagrams[state.selEdge.d].type]) { e.preventDefault(); deleteEdge(state.selEdge.d, state.selEdge.pk); return; }
+    }
     var tag = (e.target && e.target.tagName || '').toLowerCase();
     var typing = tag === 'input' || tag === 'select' || tag === 'textarea' || (e.target && e.target.isContentEditable);
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
