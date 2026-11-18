@@ -565,14 +565,14 @@
       s.lines.forEach(function (l) {
         if (l.code) { textLines.push(l); return; }
         var rest = takeSources(l.text, srcs);
-        if (trim(rest) || !trim(l.text)) textLines.push({ text: rest.replace(/[\s\u3000]+$/, ''), no: l.no });
+        if (trim(rest) || !trim(l.text)) textLines.push({ text: rest.replace(/[\s\u3000]+$/, ''), no: l.no, fixed: rest !== l.text || undefined });   // fixed：出どころを外して出した行（画面で直すと出どころが消えるので直させない）
       });
       while (textLines.length && !textLines[textLines.length - 1].code && !trim(textLines[textLines.length - 1].text)) textLines.pop();
       while (textLines.length && !textLines[0].code && !trim(textLines[0].text)) textLines.shift();
       if (s.heading && keys[nk(stripMarkup(s.heading))]) {
         doc.notes.push({ key: nk(stripMarkup(s.heading)), heading: s.heading, line: s.line, lines: textLines, sources: srcs });
       } else if (s.heading || textLines.length || srcs.length) {
-        if (srcs.length) textLines.push({ text: '[元：' + srcs.join('／') + ']', no: s.line });
+        if (srcs.length) textLines.push({ text: '', no: 0 }, { text: '[元：' + srcs.join('／') + ']', no: s.line, fixed: true });   // 出どころは別の段落に（前の段落を直せるように）
         doc.body.push({ heading: s.heading, level: s.level, line: s.line, lines: textLines });
       }
     });

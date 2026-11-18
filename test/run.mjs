@@ -1203,6 +1203,11 @@ async function savePptx(T, md, tag) {
   await dbl('#body p.para[data-l="12-12"]'); await waitFor(`document.querySelector('textarea.rename')`, 2000);
   await B.evalJs(`document.querySelector('textarea.rename').value = 'ちがう文'`); await keyPress('Escape', 'Escape', 27); await sleep(300);
   ok('本文（画面）：Esc でやめると md は変わらない', (await T()) === mb && !(await B.evalJs(`!!document.querySelector('textarea.rename')`)));
+  const ms2 = ['# 出どころ', '', '~~~flow 流れ', 'A -> B', '~~~', '', '## 決まり', '', '一行目 [元：規程 3条]', '', '上の行', '[元：規程 4条]', '下の行', '', 'ふつうの段落', ''].join('\n');
+  const fs3 = join(out, 'r8d5_src.md'); writeFileSync(fs3, ms2);
+  await pick(fs3); await waitFor(`document.getElementById('status').textContent.includes('r8d5_src.md')`);
+  const ed = await B.evalJs(`[...document.querySelectorAll('#body p')].map(p => (p.getAttribute('data-l') || '-') + ':' + p.textContent.slice(0, 6)).join(' | ')`);
+  ok('本文（画面）：出どころ（[元：…]）を外して出した段落と、出どころだけの行をはさむ段落は直せない（直すと出どころが消えるため）。ふつうの段落は直せる', !/^9-/.test(ed) && !/11-13/.test(ed) && /15-15:ふつう/.test(ed) && (await B.evalJs(`document.querySelectorAll('#body p.para').length`)) === 1, ed);
 }
 // R8d-3：md を直接直す（左右の画面）と、新しい md
 {

@@ -588,7 +588,7 @@
     var html = '', list = null, para = [], table = [], pno = [], pq = false;
     function flush() {
       // 段落には md の行の範囲を付ける（2回押して直すため。「>」の行を含む段落は付けない）
-      if (para.length) { html += '<p' + (pno.length && !pq && pno.every(function (n) { return n; }) ? ' class="para" data-l="' + pno[0] + '-' + pno[pno.length - 1] + '" title="2回押すと直せます"' : '') + '>' + para.map(inline).join('<br>') + '</p>'; para = []; pno = []; pq = false; }
+      if (para.length) { html += '<p' + (pno.length && !pq && pno.every(function (n, k) { return n && n === pno[0] + k; }) ? ' class="para" data-l="' + pno[0] + '-' + pno[pno.length - 1] + '" title="2回押すと直せます"' : '') + '>' + para.map(inline).join('<br>') + '</p>'; para = []; pno = []; pq = false; }
       if (list) { html += '</' + list + '>'; list = null; }
       if (table.length) {
         html += '<table>' + table.filter(function (r) { return !/^[\s|｜:：\-－]+$/.test(r); }).map(function (r, i) {
@@ -613,7 +613,7 @@
       }
       if (list) { html += '</' + list + '>'; list = null; }
       if ((m = /^\s*>\s?(.*)$/.exec(t))) { para.push(m[1]); pno.push(l.no); pq = true; return; }
-      para.push(t); pno.push(l.no);
+      para.push(t); pno.push(l.fixed ? 0 : l.no);
     });
     flush();
     return html;
