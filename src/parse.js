@@ -126,13 +126,18 @@
 
   // ---- 図ごとの読みとり ----
   function Registry(diag, warn) {
-    var byKey = {}, over = 0;
+    // 省いた数は「省いた箱の数」で数える（同じ箱が何回出てきても1つ。まとめない種類は1行が1つ）
+    var byKey = {}, over = 0, overKeys = {};
     diag.items = [];
     return {
       get: function (label, no, merge) {
         var key = nk(label);
         if (merge !== false && byKey[key]) return byKey[key];
-        if (diag.items.length >= MAX_ITEMS) { over++; return null; }
+        if (diag.items.length >= MAX_ITEMS) {
+          if (merge === false) over++;
+          else if (!overKeys[key]) { overKeys[key] = true; over++; }
+          return null;
+        }
         var it = { id: diag.items.length, label: label, key: key, marks: [], sources: [], line: no };
         diag.items.push(it);
         if (merge !== false) byKey[key] = it;
@@ -147,6 +152,10 @@
       if (!it.marks.some(function (x) { return x.kind === m.kind && x.text === m.text; })) it.marks.push(m);
     });
     sources.forEach(function (s) { if (it.sources.indexOf(s) < 0) it.sources.push(s); });
+  }
+
+  function isSentence(label) {
+    return /[\s\u3000、。，．,？?！!…「」『』]/.test(label) || Array.from(label).length > 24;
   }
 
   function parseGraph(diag, lines, warn, withLanes) {
@@ -177,6 +186,11 @@
         var tm = takeMarks(s);
         if (!tm.label) {
           warn(ln.no, segs.length > 1 ? '矢印の前か後ろに箱の名前がないので、この行を飛ばした' : '箱の名前がないので飛ばした', 'skip');
+          return;
+        }
+        // 矢印のない行は「箱を1つ置く」だけ（名前と印）。文のような行は図にしない
+        if (segs.length === 1 && isSentence(tm.label)) {
+          warn(ln.no, '矢印のない文の行なので飛ばした（箱を1つ置くなら「承認 !期限」のように名前だけ。説明は図の外の「## 箱の名前」の下へ）', 'skip');
           return;
         }
         nodes.push({ label: tm.label, marks: tm.marks, sources: src, lane: lane });

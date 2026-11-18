@@ -6,6 +6,9 @@
   var P = window.DocParse, R = window.DocRender, esc = R.esc;
   var SAMPLES = window.DV_SAMPLES || [], PROMPT = window.DV_PROMPT || '';
   var MAX_BYTES = 5 * 1024 * 1024;
+  var MIN_PX = 11;   // 画面・PDF・3D で、図の文字をこれより小さくしない
+  // 図の中でいちばん小さい文字の大きさ（SVG の単位）。縮める限りはこれで決める
+  function minFont(str) { var m, re = /font-size="([\d.]+)"/g, v = Infinity; while ((m = re.exec(str))) v = Math.min(v, +m[1]); return isFinite(v) ? v : 15; }
   var OK_EXT = /\.(md|markdown|mdown|mkd|txt)$/i;
   var $ = function (id) { return document.getElementById(id); };
   var state = { doc: null, fileName: '', fs: 15, sel: null, meta: '', mode: '3d', scenes: [], captures: [], gl: '' };
@@ -86,9 +89,11 @@
         '<div class="svg-wrap">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
     }).join('');
     // 横に長い図は、小さくしすぎずに横へ動かして見る
+    // 縮めると文字が 11px より小さくなる図は、縮めずに横へ動かして見る
     Array.prototype.forEach.call(document.querySelectorAll('.svg-wrap'), function (w) {
-      var s = w.querySelector('svg'), sw = +s.getAttribute('data-w');
-      if (w.clientWidth && sw / w.clientWidth > 1.8) w.classList.add('wide');
+      var s = w.querySelector('svg'), sw = +s.getAttribute('data-w'), cw = w.parentNode.clientWidth - 32;
+      var mf = minFont(s.outerHTML);
+      if (cw > 0 && mf * cw / sw < MIN_PX) { w.classList.add('wide'); s.style.width = Math.ceil(sw * MIN_PX / mf) + 'px'; }
     });
     build3d(doc);
     renderLegend(doc);
@@ -245,15 +250,24 @@
       doc.diagrams.forEach(function (d, i) {
         var box = $('dg' + i), svg = box.querySelector('.svg-wrap svg');
         var sc = D3.create(d, svg, { onPick: function (it) { openItem(i, it); } });
-        var wrap = document.createElement('div');
-        wrap.className = 'view3d';
-        var W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
-        wrap.style.setProperty('--ar', String(Math.min(1.1, Math.max(0.36, (H / W) * (sc.ground ? 0.85 : 1)))));
+        var wrap = document.createElement('div'), scroll = document.createElement('div');
+        wrap.className = 'view3d'; scroll.className = 'v3scroll';
+        // 画面の形は、3D で見たときの図の形に合わせる（高さ 280〜620px）。文字が 11px を下まわるなら、形を保って大きくし、横へ動かして見る
+        var cw = Math.max(320, box.clientWidth - 32), ar = sc.shape();
+        var vw = cw, ch = Math.round(Math.min(620, Math.max(280, cw / ar))), mf3 = minFont(svg.outerHTML);
+        for (var t = 0; t < 4; t++) {
+          var k = sc.textScale(vw, ch) * mf3; if (k >= MIN_PX) break;
+          var f = MIN_PX / k * 1.04;
+          vw = Math.min(8000, Math.ceil(vw * f)); ch = Math.min(900, Math.ceil(ch * f));
+        }
+        wrap.style.width = vw + 'px'; wrap.style.height = ch + 'px';
+        if (vw > cw) scroll.classList.add('wide');
         sc.canvas.setAttribute('data-d', i);
         sc.canvas.setAttribute('role', 'img');
         sc.canvas.setAttribute('aria-label', (d.name || P.TYPES[d.type].label) + ' の 3D の図（押すと説明、ドラッグで回す、2回押すと元の向き）');
         wrap.appendChild(sc.canvas);
-        box.appendChild(wrap);
+        scroll.appendChild(wrap);
+        box.appendChild(scroll);
         sc.bind(sc.canvas, function () { sc.draw(); });
         if (io) io.observe(sc.canvas);
         state.scenes[i] = sc;
@@ -375,8 +389,18 @@
     pages.push(cover);
     doc.diagrams.forEach(function (d, i) {
       var legend = legendItems(doc, [d]).join('\u3000');
-      pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（' + P.TYPES[d.type].label + '）</h2><div class="p-fig">' +
-        R.svg(d, i, { fs: 15, today: td, hasNote: hn }) + '</div>' + (legend ? '<div class="p-legend">' + legend + '</div>' : ''));
+      // 1ページに入れると文字が 11px より小さくなる図は、縮めすぎずにページを分ける（左から右・上から下）
+      var svg = R.svg(d, i, { fs: 15, today: td, hasNote: hn });
+      var w = +/data-w="(\d+)"/.exec(svg)[1], h = +/data-h="(\d+)"/.exec(svg)[1];
+      var k = Math.min(1000 / w, 560 / h, 1.6), minK = MIN_PX / minFont(svg);
+      if (k < minK) k = minK;
+      var tw = 1000 / k, th = 560 / k, nx = Math.ceil(w / tw - 0.02), ny = Math.ceil(h / th - 0.02), n = nx * ny;
+      for (var ty = 0; ty < ny; ty++) for (var tx = 0; tx < nx; tx++) {
+        var part = n > 1 ? svg.replace(/viewBox="[^"]*"/, 'viewBox="' + Math.round(tx * tw) + ' ' + Math.round(ty * th) + ' ' + Math.round(Math.min(tw, w - tx * tw)) + ' ' + Math.round(Math.min(th, h - ty * th)) + '"')
+          .replace(/data-w="\d+"/, 'data-w="' + Math.round(Math.min(tw, w - tx * tw)) + '"').replace(/data-h="\d+"/, 'data-h="' + Math.round(Math.min(th, h - ty * th)) + '" data-k="' + k + '"') : svg;   // 分けた図は、どのページも同じ大きさで
+        pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（' + P.TYPES[d.type].label + '）' + (n > 1 ? '（' + (ty * nx + tx + 1) + '/' + n + '）' : '') + '</h2><div class="p-fig">' + part + '</div>' +
+          (legend ? '<div class="p-legend">' + legend + '</div>' : ''));
+      }
       if (state.captures[i]) pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（3D）</h2><div class="p-fig"><img class="p-3d" alt="" src="' + state.captures[i] + '"></div>');
     });
     // 箱の説明と出どころ、本文。ページからあふれないよう文字数で分け、長い1つは行で（長い行は字で）切る
@@ -420,7 +444,7 @@
     }).join('');
     // 図をページの枠（約 1000×560px）に合わせる。小さい図は大きくしすぎない（1.6 倍まで）
     Array.prototype.forEach.call($('print').querySelectorAll('.p-fig svg'), function (s) {
-      var w = +s.getAttribute('data-w'), h = +s.getAttribute('data-h'), k = Math.min(1000 / w, 560 / h, 1.6);
+      var w = +s.getAttribute('data-w'), h = +s.getAttribute('data-h'), k = s.getAttribute('data-k') ? +s.getAttribute('data-k') : Math.max(MIN_PX / minFont(s.outerHTML), Math.min(1000 / w, 560 / h, 1.6));
       s.setAttribute('width', Math.round(w * k)); s.setAttribute('height', Math.round(h * k));
     });
   }
@@ -522,6 +546,8 @@
     version: '__VERSION__',
     // 試験用に「見るだけ」のもの（中の動きは変えない）
     where3d: function (d, i) { var sc = state.scenes[d]; return sc ? sc.project(i, sc.canvas) : null; },
+    // 3D で、図のいちばん小さい文字が画面で何 px に見えるか
+    text3d: function (d) { var sc = state.scenes[d], c = sc && sc.canvas; return sc ? +(sc.textScale(c.clientWidth, c.clientHeight) * minFont($('dg' + d).querySelector('.svg-wrap svg').outerHTML)).toFixed(1) : null; },
     mode: function () { return state.mode; }
   };
 })();

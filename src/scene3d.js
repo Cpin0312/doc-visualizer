@@ -396,6 +396,27 @@
       draw: function (t, target) { return drawTo(target || canvas, t == null ? performance.now() / 1000 : t); },
       capture: capture, bind: bind, focus: focus, select: select, dispose: dispose,
       busy: function () { return !!tween; },
+      // 全体を見る向きで、図が画面の上で横長・縦長どちらに見えるか（幅÷高さ）。画面の形をこれに合わせると、むだな余白がなくなる
+      shape: function () {
+        var dv = dirOf(baseAz, baseEl), mn = bounds.min, mx = bounds.max, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        cam.aspect = 1; cam.updateProjectionMatrix();
+        cam.position.copy(target0).addScaledVector(dv, fitDist(1)); cam.lookAt(target0); cam.updateMatrixWorld();
+        for (var a = 0; a < 8; a++) { var q = new T.Vector3(a & 1 ? mx.x : mn.x, a & 2 ? mx.y : mn.y, a & 4 ? mx.z : mn.z).project(cam); x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+        fitAspect = 0;   // 次に描くとき、本当の画面の形で合わせ直す
+        return (x1 - x0) / (y1 - y0);
+      },
+      // 全体を見る向きで、SVG の 1px が画面の何 px に見えるか（文字が小さくなりすぎないよう、画面の幅を決めるのに使う）
+      textScale: function (w, h) {
+        place(w / h, 0);
+        cam.updateMatrixWorld();   // project() は描く前の古い向きを使うので、ここで新しくする
+        var pts = [[W / 2, H / 2], [W / 2, 0], [0, H / 2], [W, H / 2], [W / 2, H]], m = Infinity;
+        pts.forEach(function (q) {
+          var o = P(q[0], q[1], 0).project(cam), x = P(q[0] + 50, q[1], 0).project(cam), y = P(q[0], q[1] + 50, 0).project(cam);
+          var sx = Math.hypot((x.x - o.x) * w / 2, (x.y - o.y) * h / 2) / 50, sy = Math.hypot((y.x - o.x) * w / 2, (y.y - o.y) * h / 2) / 50;
+          m = Math.min(m, sx, sy);
+        });
+        return m;
+      },
       // 試験と発表用：箱の真ん中が画面のどこに見えるか（押す場所を知るだけ）
       project: function (i, el) {
         var b = el.getBoundingClientRect(), it = items[i];

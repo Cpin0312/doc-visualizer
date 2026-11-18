@@ -35,6 +35,10 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   ok('読みとり：箱の名前がない行は飛ばし、元の行番号で知らせる', d.warnings.some(w => w.line === 11 && w.kind === 'skip'), JSON.stringify(d.warnings));
   ok('読みとり：~~~ の図と ``` の図の両方（包みの中に ``` の図があっても）', d.diagrams.length === 2 && d.diagrams[1].type === 'lanes' && eq(d.diagrams[1].lanes, ['営業', '経理']), d.diagrams.map(x => x.type).join(','));
 
+  // R1 の直し：矢印のない行は、名前だけなら箱、文なら飛ばして知らせる（copilot-prompt.md と同じきまり）
+  const sen = P.parseDoc('```flow 文\n承認 !期限\nWeb受付\nここで内容を確認して、問題があれば戻す。\n```');
+  ok('読みとり：矢印のない行：名前だけは箱、文は飛ばして知らせる', eq(sen.diagrams[0].items.map(i => i.label), ['承認', 'Web受付']) && sen.warnings.some(w => w.line === 4 && w.kind === 'skip' && w.msg.includes('矢印のない文')), JSON.stringify([sen.diagrams[0].items.map(i => i.label), sen.warnings]));
+
   const jp = P.parseDoc('```日程　予定\n2026/12/1　説明会 ！期限\n12/15 締め\n2026年1月 ふりかえり\n2026-02-30 ない日\n```\n```木\n- 親\n  - 子\n　　- 孫\n```\n```数字 件数（件）\n１月 ： １,２００\n2月 : 1.2万\n3月 : ▲30\n4月 : たくさん\n```\n```大事な数字\n売上 : 1,200万円 : 前年比 +8%\n解約 : 2% : ▲0.3pt\n```\n```比べる\n| 項目 | 案A | 案B |\n|---|---|---|\n| 値段 | ◎ 安い | × 高い |\n| 早さ | ○ | △ | 余り |\n```');
   const [tl, tr, ch, kp, cp] = jp.diagrams;
   ok('読みとり：日本語の種類名（日程・木・数字・大事な数字・比べる）', eq(jp.diagrams.map(x => x.type), ['timeline', 'tree', 'chart', 'kpi', 'compare']), jp.diagrams.map(x => x.type).join(','));
@@ -45,7 +49,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   ok('読みとり：比べる（◎×○△・列の数ちがいはそろえて知らせる）', cp && eq(cp.options, ['案A', '案B']) && eq(cp.items[0].cells.map(c => c.rate), ['best', 'bad']) && eq(cp.items[1].cells.map(c => c.rate), ['good', 'mid']) && jp.warnings.some(w => /列の数/.test(w.msg)));
 
   const big = P.parseDoc('```flow\n' + Array.from({ length: 260 }, (_, i) => `箱${i} -> 箱${i + 1}`).join('\n') + '\n```');
-  ok('読みとり：箱が 200 を超えたら先頭 200 だけ・知らせる', big.diagrams[0].items.length === 200 && big.warnings.some(w => /200/.test(w.msg)), big.diagrams[0].items.length);
+  ok('読みとり：箱が 200 を超えたら先頭 200 だけ・省いた数は箱の数（261 個なら 61）', big.diagrams[0].items.length === 200 && big.warnings.some(w => w.msg.includes('61 個を省いた')), big.warnings.map(w => w.msg).join(' / '));
   const loop = P.parseDoc('```flow\nA -> B -> C -> A\nA -> A\n```');
   ok('読みとり：輪になる矢印も止まらない', loop.diagrams[0].edges.length === 4);
   const same = P.parseDoc('```flow\n受付 -> 確認\n受付 -> 返事\n```');
@@ -400,6 +404,44 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   const overflow = await B.evalJs(`(() => { document.getElementById('print').style.display = 'block'; const bad = Array.from(document.querySelectorAll('#print .page')).filter(p => p.scrollHeight > p.clientHeight + 2).length; document.getElementById('print').style.display = ''; return bad; })()`);
   ok('PDF：長い説明はページを分け、最後の段落と出どころまで出る', Array.from({ length: 12 }, (_, i) => `${i + 1}段落目`).every(k => all.includes(k)) && all.includes('長い資料9ページ') && overflow === 0, `PDF ${doc.numPages} ページ・はみ出すページ ${overflow}・12段落目 ${all.includes('12段落目')}・出どころ ${all.includes('長い資料9ページ')}`);
   ok('PDF：本文（説明でない見出し）も出る', all.includes('本文のさいごの行です'));
+}
+
+// R1 の直し：戻る矢印が2本の担当ごとの流れ。言葉が重ならず、線が帯の外に出ない
+{
+  const p = join(tmpdir(), 'docvis-lanes-back.md');
+  writeFileSync(p, '# 戻り\n```lanes 戻りのある流れ\n[営業] 受付 -> [営業] 確認\n[営業] 確認 -> [経理] 審査\n[経理] 審査 -> [経理] 承認\n[経理] 審査 -> [営業] 確認 : 差し戻し\n[経理] 承認 -> [営業] 受付 : やり直し\n```\n');
+  await pick(p);
+  await waitFor(`document.getElementById('status').textContent.includes('docvis-lanes-back.md')`);
+  const g = await B.evalJs(`(() => { const s = document.querySelector('#dg0 .svg-wrap svg');
+    const bands = Array.from(s.querySelectorAll('.lane > rect:first-child')).map(r => r.getBBox()), top = Math.min(...bands.map(b => b.y)), bot = Math.max(...bands.map(b => b.y + b.height));
+    const labels = Array.from(s.querySelectorAll('.edge-label rect')).map(r => r.getBBox());
+    let overlap = 0; for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) { const a = labels[i], b = labels[j]; if (a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height) overlap++; }
+    const outE = Array.from(s.querySelectorAll('path.edge')).filter(e => { const b = e.getBBox(); return b.y < top - 0.5 || b.y + b.height > bot + 0.5; }).length;
+    const outL = labels.filter(b => b.y < top || b.y + b.height > bot).length;
+    return { labels: labels.length, overlap, outE, outL }; })()`);
+  ok('担当ごとの流れ：戻る矢印2本の言葉が重ならず、線と言葉が帯の中', g.labels === 2 && g.overlap === 0 && g.outE === 0 && g.outL === 0, JSON.stringify(g));
+}
+
+// R1 の直し：15 段の流れでも、文字は 11px を下まわらない（画面の 2D は横へ動かす・3D は画面を広げる・PDF はページを分ける）
+{
+  await pick(join(root, 'test', 'fixtures', 'flow15.md'));
+  await waitFor(`document.getElementById('status').textContent.includes('flow15.md') && DocVisualizer.text3d(0) != null`);
+  const minPx = sel => `Array.from(document.querySelectorAll(${JSON.stringify(sel)})).map(s => { const k = s.getBoundingClientRect().width / s.viewBox.baseVal.width; return Math.min(...Array.from(s.querySelectorAll('text')).map(t => +t.getAttribute('font-size'))) * k; })`;
+  const was3d = await B.evalJs(`DocVisualizer.mode() === '3d'`);
+  if (was3d) { await B.evalJs(`document.getElementById('mode').click()`); await sleep(300); }
+  const s2 = await B.evalJs(`({ px: ${minPx('#diagrams .svg-wrap svg')}, wide: document.querySelector('#dg0 .svg-wrap').classList.contains('wide'), scroll: (w => w.scrollWidth > w.clientWidth)(document.querySelector('#dg0 .svg-wrap')) })`);
+  ok('文字 11px：画面の 2D（15 段の流れ）は縮めすぎず、横へ動かして見る', s2.px.every(v => v >= 10.95) && s2.wide && s2.scroll, JSON.stringify(s2));
+  if (was3d) { await B.evalJs(`document.getElementById('mode').click()`); await sleep(300); }
+  const pr = await B.evalJs(`(() => { const p = document.getElementById('print'); p.style.display = 'block'; const px = ${minPx('#print .p-fig svg')}; const hs = Array.from(p.querySelectorAll('h2')).map(h => h.textContent); p.style.display = ''; return { px, split: hs.filter(h => /（\\d+\\/\\d+）/.test(h)).length }; })()`);
+  ok('文字 11px：PDF の図（15 段の流れ）はページを分ける（1/2・2/2）', pr.px.length >= 2 && pr.px.every(v => v >= 10.95) && pr.split >= 2, JSON.stringify(pr));
+  if (!was3d) { await B.evalJs(`document.getElementById('mode').click()`); await sleep(300); }
+  const t3 = [await B.evalJs(`DocVisualizer.text3d(0)`)];
+  for (const f of ['03_timeline.md', '08_copilot_wrapped.md']) {
+    await pick(join(root, 'samples', f));
+    await waitFor(`document.getElementById('status').textContent.includes(${JSON.stringify(f)}) && DocVisualizer.text3d(0) != null`);
+    t3.push(...await B.evalJs(`Array.from(document.querySelectorAll('#diagrams .diagram-box')).map((b, i) => DocVisualizer.text3d(i))`));
+  }
+  ok('文字 11px：3D（15 段の流れ・日程・08 の図7つ）は、いちばん小さい文字が 11px 以上に見える', t3.length === 9 && t3.every(v => v >= 10.95), t3.join(' / '));
 }
 
 // 確かめ役の md（verify/md があれば、読むだけ。直さない）：落ちず、エラーを出さない

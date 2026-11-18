@@ -62,7 +62,7 @@
 
   function badges(it, x, y, fs, alignRight) {
     // 印（!期限 など）を箱の上に小さな札で出す
-    var out = '', bx = x, f = Math.max(10, Math.round(fs * 0.78));
+    var out = '', bx = x, f = Math.max(11, Math.round(fs * 0.78));
     var list = it.marks.map(function (m) { return { m: m, w: tw(m.text, f, true) + 12 }; });
     if (alignRight) bx = x - list.reduce(function (a, b) { return a + b.w + 4; }, 0) + 4;
     list.forEach(function (b) {
@@ -86,7 +86,7 @@
   // 箱（flow・lanes・tree 共通）
   function measureBox(it, fs, maxW) {
     var lines = wrap(it.label, fs, maxW, 3);
-    var w = Math.max(textW(lines, fs) + fs * 1.6, fs * 5, it.marks.length ? it.marks.reduce(function (a, m) { return a + tw(m.text, Math.max(10, Math.round(fs * 0.78)), true) + 16; }, 0) : 0);
+    var w = Math.max(textW(lines, fs) + fs * 1.6, fs * 5, it.marks.length ? it.marks.reduce(function (a, m) { return a + tw(m.text, Math.max(11, Math.round(fs * 0.78)), true) + 16; }, 0) : 0);
     return { lines: lines, w: w, h: lines.length * fs * 1.3 + fs * 1.4 };
   }
   function drawBox(d, it, b, opts) {
@@ -154,17 +154,18 @@
     return cols;
   }
 
-  function edgePaths(diag, d, B, back, opts, bottomY) {
-    var out = '', labels = '', fs = Math.max(11, Math.round(opts.fs * 0.85)), dip = 0;
-    diag.edges.forEach(function (e) {
+  // 戻る矢印（下を回る線）は、どれも別の深さ yb を通す（yb はふつうの線の言葉が重ならない間かくで、呼ぶ側が決める）
+  function edgePaths(diag, d, B, backY, opts) {
+    var out = '', labels = '', fs = Math.max(11, Math.round(opts.fs * 0.85));
+    diag.edges.forEach(function (e, ei) {
       var a = B[e.from], b = B[e.to], path, mx, my;
       if (!a || !b) return;
-      if (back[e.from + '>' + e.to] || e.from === e.to || a.x >= b.x) {
-        dip += 14;
-        var yb = bottomY + 18 + dip, x1 = a.x + a.w / 2, x2 = b.x + b.w / 2;
+      if (backY[ei] != null) {
+        var yb = backY[ei], x1 = a.x + a.w / 2, x2 = b.x + b.w / 2, y0 = a.y + a.h, y3 = b.y + b.h + 2;
         if (e.from === e.to) x2 = x1 + a.w / 4;
-        path = 'M' + r(x1) + ' ' + r(a.y + a.h) + ' C' + r(x1) + ' ' + r(yb) + ' ' + r(x2) + ' ' + r(yb) + ' ' + r(x2) + ' ' + r(b.y + b.h + 2);
-        mx = (x1 + x2) / 2; my = (a.y + a.h + b.y + b.h) / 8 + yb * 0.75;
+        var c = (yb - (y0 + y3) / 8) / 0.75;   // 線のまん中がちょうど yb を通るように
+        path = 'M' + r(x1) + ' ' + r(y0) + ' C' + r(x1) + ' ' + r(c) + ' ' + r(x2) + ' ' + r(c) + ' ' + r(x2) + ' ' + r(y3);
+        mx = (x1 + x2) / 2; my = yb;
       } else {
         var sx = a.x + a.w, sy = a.y + a.h / 2, ex = b.x - 2, ey = b.y + b.h / 2, cx = (sx + ex) / 2;
         path = 'M' + r(sx) + ' ' + r(sy) + ' C' + r(cx) + ' ' + r(sy) + ' ' + r(cx) + ' ' + r(ey) + ' ' + r(ex) + ' ' + r(ey);
@@ -177,7 +178,7 @@
           textEl([e.label], mx, my, fs, { fill: C.sub }) + '</g>';
       }
     });
-    return { paths: out, labels: labels, extra: dip ? dip + 40 : 0 };
+    return { paths: out, labels: labels };
   }
 
   function flow(diag, d, opts, laneMode) {
@@ -185,6 +186,14 @@
     var laneIdx = {};
     if (laneMode) diag.lanes.forEach(function (l, i) { laneIdx[l] = i; });
     var cols = orderInLayer(diag, L.layer, laneMode ? function (v) { return laneIdx[diag.items[v].lane]; } : null);
+    // 戻る矢印：どの帯の下を通すか（低いほうの箱の帯）と、その帯での順番
+    var step = fs * 2.1, backIdx = {}, laneBack = [], backY = {}, nBack = 0;
+    diag.edges.forEach(function (e, ei) {
+      if (!(L.back[e.from + '>' + e.to] || e.from === e.to || L.layer[e.from] >= L.layer[e.to])) return;
+      var li = laneMode ? Math.max(laneIdx[diag.items[e.from].lane], laneIdx[diag.items[e.to].lane]) : 0;
+      backIdx[ei] = { li: li, k: laneBack[li] = (laneBack[li] || 0) + 1 };
+      nBack++;
+    });
     var M = diag.items.map(function (it) { return measureBox(it, fs, maxW); });
     // 列の間は、矢印の言葉が入る幅にする
     var gapAfter = cols.map(function () { return fs * 4; });
@@ -207,14 +216,16 @@
       var y = 14, bands = '';
       diag.lanes.forEach(function (lane, li) {
         var cells = cols.map(function (col) { return col.filter(function (v) { return diag.items[v].lane === lane; }); });
-        var h = Math.max.apply(null, cells.map(function (c) { return c.reduce(function (a, v) { return a + M[v].h; }, 0) + Math.max(0, c.length - 1) * vgap; }).concat([fs * 3])) + fs * 3.2;
+        var h0 = Math.max.apply(null, cells.map(function (c) { return c.reduce(function (a, v) { return a + M[v].h; }, 0) + Math.max(0, c.length - 1) * vgap; }).concat([fs * 3])) + fs * 3.2;
+        var h = h0 + (laneBack[li] ? laneBack[li] * step + fs * 0.4 : 0);   // 戻る矢印の分だけ帯を広げ、線と言葉を帯の中におさめる
+        Object.keys(backIdx).forEach(function (ei) { if (backIdx[ei].li === li) backY[ei] = y + h0 - fs * 0.6 + backIdx[ei].k * step - step / 2; });
         bands += '<g class="lane"><rect x="0" y="' + r(y) + '" width="' + r(width) + '" height="' + r(h) + '" fill="' + C.lane[li % 2] + '"/>' +
           '<line x1="0" x2="' + r(width) + '" y1="' + r(y) + '" y2="' + r(y) + '" stroke="' + C.grid + '"/>' +
           '<rect x="0" y="' + r(y) + '" width="' + r(left) + '" height="' + r(h) + '" fill="' + C.head + '"/>' +
           textEl(wrap(lane, fs, fs * 7, 2, true), left / 2, y + h / 2, fs, { bold: true }) + '</g>';
         cells.forEach(function (c, ci) {
           var cw = Math.max.apply(null, cols[ci].map(function (v) { return M[v].w; }).concat([0]));
-          var ch = c.reduce(function (a, v) { return a + M[v].h; }, 0) + Math.max(0, c.length - 1) * vgap, yy = y + (h - ch) / 2 + fs * 0.4;
+          var ch = c.reduce(function (a, v) { return a + M[v].h; }, 0) + Math.max(0, c.length - 1) * vgap, yy = y + (h0 - ch) / 2 + fs * 0.4;
           c.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: yy, w: M[v].w, h: M[v].h, lines: M[v].lines }; yy += M[v].h + vgap; });
         });
         y += h;
@@ -222,11 +233,16 @@
       body += bands;
       bottom = y;
     }
-    var E = edgePaths(diag, d, B, L.back, opts, bottom);
+    var extra = 0;
+    if (!laneMode && nBack) {
+      Object.keys(backIdx).forEach(function (ei) { backY[ei] = bottom + fs * 1.2 + (backIdx[ei].k - 1) * step; });
+      extra = fs * 1.2 + nBack * step;
+    }
+    var E = edgePaths(diag, d, B, backY, opts);
     body += E.paths;
     diag.items.forEach(function (it) { if (B[it.id]) body += drawBox(d, it, B[it.id], opts); });
     body += E.labels;
-    return wrapSvg(width, bottom + E.extra + 24, body, laneMode ? 'lanes' : 'flow');
+    return wrapSvg(width, bottom + extra + 24, body, laneMode ? 'lanes' : 'flow');
   }
 
   // ---- 日程 ----
@@ -239,7 +255,7 @@
     var showToday = today != null && today >= lo - 31 && today <= hi + 31;
     if (showToday) { lo = Math.min(lo, today); hi = Math.max(hi, today); }
     var span = Math.max(hi - lo, 14); lo -= span * 0.06; hi += span * 0.06; span = hi - lo;
-    var labelW = items.map(function (it) { return Math.max(tw(it.label, fs, true), tw(it.dateText, fs * 0.82)) + 20; });
+    var labelW = items.map(function (it) { return Math.max(tw(it.label, fs, true), tw(it.dateText, Math.max(11, fs * 0.82))) + 20; });
     var width = Math.max(900, Math.min(2400, items.length * fs * 7)), pad = 40;
     var X = function (day) { return pad + (day - lo) / span * (width - pad * 2); };
     // 札が重ならないよう、上と下に段を分ける
@@ -267,7 +283,7 @@
       else if (step === 'month') t = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 1));
       else t = new Date(Date.UTC(t.getUTCFullYear() + 1, 0, 1));
     }
-    var tf = Math.max(10, Math.round(fs * 0.78));
+    var tf = Math.max(11, Math.round(fs * 0.78));
     ticks.forEach(function (k) {
       body += '<line x1="' + r(k.x) + '" x2="' + r(k.x) + '" y1="' + r(axisY - 6) + '" y2="' + r(axisY + 6) + '" stroke="' + C.line + '"/>' +
         '<text x="' + r(k.x) + '" y="' + r(height - 22) + '" font-size="' + tf + '" text-anchor="middle" fill="' + C.sub + '">' + esc(k.text) + '</text>' +
@@ -290,7 +306,7 @@
         '<circle cx="' + r(cx) + '" cy="' + r(axisY) + '" r="6" fill="#fff" stroke="' + col + '" stroke-width="3"/>' +
         '<rect class="box" x="' + r(cx - 2) + '" y="' + r(by) + '" width="' + r(labelW[i]) + '" height="' + r(h) + '" rx="8" fill="#fff" stroke="' + col + '" stroke-width="' + (k ? 2.2 : 1.4) + '"/>' +
         (info(it, opts) ? cornerDot(cx - 2 + labelW[i] - 1, by + 1) : '') +
-        '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.3) + '" font-size="' + r(fs * 0.82) + '" dominant-baseline="central" fill="' + C.sub + '">' + esc(it.dateText) + '</text>' +
+        '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.3) + '" font-size="' + r(Math.max(11, fs * 0.82)) + '" dominant-baseline="central" fill="' + C.sub + '">' + esc(it.dateText) + '</text>' +
         '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.68) + '" font-size="' + fs + '" font-weight="bold" dominant-baseline="central" fill="' + C.text + '">' + esc(it.label) + '</text>' +
         badges(it, cx - 2 + labelW[i], by - 3, fs, true) + '</g>';
       body += s;
@@ -357,16 +373,16 @@
     var vmin = Math.min.apply(null, items.map(function (i) { return i.value; }).concat([0]));
     var step = niceStep(vmax - vmin || 1), top = Math.ceil(vmax / step) * step, bot = Math.floor(vmin / step) * step;
     if (top === bot) top = bot + step;
-    var plotH = fs * 18, padTop = fs * 3.2, axisW = Math.max(tw(fmt(top), fs * 0.8), tw(fmt(bot), fs * 0.8)) + 24;
-    var catLines = items.map(function (it) { return wrap(it.label, fs * 0.9, fs * 6, 2); });
-    var barW = Math.max.apply(null, items.map(function (it, i) { return Math.max(textW(catLines[i], fs * 0.9), tw(it.valueText, fs * 0.9, true), fs * 2.6); })) + fs * 1.2;
+    var plotH = fs * 18, padTop = fs * 3.2, axisW = Math.max(tw(fmt(top), Math.max(11, fs * 0.8)), tw(fmt(bot), Math.max(11, fs * 0.8))) + 24;
+    var catLines = items.map(function (it) { return wrap(it.label, Math.max(11, fs * 0.9), fs * 6, 2); });
+    var barW = Math.max.apply(null, items.map(function (it, i) { return Math.max(textW(catLines[i], Math.max(11, fs * 0.9)), tw(it.valueText, Math.max(11, fs * 0.9), true), fs * 2.6); })) + fs * 1.2;
     var Y = function (v) { return padTop + (top - v) / (top - bot) * plotH; };
     var width = axisW + items.length * barW + 30, height = padTop + plotH + fs * 4.2, body = '';
     for (var v = bot; v <= top + step / 2; v += step) {
       body += '<line x1="' + r(axisW) + '" x2="' + r(width - 10) + '" y1="' + r(Y(v)) + '" y2="' + r(Y(v)) + '" stroke="' + (v === 0 ? C.line : C.grid) + '"' + (v === 0 ? ' stroke-width="1.5"' : '') + '/>' +
-        '<text x="' + r(axisW - 8) + '" y="' + r(Y(v)) + '" font-size="' + r(fs * 0.8) + '" text-anchor="end" dominant-baseline="central" fill="' + C.sub + '">' + esc(fmt(v)) + '</text>';
+        '<text x="' + r(axisW - 8) + '" y="' + r(Y(v)) + '" font-size="' + r(Math.max(11, fs * 0.8)) + '" text-anchor="end" dominant-baseline="central" fill="' + C.sub + '">' + esc(fmt(v)) + '</text>';
     }
-    if (diag.unit) body += '<text x="8" y="' + r(fs * 1.2) + '" font-size="' + r(fs * 0.85) + '" fill="' + C.sub + '">（' + esc(diag.unit) + '）</text>';
+    if (diag.unit) body += '<text x="8" y="' + r(fs * 1.2) + '" font-size="' + r(Math.max(11, fs * 0.85)) + '" fill="' + C.sub + '">（' + esc(diag.unit) + '）</text>';
     items.forEach(function (it, i) {
       var k = strongest(it), col = k ? MARK_COLOR[k] : C.accent, x = axisW + i * barW + barW * 0.18, w = barW * 0.64;
       var y1 = Y(Math.max(it.value, 0)), y2 = Y(Math.min(it.value, 0)), h = Math.max(y2 - y1, 1.5);
@@ -374,8 +390,8 @@
       body += itemOpen(d, it) +
         '<rect class="box" x="' + r(x) + '" y="' + r(y1) + '" width="' + r(w) + '" height="' + r(h) + '" rx="4" fill="' + col + '" opacity="0.9"/>' +
         (info(it, opts) ? cornerDot(x + w, y1) : '') +
-        textEl([it.valueText], x + w / 2, vy, Math.round(fs * 0.9), { bold: true }) +
-        textEl(catLines[i], x + w / 2, padTop + plotH + fs * 1.6 + (catLines[i].length - 1) * fs * 0.58, Math.round(fs * 0.9)) +
+        textEl([it.valueText], x + w / 2, vy, Math.max(11, Math.round(fs * 0.9)), { bold: true }) +
+        textEl(catLines[i], x + w / 2, padTop + plotH + fs * 1.6 + (catLines[i].length - 1) * fs * 0.58, Math.max(11, Math.round(fs * 0.9))) +
         badges(it, x + w / 2 + 20, Math.min(vy, y1) - fs * 0.7, fs, true) + '</g>';
     });
     return wrapSvg(width, height, body, 'chart');
@@ -396,7 +412,7 @@
         (info(it, opts) ? cornerDot(x + cw - 2, y + 2) : '') +
         textEl(wrap(it.label, fs, cw - fs * 2, 1, true), x + fs, y + fs * 1.6, fs, { anchor: 'start', fill: C.sub, bold: true }) +
         textEl([it.valueText], x + fs, y + ch * 0.5, Math.round(vf), { anchor: 'start', bold: true }) +
-        (it.note ? textEl(wrap((it.trend === 'up' ? '▲ ' : it.trend === 'down' ? '▼ ' : '') + it.note, Math.round(fs * 0.9), cw - fs * 2, 2), x + fs, y + ch - fs * 1.7, Math.round(fs * 0.9), { anchor: 'start', fill: tc, bold: !!it.trend }) : '') +
+        (it.note ? textEl(wrap((it.trend === 'up' ? '▲ ' : it.trend === 'down' ? '▼ ' : '') + it.note, Math.max(11, Math.round(fs * 0.9)), cw - fs * 2, 2), x + fs, y + ch - fs * 1.7, Math.max(11, Math.round(fs * 0.9)), { anchor: 'start', fill: tc, bold: !!it.trend }) : '') +
         badges(it, x + cw - 6, y - 3, fs, true) + '</g>';
     });
     var rows = Math.ceil(items.length / per);
