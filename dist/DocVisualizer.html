@@ -121,6 +121,16 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 .diagram-box .movable .item, .diagram-box .movable .edge-label { cursor: move; }
 .reset-layout { margin-left: 10px; font: inherit; font-size: 0.8rem; font-weight: normal; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); cursor: pointer; vertical-align: middle; }
 .reset-layout:hover { background: #eef3fb; }
+/* R8b-2：ポップアップの「形と色」「線の形と矢印」 */
+.styl { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
+.styl summary { font-size: 0.85rem; font-weight: bold; cursor: pointer; margin: 2px 0 4px; }
+.styl .srow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; }
+.styl .srow > span { font-size: 0.78rem; color: var(--sub); min-width: 4.5em; }
+.styl button { font: inherit; font-size: 0.78rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); cursor: pointer; }
+.styl button[aria-pressed="true"] { background: #e6eefc; border-color: #3b6fd8; font-weight: bold; }
+.styl button.sw::before { content: ''; display: inline-block; width: 0.8em; height: 0.8em; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.styl .sw.blue::before { background: #3b6fd8; } .styl .sw.green::before { background: #2f9e5b; } .styl .sw.yellow::before { background: #c99400; }
+.styl .sw.red::before { background: #d64545; } .styl .sw.gray::before { background: #7a8699; } .styl .sw.purple::before { background: #7b52c7; }
 </style>
 </head>
 <body>
@@ -913,7 +923,19 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       (d.edges || []).forEach(function (e) { var b = d.items[e.from].pk + '>' + d.items[e.to].pk, n = eseen[b] = (eseen[b] || 0) + 1; e.pk = n > 1 ? b + '#' + n : b; });
     });
   }
-  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, timeline: 1, kpi: 1 };
+  // 形・色などの値（R8b-2）。決まった値だけを使う
+  var oneOf = function (list) { return function (v) { return list.indexOf(v) >= 0; }; };
+  var STYLE_OK = {
+    shape: oneOf(['rect', 'round', 'ellipse', 'diamond', 'para', 'hexagon', 'chevron', 'cylinder', 'doc']),
+    color: oneOf(['blue', 'green', 'yellow', 'red', 'gray', 'purple']),
+    stroke: function (v) { return typeof v === 'number' && v >= 1 && v <= 4; },
+    scale: function (v) { return typeof v === 'number' && v >= 0.6 && v <= 2; },
+    font: oneOf([0.8, 1, 1.25]),
+    route: oneOf(['straight', 'elbow', 'curve']),
+    head: oneOf(['end', 'none', 'both']),
+    dash: function (v) { return v === true; }
+  };
   function isPair(v) { return Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]) && typeof v[0] === 'number' && typeof v[1] === 'number'; }
   function cleanPart(p) {
     var o = {}, bad = false;
@@ -921,6 +943,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     Object.keys(p).forEach(function (k) {
       if (k === 'x' || k === 'y') { if (typeof p[k] === 'number' && isFinite(p[k])) o[k] = p[k]; else bad = true; }
       else if (k === 'bend' || k === 'label') { if (isPair(p[k])) o[k] = p[k].slice(); else bad = true; }
+      else if (STYLE_OK[k]) { if (STYLE_OK[k](p[k])) o[k] = p[k]; else bad = true; }
       else bad = true;   // shortcut: 知らない鍵は描くのに使わない（R8b で形・色を足す）。md の中には残る
     });
     if ((o.x == null) !== (o.y == null)) { delete o.x; delete o.y; bad = true; }
@@ -1107,12 +1130,51 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var w = Math.max(textW(lines, fs) + fs * 1.6, fs * 5, it.marks.length ? it.marks.reduce(function (a, m) { return a + tw(m.text, Math.max(11, Math.round(fs * 0.78)), true) + 16; }, 0) : 0);
     return { lines: lines, w: w, h: lines.length * fs * 1.3 + fs * 1.4 };
   }
+  // ---- 箱の形・色・大きさ（layout の shape・color・stroke・scale・font。R8b-2） ----
+  var BOX_COLOR = { blue: ['#eef4ff', '#3b6fd8'], green: ['#ecf8f1', '#2f9e5b'], yellow: ['#fff8e1', '#c99400'], red: ['#fdeeee', '#d64545'], gray: ['#f2f4f7', '#7a8699'], purple: ['#f4effc', '#7b52c7'] };
+  var SHAPE_PPT = { rect: 'rect', round: 'roundRect', ellipse: 'ellipse', diamond: 'diamond', para: 'parallelogram', hexagon: 'hexagon', chevron: 'chevron', cylinder: 'can', doc: 'flowChartDocument' };
+  function partOf(diag, it) { return (diag.layout || {})[it.pk] || {}; }
+  // 形に合わせて箱を広げる（中の字が形の外に出ないように）
+  function grow(m, sh, fs) {
+    if (sh === 'diamond') { m.w = m.w * 1.55 + fs; m.h *= 1.7; }
+    else if (sh === 'ellipse') { m.w *= 1.25; m.h *= 1.3; }
+    else if (sh === 'para' || sh === 'hexagon' || sh === 'chevron') m.w += m.h * 0.8;
+    else if (sh === 'cylinder') m.h += fs * 0.9;
+    else if (sh === 'doc') m.h += fs * 0.6;
+    return m;
+  }
+  function measurePart(diag, it, fs, maxW) {
+    var p = partOf(diag, it), f = Math.max(11, Math.round(fs * (p.font || 1))), k = p.scale || 1;
+    var m = measureBox(it, f, maxW * k);
+    if (p.shape) grow(m, p.shape, f);
+    m.w *= k; m.h *= k; m.fs = f;
+    return m;
+  }
+  function arc(cx, cy, rx, ry, a0, a1, n) { var o = []; for (var j = 0; j <= n; j++) { var a = a0 + (a1 - a0) * j / n; o.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]); } return o; }
+  // 形の点（曲線は点で近似。3D の押し出し・PowerPoint の形の名前がそのまま使える）
+  function shapePts(sh, x, y, w, h) {
+    var q = Math.min(h * 0.4, w * 0.25);
+    switch (sh) {
+      case 'ellipse': return arc(x + w / 2, y + h / 2, w / 2, h / 2, 0, Math.PI * 2, 48).slice(0, -1);
+      case 'diamond': return [[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]];
+      case 'para': return [[x + q, y], [x + w, y], [x + w - q, y + h], [x, y + h]];
+      case 'hexagon': return [[x + q, y], [x + w - q, y], [x + w, y + h / 2], [x + w - q, y + h], [x + q, y + h], [x, y + h / 2]];
+      case 'chevron': return [[x, y], [x + w - q, y], [x + w, y + h / 2], [x + w - q, y + h], [x, y + h], [x + q, y + h / 2]];
+      case 'cylinder': { var e = Math.min(h * 0.12, 10); return arc(x + w / 2, y + e, w / 2, e, Math.PI, Math.PI * 2, 16).concat(arc(x + w / 2, y + h - e, w / 2, e, 0, Math.PI, 16)); }
+      case 'doc': { var wv = Math.min(h * 0.12, 9), pts = [[x, y], [x + w, y]]; for (var j = 0; j <= 16; j++) pts.push([x + w - w * j / 16, y + h - wv + Math.sin(j / 16 * Math.PI * 2) * wv]); return pts; }
+    }
+    return null;
+  }
   function drawBox(d, it, b, opts) {
-    var k = strongest(it), stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
+    var k = strongest(it), p = b.part || {}, bc = BOX_COLOR[p.color];
+    var stroke = k ? MARK_COLOR[k] : bc ? bc[1] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : bc ? bc[0] : C.box;
+    var sw = p.stroke || (k ? 2.5 : 1.6), pts = p.shape && p.shape !== 'rect' && p.shape !== 'round' ? shapePts(p.shape, b.x, b.y, b.w, b.h) : null, f = b.fs || opts.fs;
+    var at = ' fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + (p.shape ? ' data-shape="' + SHAPE_PPT[p.shape] + '"' : '');
     return itemOpen(d, it, b.band ? ' data-band="' + r(b.band[0] + 4) + ' ' + r(b.band[1] - 4) + '"' : '') +
-      '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="10" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.6) + '"/>' +
-      (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') +
-      textEl(b.lines, b.x + b.w / 2, b.y + b.h / 2, opts.fs) +
+      (pts ? '<path class="box" d="M' + pts.map(function (q) { return r(q[0]) + ' ' + r(q[1]); }).join(' L') + ' Z"' + at + '/>'
+        : '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="' + (p.shape === 'rect' ? 2 : p.shape === 'round' ? r(b.h / 2) : 10) + '"' + at + '/>') +
+      (info(it, opts) ? cornerDot(b.x + b.w - (p.shape === 'diamond' ? b.w / 2 - 6 : 1), b.y + 1) : '') +
+      textEl(b.lines, b.x + b.w / 2, b.y + b.h / 2 + (p.shape === 'cylinder' ? Math.min(b.h * 0.06, 5) : p.shape === 'doc' ? -Math.min(b.h * 0.06, 4) : 0), f) +
       badges(it, b.x + b.w, b.y - 3, opts.fs, true) + '</g>';
   }
 
@@ -1217,6 +1279,25 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var c1 = [s0[0] + (c[0] - s0[0]) * 2 / 3, s0[1] + (c[1] - s0[1]) * 2 / 3], c2 = [e0[0] + (c[0] - e0[0]) * 2 / 3, e0[1] + (c[1] - e0[1]) * 2 / 3];
     return { d: 'M' + r(s0[0]) + ' ' + r(s0[1]) + ' C' + r(c1[0]) + ' ' + r(c1[1]) + ' ' + r(c2[0]) + ' ' + r(c2[1]) + ' ' + r(e0[0]) + ' ' + r(e0[1]), mx: bend[0], my: bend[1] };
   }
+  // 線の形（layout の route）：straight・curve・elbow（折れ線）
+  function routeEdge(route, a, b, fs) {
+    if (route === 'straight') return freeEdge(a, b, null);
+    if (route === 'curve') return freeEdge(a, b, null, fs * 2.2);
+    var ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2, d, mx, my;
+    if (Math.abs(bx - ax) >= Math.abs(by - ay)) {
+      var sx = bx > ax ? a.x + a.w : a.x, ex = bx > ax ? b.x - 2 : b.x + b.w + 2; mx = (sx + ex) / 2; my = (ay + by) / 2;
+      d = 'M' + r(sx) + ' ' + r(ay) + ' L' + r(mx) + ' ' + r(ay) + ' L' + r(mx) + ' ' + r(by) + ' L' + r(ex) + ' ' + r(by);
+    } else {
+      var sy = by > ay ? a.y + a.h : a.y, ey = by > ay ? b.y - 2 : b.y + b.h + 2; my = (sy + ey) / 2; mx = (ax + bx) / 2;
+      d = 'M' + r(ax) + ' ' + r(sy) + ' L' + r(ax) + ' ' + r(my) + ' L' + r(bx) + ' ' + r(my) + ' L' + r(bx) + ' ' + r(ey);
+    }
+    return { d: d, mx: mx, my: my };
+  }
+  // 矢印の先（head：end・none・both）と点線（dash）
+  function edgeAttrs(lay, arrow) {
+    var h = lay.head || (arrow ? 'end' : 'none');
+    return (h !== 'none' ? ' marker-end="url(#' + ARW + ')"' : '') + (h === 'both' ? ' marker-start="url(#' + ARW + ')"' : '') + (lay.dash ? ' stroke-dasharray="7 5"' : '');
+  }
   function ekAttr(pk) { return pk ? ' data-ek="' + esc(pk) + '"' : ''; }
   function edgeLabel(t, x, y, fs, pk) {
     var w = tw(t, fs) + 12;
@@ -1242,7 +1323,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         path = 'M' + r(sx) + ' ' + r(sy) + ' C' + r(cx) + ' ' + r(sy) + ' ' + r(cx) + ' ' + r(ey) + ' ' + r(ex) + ' ' + r(ey);
         mx = cx; my = (sy + ey) / 2;
       }
-      out += '<path class="edge"' + ekAttr(e.pk) + ' d="' + path + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
+      if (lay.route && e.from !== e.to) { var re = routeEdge(lay.route, a, b, opts.fs); path = re.d; mx = re.mx; my = re.my; }
+      out += '<path class="edge"' + ekAttr(e.pk) + ' d="' + path + '" fill="none" stroke="' + C.edge + '" stroke-width="2"' + edgeAttrs(lay, true) + '/>';
       if (e.label) labels += edgeLabel(e.label, mx + (lay.label ? lay.label[0] : 0), my + (lay.label ? lay.label[1] : 0), fs, e.pk);
     });
     return { paths: out, labels: labels };
@@ -1261,7 +1343,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       backIdx[ei] = { li: li, k: laneBack[li] = (laneBack[li] || 0) + 1 };
       nBack++;
     });
-    var M = diag.items.map(function (it) { return measureBox(it, fs, maxW); });
+    var M = diag.items.map(function (it) { return measurePart(diag, it, fs, maxW); });
     // 列の間は、矢印の言葉が入る幅にする
     var gapAfter = cols.map(function () { return fs * 4; });
     diag.edges.forEach(function (e) {
@@ -1276,7 +1358,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       var H = Math.max.apply(null, colH.concat([0]));
       cols.forEach(function (col, ci) {
         var y = top + (H - colH[ci]) / 2, cw = Math.max.apply(null, col.map(function (v) { return M[v].w; }));
-        col.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: y, w: M[v].w, h: M[v].h, lines: M[v].lines }; y += M[v].h + vgap; });
+        col.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: y, w: M[v].w, h: M[v].h, lines: M[v].lines, fs: M[v].fs, part: partOf(diag, diag.items[v]) }; y += M[v].h + vgap; });
       });
       bottom = top + H;
     } else {
@@ -1293,7 +1375,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         cells.forEach(function (c, ci) {
           var cw = Math.max.apply(null, cols[ci].map(function (v) { return M[v].w; }).concat([0]));
           var ch = c.reduce(function (a, v) { return a + M[v].h; }, 0) + Math.max(0, c.length - 1) * vgap, yy = y + (h0 - ch) / 2 + fs * 0.4;
-          c.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: yy, w: M[v].w, h: M[v].h, lines: M[v].lines, band: [y, y + h] }; yy += M[v].h + vgap; });
+          c.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: yy, w: M[v].w, h: M[v].h, lines: M[v].lines, fs: M[v].fs, part: partOf(diag, diag.items[v]), band: [y, y + h] }; yy += M[v].h + vgap; });
         });
         y += h;
       });
@@ -1362,25 +1444,28 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       body += '<g class="today"><line x1="' + r(tx) + '" x2="' + r(tx) + '" y1="10" y2="' + r(height - 36) + '" stroke="' + C.red + '" stroke-width="2" stroke-dasharray="6 4"/>' +
         '<text x="' + r(tx + 4) + '" y="18" font-size="' + tf + '" fill="' + C.red + '" font-weight="bold">今日</text></g>';
     }
+    var TW = Math.max.apply(null, items.map(function (it, i) { return X(dayNum(it.date)) + labelW[i]; }).concat([width])) + 20, lay = diag.layout || {};
     items.forEach(function (it, i) {
       var cx = X(dayNum(it.date)), k = strongest(it), col = k ? MARK_COLOR[k] : C.accent;
-      var ly = axisY + lv[i] * rowH, top = lv[i] < 0, h = fs * 2.7, by = top ? ly - h / 2 : ly - h / 2;
+      var ly = axisY + lv[i] * rowH, top = lv[i] < 0, h = fs * 2.7, by = top ? ly - h / 2 : ly - h / 2, bx = cx - 2, p = lay[it.pk];
+      // 動かした札：日付の点は線の上のまま。点から札のいちばん近いふちへ線を引く
+      if (p && p.x != null) { bx = Math.max(0, Math.min(p.x, TW - labelW[i])); by = Math.max(0, Math.min(p.y, height - h)); }
+      var sx = Math.max(bx, Math.min(cx, bx + labelW[i])), sy = axisY < by ? by : axisY > by + h ? by + h : axisY;
       var s = itemOpen(d, it);
       if (it.end) {
         var ex = X(dayNum(it.end));
         s += '<rect x="' + r(cx) + '" y="' + r(axisY - 6) + '" width="' + r(Math.max(ex - cx, 4)) + '" height="12" rx="6" fill="' + col + '" opacity="0.55"/>';
       }
-      s += '<line x1="' + r(cx) + '" x2="' + r(cx) + '" y1="' + r(axisY) + '" y2="' + r(top ? by + h : by) + '" stroke="' + col + '" stroke-width="2"/>' +
+      s += '<line x1="' + r(cx) + '" x2="' + r(p && p.x != null ? sx : cx) + '" y1="' + r(axisY) + '" y2="' + r(p && p.x != null ? sy : top ? by + h : by) + '" stroke="' + col + '" stroke-width="2"/>' +
         '<circle cx="' + r(cx) + '" cy="' + r(axisY) + '" r="6" fill="#fff" stroke="' + col + '" stroke-width="3"/>' +
-        '<rect class="box" x="' + r(cx - 2) + '" y="' + r(by) + '" width="' + r(labelW[i]) + '" height="' + r(h) + '" rx="8" fill="#fff" stroke="' + col + '" stroke-width="' + (k ? 2.2 : 1.4) + '"/>' +
-        (info(it, opts) ? cornerDot(cx - 2 + labelW[i] - 1, by + 1) : '') +
-        '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.3) + '" font-size="' + r(Math.max(11, fs * 0.82)) + '" dominant-baseline="central" fill="' + C.sub + '">' + esc(it.dateText) + '</text>' +
-        '<text x="' + r(cx + 8) + '" y="' + r(by + h * 0.68) + '" font-size="' + fs + '" font-weight="bold" dominant-baseline="central" fill="' + C.text + '">' + esc(it.label) + '</text>' +
-        badges(it, cx - 2 + labelW[i], by - 3, fs, true) + '</g>';
+        '<rect class="box" x="' + r(bx) + '" y="' + r(by) + '" width="' + r(labelW[i]) + '" height="' + r(h) + '" rx="8" fill="#fff" stroke="' + col + '" stroke-width="' + (k ? 2.2 : 1.4) + '"/>' +
+        (info(it, opts) ? cornerDot(bx + labelW[i] - 1, by + 1) : '') +
+        '<text x="' + r(bx + 10) + '" y="' + r(by + h * 0.3) + '" font-size="' + r(Math.max(11, fs * 0.82)) + '" dominant-baseline="central" fill="' + C.sub + '">' + esc(it.dateText) + '</text>' +
+        '<text x="' + r(bx + 10) + '" y="' + r(by + h * 0.68) + '" font-size="' + fs + '" font-weight="bold" dominant-baseline="central" fill="' + C.text + '">' + esc(it.label) + '</text>' +
+        badges(it, bx + labelW[i], by - 3, fs, true) + '</g>';
       body += s;
     });
-    var maxX = Math.max.apply(null, items.map(function (it, i) { return X(dayNum(it.date)) + labelW[i]; }).concat([width]));
-    return wrapSvg(maxX + 20, height, body, 'timeline');
+    return wrapSvg(TW, height, body, 'timeline');
   }
 
   // ---- 木 ----
@@ -1389,7 +1474,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     items.forEach(function (it) { if (it.parent == null) roots.push(it.id); else kids[it.parent].push(it.id); });
     var leaves = items.filter(function (it) { return !kids[it.id].length; }).length;
     var horiz = leaves > 10;   // 葉が多いときは左から右へ（横に長くなりすぎないように）
-    var M = items.map(function (it) { return measureBox(it, fs, horiz ? fs * 12 : fs * 10); });
+    var M = items.map(function (it) { return measurePart(diag, it, fs, horiz ? fs * 12 : fs * 10); });
     var maxDepth = Math.max.apply(null, items.map(function (it) { return it.depth; }));
     var pos = [], cursor = 0;
     function size(v) { return horiz ? M[v].h + fs * 1.4 : M[v].w + fs * 1.6; }
@@ -1408,18 +1493,19 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     for (var k = 0; k <= maxDepth; k++) { dpos[k] = acc; acc += (depthSize[k] || 0) + (horiz ? fs * 4 : fs * 3.6); }
     var B = items.map(function (it) {
       var m = M[it.id];
-      return horiz ? { x: dpos[it.depth], y: pos[it.id] - m.h / 2 + 20, w: m.w, h: m.h, lines: m.lines }
-        : { x: pos[it.id] - m.w / 2 + 20, y: dpos[it.depth], w: m.w, h: m.h, lines: m.lines };
+      return horiz ? { x: dpos[it.depth], y: pos[it.id] - m.h / 2 + 20, w: m.w, h: m.h, lines: m.lines, fs: m.fs, part: partOf(diag, it) }
+        : { x: pos[it.id] - m.w / 2 + 20, y: dpos[it.depth], w: m.w, h: m.h, lines: m.lines, fs: m.fs, part: partOf(diag, it) };
     });
     var body = '', W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; })) + 30, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; })) + 30;
     var moved = applyLayout(diag, B, W, H);
     items.forEach(function (it) {
       if (it.parent == null) return;
       var a = B[it.parent], b = B[it.id], p, pk = items[it.parent].pk + '>' + it.pk, lay = edgeLay(diag, pk);
-      if (moved[it.parent] || moved[it.id] || lay.bend) p = freeEdge(a, b, lay.bend).d;
+      if (lay.route) p = routeEdge(lay.route, a, b, fs).d;
+      else if (moved[it.parent] || moved[it.id] || lay.bend) p = freeEdge(a, b, lay.bend).d;
       else if (horiz) { var x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; p = 'M' + r(x1) + ' ' + r(y1) + ' C' + r(mx) + ' ' + r(y1) + ' ' + r(mx) + ' ' + r(y2) + ' ' + r(x2) + ' ' + r(y2); }
       else { var X1 = a.x + a.w / 2, Y1 = a.y + a.h, X2 = b.x + b.w / 2, Y2 = b.y, my = (Y1 + Y2) / 2; p = 'M' + r(X1) + ' ' + r(Y1) + ' C' + r(X1) + ' ' + r(my) + ' ' + r(X2) + ' ' + r(my) + ' ' + r(X2) + ' ' + r(Y2); }
-      body += '<path class="edge"' + ekAttr(pk) + ' d="' + p + '" fill="none" stroke="' + C.edge + '" stroke-width="2"/>';
+      body += '<path class="edge"' + ekAttr(pk) + ' d="' + p + '" fill="none" stroke="' + C.edge + '" stroke-width="2"' + edgeAttrs(lay, false) + '/>';
     });
     items.forEach(function (it) { body += drawBox(d, it, B[it.id], opts); });
     return wrapSvg(W, H, body, 'tree');
@@ -1598,8 +1684,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   // 形は it.style.shape（terminal 端・decision 判断・subprocess 別の手順・io 入出力・process 処理）
   var FC_PPT = { terminal: 'flowChartTerminator', decision: 'flowChartDecision', subprocess: 'flowChartPredefinedProcess', io: 'flowChartInputOutput', process: 'flowChartProcess' };
   function fcShape(d, it, b, opts) {
-    var k = strongest(it), stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
-    var sh = it.style.shape || 'process', st = ' fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.6) + '" data-shape="' + FC_PPT[sh] + '"', g = itemOpen(d, it), x = b.x, y = b.y, w = b.w, h = b.h;
+    var k = strongest(it), p = b.part || {}, bc = BOX_COLOR[p.color], stroke = k ? MARK_COLOR[k] : bc ? bc[1] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : bc ? bc[0] : C.box;
+    var sh = it.style.shape || 'process', st = ' fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (p.stroke || (k ? 2.5 : 1.6)) + '" data-shape="' + FC_PPT[sh] + '"', g = itemOpen(d, it), x = b.x, y = b.y, w = b.w, h = b.h;
     var P = function (pts) { return '<path class="box" d="M' + pts.map(function (p) { return r(p[0]) + ' ' + r(p[1]); }).join(' L') + ' Z"' + st + '/>'; };
     if (sh === 'decision') g += P([[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]]);
     else if (sh === 'io') { var sk = h * 0.35; g += P([[x + sk, y], [x + w, y], [x + w - sk, y + h], [x, y + h]]); }
@@ -1607,17 +1693,18 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       g += '<rect class="box" x="' + r(x) + '" y="' + r(y) + '" width="' + r(w) + '" height="' + r(h) + '" rx="' + r(sh === 'terminal' ? h / 2 : 4) + '"' + st + '/>';
       if (sh === 'subprocess') g += '<line class="deco" x1="' + r(x + 9) + '" x2="' + r(x + 9) + '" y1="' + r(y) + '" y2="' + r(y + h) + '" stroke="' + stroke + '" stroke-width="1.4"/><line class="deco" x1="' + r(x + w - 9) + '" x2="' + r(x + w - 9) + '" y1="' + r(y) + '" y2="' + r(y + h) + '" stroke="' + stroke + '" stroke-width="1.4"/>';
     }
-    return g + (info(it, opts) ? cornerDot(x + w - (sh === 'decision' ? w / 2 - 6 : 1), y + 1) : '') + textEl(b.lines, x + w / 2, y + h / 2, opts.fs) + badges(it, x + w, y - 3, opts.fs, true) + '</g>';
+    return g + (info(it, opts) ? cornerDot(x + w - (sh === 'decision' ? w / 2 - 6 : 1), y + 1) : '') + textEl(b.lines, x + w / 2, y + h / 2, b.fs || opts.fs) + badges(it, x + w, y - 3, opts.fs, true) + '</g>';
   }
   function flowchart(diag, d, opts) {
     var fs = opts.fs, L = layers(diag), n = diag.items.length, gap = fs * 2.4, lf = Math.max(11, Math.round(fs * 0.85));
     var B = diag.items.map(function (it) {
-      var m = measureBox(it, fs, fs * 11), sh = it.style.shape;
+      var pt = partOf(diag, it), m = measurePart(diag, it, fs, fs * 11), sh = pt.shape ? 'custom' : it.style.shape;
+      if (sh === 'custom') return { w: m.w, h: m.h, lines: m.lines, fs: m.fs, part: pt, shape: pt.shape === 'diamond' ? 'decision' : '' };
       if (sh === 'decision') { m.w = m.w * 1.55 + fs; m.h = m.h * 1.7; }
       else if (sh === 'io') m.w += m.h * 0.7;
       else if (sh === 'subprocess') m.w += 18;
       else if (sh === 'terminal') m.w += m.h * 0.4;
-      return { w: m.w, h: m.h, lines: m.lines, shape: sh };
+      return { w: m.w, h: m.h, lines: m.lines, shape: sh, fs: m.fs, part: pt };
     });
     var isBack = function (e) { return L.back[e.from + '>' + e.to] || e.from === e.to || L.layer[e.to] <= L.layer[e.from]; };
     // 判断から出る矢印：はい は左、いいえ は右。3つ以上は、はい・書いた順・いいえ の順に左から右へ（真ん中は下から出る）
@@ -1683,7 +1770,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var lab = function (t, x, yy) { labels += edgeLabel(t, x + (lay.label ? lay.label[0] : 0), yy + (lay.label ? lay.label[1] : 0), lf, lay.pk); };
     diag.edges.forEach(function (e, ei) {
       var a = B[e.from], b = B[e.to], acx = a.x + a.w / 2, acy = a.y + a.h / 2, bcx = b.x + b.w / 2, dd, el = edgeLay(diag, e.pk);
-      lay = { bend: el.bend, label: el.label, pk: e.pk };
+      lay = { bend: el.bend, label: el.label, pk: e.pk, route: el.route, head: el.head, dash: el.dash };
       if ((moved[e.from] || moved[e.to] || lay.bend) && e.from !== e.to) {
         if (isBack(e)) nb++;   // 戻る矢印の列は、動かしても詰めない（ほかの戻る矢印の位置が変わらないように）
         var fe = freeEdge(a, b, lay.bend, hasReverse(diag, e) ? fs * 1.6 : 0); dd = fe.d;
@@ -1706,18 +1793,21 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         dd = Math.abs(acx - bcx) < 1 ? 'M' + r(acx) + ' ' + r(sy) + ' L' + r(bcx) + ' ' + r(b.y - 2) : 'M' + r(acx) + ' ' + r(sy) + ' L' + r(acx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(b.y - 2);
         if (e.label) lab(e.label, acx + tw(e.label, lf) / 2 + 14, sy + fs * 0.9);
       }
-      paths += '<path class="edge"' + ekAttr(e.pk) + ' d="' + dd + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
+      if (lay.route && e.from !== e.to) dd = routeEdge(lay.route, a, b, fs).d;
+      paths += '<path class="edge"' + ekAttr(e.pk) + ' d="' + dd + '" fill="none" stroke="' + C.edge + '" stroke-width="2"' + edgeAttrs(lay, true) + '/>';
     });
-    var body = paths + diag.items.map(function (it, v) { return fcShape(d, it, B[v], opts); }).join('') + labels;
+    var body = paths + diag.items.map(function (it, v) { return B[v].part.shape ? drawBox(d, it, B[v], opts) : fcShape(d, it, B[v], opts); }).join('') + labels;
     return wrapSvg(FW, FH, body, 'flowchart');
   }
 
   // ---- 大事な数字（カード） ----
   function kpi(diag, d, opts) {
     var fs = opts.fs, items = diag.items, per = Math.min(items.length, items.length > 4 ? (items.length === 6 ? 3 : 4) : items.length);
-    var cw = fs * 17, ch = fs * 9.6, gap = fs * 1.4, body = '';
+    var cw = fs * 17, ch = fs * 9.6, gap = fs * 1.4, body = '', lay = diag.layout || {};
+    var rows = Math.ceil(items.length / per), KW = 20 + per * (cw + gap) - gap, KH = 34 + rows * (ch + gap);
     items.forEach(function (it, i) {
-      var x = 10 + (i % per) * (cw + gap), y = 24 + Math.floor(i / per) * (ch + gap), k = strongest(it);
+      var x = 10 + (i % per) * (cw + gap), y = 24 + Math.floor(i / per) * (ch + gap), k = strongest(it), p = lay[it.pk];
+      if (p && p.x != null) { x = Math.max(0, Math.min(p.x, KW - cw)); y = Math.max(0, Math.min(p.y, KH - ch)); }
       var vf = fs * 2.3;
       while (vf > fs && tw(it.valueText, vf, true) > cw - fs * 2) vf -= 1;
       var tc = it.trend === 'up' ? C.green : it.trend === 'down' ? C.red : C.sub;
@@ -1730,8 +1820,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         (it.note ? textEl(wrap((it.trend === 'up' ? '▲ ' : it.trend === 'down' ? '▼ ' : '') + it.note, Math.max(11, Math.round(fs * 0.9)), cw - fs * 2, 2), x + fs, y + ch - fs * 1.7, Math.max(11, Math.round(fs * 0.9)), { anchor: 'start', fill: tc, bold: !!it.trend }) : '') +
         badges(it, x + cw - 6, y - 3, fs, true) + '</g>';
     });
-    var rows = Math.ceil(items.length / per);
-    return wrapSvg(20 + per * (cw + gap) - gap, 34 + rows * (ch + gap), body, 'kpi');
+    return wrapSvg(KW, KH, body, 'kpi');
   }
 
   // ---- 比べる（表） ----
@@ -2037,8 +2126,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
           it.meshes.push(plane);
         }
         // やわらかい影
-        var sh = new T.Mesh(keep(new T.PlaneGeometry(r.w * S * 1.25, r.h * S * 1.4)), keep(new T.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false })));
-        sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, 0.3) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, 0.3));
+        var sh = new T.Mesh(keep(new T.PlaneGeometry(r.w * S * 1.25, r.h * S * 1.4)), keep(new T.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));   // 大きく回しても板と深さを争わない（点々にならない）
+        sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, 0.8) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, 0.8));
         orient(sh);
         group.add(sh);
         it.top = Math.max(it.top, d);
@@ -2119,7 +2208,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     rootG.add(rim);
 
     // ---------- カメラ ----------
-    var cam = new T.PerspectiveCamera(32, 16 / 9, 0.05, 2000);
+    var cam = new T.PerspectiveCamera(32, 16 / 9, 0.2, 2000);   // 近い面を 0.05 → 0.2（深さの細かさが 4 倍。重なった面のちらつきを減らす）
     var bounds = new T.Box3().setFromObject(rootG), target0 = bounds.getCenter(new T.Vector3());
     var baseAz = ground ? -0.14 : -0.06, baseEl = ground ? 1.15 : 0.06;
     var view = { az: baseAz, el: baseEl, dist: 10, target: target0.clone(), dAz: 0, dEl: 0 };
@@ -2467,6 +2556,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       return p.moveTo ? { x: rel(p.x, mx), y: rel(p.y, my), moveTo: true } : { x: rel(p.x, mx), y: rel(p.y, my) };
     });
     if (arrow && line !== EMPTY) line.endArrowType = 'triangle';
+    if (line !== EMPTY && /url\(#arw[^)]*\)/.test(el.getAttribute('marker-start') || '')) line.beginArrowType = 'triangle';
     slide.addShape(pptx.ShapeType.custGeom, { x: X(mx), y: Y(my), w: w, h: h, points: points, fill: fillO, line: line });
     return 1;
   }
@@ -2743,7 +2833,9 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   // 1つの図だけを描き直す（2D と 3D）。動かしている間は 3D を作り直さない
   function redrawDiagram(i, no3d) {
     var box = $('dg' + i), d = state.doc.diagrams[i], w = box.querySelector('.svg-wrap');
+    var ae = document.activeElement, fi = ae && w.contains(ae) && ae.getAttribute('data-i');
     w.innerHTML = svgOf(d, i);
+    if (fi != null) { var f = w.querySelector('.item[data-i="' + fi + '"]'); if (f) f.focus({ preventScroll: true }); }
     fitWide(w);
     var rb = box.querySelector('.reset-layout'); if (rb) rb.hidden = !hasLayout(d);
     if (!no3d) build3dOne(state.doc, i);
@@ -2751,11 +2843,12 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   }
 
   // ---- 配置を変える（R8a）：正本は md の文字だけ。書きかえ → 読み直し → 変わった図だけ描き直す ----
-  function applyText(text, pushUndo) {
+  function applyText(text, pushUndo, merge) {
     var doc;
     try { doc = P.parseDoc(text); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return false; }
     var old = state.doc;
-    if (pushUndo) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); state.redo = []; }
+    if (pushUndo && !(merge && state.undo.length)) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); }
+    if (pushUndo) state.redo = [];
     state.text = text; state.doc = doc;
     if (doc.diagrams.length !== old.diagrams.length) { render(); return true; }
     var changed = false;
@@ -2765,7 +2858,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     return true;
   }
   // 図 i の部品 pk の配置を変える（patch が null なら、その図の配置を全部消す）
-  function setLayout(i, pk, patch) {
+  function setLayout(i, pk, patch, merge) {
     var doc = state.doc, d = doc.diagrams[i];
     var obj = doc.layout ? JSON.parse(JSON.stringify(doc.layout)) : { v: 1, diagrams: [] };
     var k = d.layoutIndex;
@@ -2775,12 +2868,87 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     else {
       if (!L.parts || typeof L.parts !== 'object') L.parts = {};
       var cur = L.parts[pk] && typeof L.parts[pk] === 'object' ? L.parts[pk] : {};
-      Object.keys(patch).forEach(function (key) { cur[key] = patch[key]; });
-      L.parts[pk] = cur;
+      Object.keys(patch).forEach(function (key) { if (patch[key] == null) delete cur[key]; else cur[key] = patch[key]; });
+      if (!Object.keys(cur).length) { delete L.parts[pk]; cur = null; }
+      if (cur) L.parts[pk] = cur;
+      if (!Object.keys(L.parts).length) obj.diagrams.splice(k, 1);   // 何もなくなった図は、区画から消す（md を元どおりに）
     }
     var text;
     try { text = P.writeLayout(state.text, doc, obj); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return; }
-    applyText(text, true);
+    applyText(text, true, merge);
+  }
+  // ---- 形・色・大きさ・線の形（R8b-2）：ポップアップの下の欄。値は layout にだけ書く ----
+  var STYLABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  var OPT_BOX = [
+    ['shape', '形', [['', '自動'], ['rect', '四角'], ['round', '角丸'], ['ellipse', '楕円'], ['diamond', 'ひし形'], ['para', '平行四辺形'], ['hexagon', '六角形'], ['chevron', '矢羽根'], ['cylinder', '円柱'], ['doc', '書類']]],
+    ['color', '色', [['', '自動'], ['blue', '青'], ['green', '緑'], ['yellow', '黄'], ['red', '赤'], ['gray', '灰'], ['purple', '紫']]],
+    ['stroke', '線の太さ', [['', 'ふつう'], [1, '細い'], [3, '太い'], [4, 'とても太い']]],
+    ['scale', '大きさ', [[0.6, '60%'], [0.8, '80%'], ['', '100%'], [1.4, '140%'], [2, '200%']]],
+    ['font', '文字', [[0.8, '小'], ['', '中'], [1.25, '大']]]];
+  var OPT_EDGE = [
+    ['route', '線の形', [['', '自動'], ['straight', '直線'], ['elbow', '折れ線'], ['curve', '曲線']]],
+    ['head', '矢印の先', [['', '自動'], ['end', '先だけ'], ['none', 'なし'], ['both', '両方']]],
+    ['dash', '線', [['', '実線'], [true, '点線']]]];
+  function partNow(diag, pk) { return (diag.layout || {})[pk] || {}; }
+  // 箱の欄はたたんでおく（ポップアップを小さく保ち、となりの箱を隠さない）。線の欄と、変えた直後は開く
+  var styleOpen = false;
+  function styleHtml(d, pk, cur, edge) {
+    return '<details class="styl" data-d="' + d + '" data-pk="' + esc(pk) + '"' + (edge || styleOpen ? ' open' : '') + '><summary>' + (edge ? '線の形と矢印' : '形と色を変える') + '</summary>' + (edge ? OPT_EDGE : OPT_BOX).map(function (o) {
+      return '<div class="srow" role="group" aria-label="' + o[1] + '"><span>' + o[1] + '</span>' + o[2].map(function (v) {
+        var on = (cur[o[0]] == null ? '' : cur[o[0]]) === v[0];
+        return '<button type="button" data-k="' + o[0] + '" data-v="' + esc(JSON.stringify(v[0])) + '" aria-pressed="' + on + '"' + (o[0] === 'color' && v[0] ? ' class="sw ' + v[0] + '"' : '') + '>' + v[1] + '</button>';
+      }).join('') + '</div>';
+    }).join('') + '</details>';
+  }
+  function openEdge(d, pk, anchor) {
+    var diag = state.doc.diagrams[d], ends = pk.replace(/#\d+$/, '').split('>');
+    var nm = function (k) { var it = diag.items.filter(function (x) { return x.pk === k; })[0]; return it ? it.label : k; };
+    closePanel();
+    state.anchor = anchor; state.byKey = false; state.selEdge = { d: d, pk: pk };
+    $('panelBody').innerHTML = '<h2>線：' + esc(nm(ends[0])) + ' → ' + esc(nm(ends[1])) + '</h2>' + styleHtml(d, pk, partNow(diag, pk), true);
+    $('panel').hidden = false;
+    placePanel();
+  }
+  $('panel').addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.styl button');
+    if (!b) return;
+    var box = b.closest('.styl'), d = +box.getAttribute('data-d'), pk = box.getAttribute('data-pk'), k = b.getAttribute('data-k'), v = JSON.parse(b.getAttribute('data-v')), patch = {};
+    patch[k] = v === '' ? null : v;
+    var sel = state.sel, se = state.selEdge, key = b.getAttribute('data-k') + b.getAttribute('data-v');
+    setLayout(d, pk, patch);
+    // 同じ箱・線の欄を開き直す（押したボタンにフォーカスを戻す）
+    styleOpen = true;
+    if (se && se.pk === pk) openEdge(d, pk, state.anchor);
+    else if (sel) { var g = document.querySelector('#dg' + sel.d + ' .item[data-i="' + sel.i + '"]'); if (g) state.anchor = anchorOf(g); openItem(sel.d, sel.i); }
+    styleOpen = false;
+    var nb = Array.prototype.filter.call($('panelBody').querySelectorAll('.styl button'), function (x) { return x.getAttribute('data-k') + x.getAttribute('data-v') === key; })[0];
+    if (nb) nb.focus();
+  });
+  // 右クリック：箱なら説明と「形と色」、線・線の言葉なら「線の形と矢印」
+  $('diagrams').addEventListener('contextmenu', function (e) {
+    var svg = e.target.closest && e.target.closest('.svg-wrap svg'), box = svg && svg.closest('.diagram-box');
+    if (!svg || !state.doc) return;
+    var i = +box.id.slice(2), d = state.doc.diagrams[i];
+    if (!STYLABLE[d.type]) return;
+    var g = e.target.closest('.item'), anchor = { x: e.clientX, y: e.clientY, w: 0, h: 0 };
+    if (g) { e.preventDefault(); state.selEdge = null; state.anchor = e.clientX || e.clientY ? anchor : anchorOf(g); state.byKey = !(e.clientX || e.clientY); openItem(i, +g.getAttribute('data-i')); return; }
+    var lb = e.target.closest('.edge-label[data-ek]'), ed = lb || edgeUnder(svg, e.clientX, e.clientY);
+    if (ed) { e.preventDefault(); openEdge(i, ed.getAttribute('data-ek'), anchor); }
+  });
+
+  // 矢印キーで箱を動かす（8、Shift で 1）。続けて押した同じ箱の動きは、戻す1回にまとめる
+  var lastKey = null;
+  function keyMove(g, dx, dy) {
+    var i = +g.getAttribute('data-d'), d = state.doc.diagrams[i];
+    if (!P.MOVABLE[d.type]) return false;
+    var svg = g.ownerSVGElement, bb = g.querySelector('.box').getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
+    var band = (g.getAttribute('data-band') || '').split(' ').map(Number), y0 = band.length === 2 ? band[0] : 0, y1 = band.length === 2 ? band[1] : H;
+    var pk = d.items[+g.getAttribute('data-i')].pk, now = Date.now();
+    var merge = !!(lastKey && lastKey.i === i && lastKey.pk === pk && now - lastKey.t < 800);
+    lastKey = { i: i, pk: pk, t: now };
+    closePanel();
+    setLayout(i, pk, { x: Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), y: Math.round(Math.max(y0, Math.min(bb.y + dy, y1 - bb.height))) }, merge);
+    return true;
   }
   function undoRedo(back) {
     var from = back ? state.undo : state.redo, to = back ? state.redo : state.undo;
@@ -2952,7 +3120,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]');
     if (g) g.classList.add('sel');
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(k === d ? i : null); redraw(k); } });
-    state.sel = { d: d, i: i };
+    state.sel = { d: d, i: i }; state.selEdge = null;
     var n = noteFor(it.key), h = '<h2>' + esc(it.label) + '</h2>';
     h += it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('');
     var extra = [];
@@ -2976,6 +3144,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>';
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
+    if (STYLABLE[diag.type]) h += styleHtml(d, it.pk, partNow(diag, it.pk), false);
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();
@@ -3254,7 +3423,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     try {
       Array.prototype.forEach.call(m.querySelectorAll('.item, .edge-label, text'), function (el) {
         var b = el.getBBox();
-        if (b.width || b.height) { xs.push([b.x, b.x + b.width]); ys.push([b.y, b.y + b.height]); }
+        // 切り口は部品の外側へ、線の太さ＋余白（6）だけ離す（次のページの箱の枠線が、細く残らないように）
+        if (b.width || b.height) { xs.push([b.x - 6, b.x + b.width + 6]); ys.push([b.y - 6, b.y + b.height + 6]); }
       });
     } finally { m.remove(); }
     return { x: xs, y: ys };
@@ -3440,6 +3610,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   $('diagrams').addEventListener('keydown', function (e) {
     var g = e.target.closest && e.target.closest('.item');
     if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), true); }
+    var AK = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (g && AK && !e.ctrlKey && !e.metaKey && !e.altKey) { var st = e.shiftKey ? 1 : 8; if (keyMove(g, AK[0] * st, AK[1] * st)) e.preventDefault(); }
   });
   $('panelClose').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) {

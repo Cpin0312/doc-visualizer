@@ -707,7 +707,8 @@
     try {
       Array.prototype.forEach.call(m.querySelectorAll('.item, .edge-label, text'), function (el) {
         var b = el.getBBox();
-        if (b.width || b.height) { xs.push([b.x, b.x + b.width]); ys.push([b.y, b.y + b.height]); }
+        // 切り口は部品の外側へ、線の太さ＋余白（6）だけ離す（次のページの箱の枠線が、細く残らないように）
+        if (b.width || b.height) { xs.push([b.x - 6, b.x + b.width + 6]); ys.push([b.y - 6, b.y + b.height + 6]); }
       });
     } finally { m.remove(); }
     return { x: xs, y: ys };

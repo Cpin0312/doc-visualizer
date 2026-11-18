@@ -774,14 +774,15 @@ async function savePptx(T, md, tag) {
       host.innerHTML = s0.outerHTML; const s = host.querySelector('svg');
       let bad = 0;
       for (const el of s.querySelectorAll('.item, .edge-label')) { const b = el.getBBox();
-        const ox = b.x < vb[0] + vb[2] - 0.5 && b.x + b.width > vb[0] + 0.5, oy = b.y < vb[1] + vb[3] - 0.5 && b.y + b.height > vb[1] + 0.5;
-        const inside = b.x >= vb[0] - 0.5 && b.x + b.width <= vb[0] + vb[2] + 0.5 && b.y >= vb[1] - 0.5 && b.y + b.height <= vb[1] + vb[3] + 0.5;
+        const m = 3;   // 線の太さの分：切り口から 3 より近い部品は、枠線が細く残る
+        const ox = b.x - m < vb[0] + vb[2] && b.x + b.width + m > vb[0], oy = b.y - m < vb[1] + vb[3] && b.y + b.height + m > vb[1];
+        const inside = b.x - m >= vb[0] - 0.5 && b.x + b.width + m <= vb[0] + vb[2] + 0.5 && b.y - m >= vb[1] - 0.5 && b.y + b.height + m <= vb[1] + vb[3] + 0.5;
         if (ox && oy && !inside) bad++; }
       res.push(bad);
     }
     host.remove(); return { pages: res.length, bad: res.reduce((a, b) => a + b, 0), split: document.querySelectorAll('#print h2').length };
   })()`);
-  ok('PDF：ページの分け目は、箱・線の言葉をまたがない（割れた部品 0）', cut.bad === 0 && cut.pages >= 4, JSON.stringify(cut));
+  ok('PDF：ページの分け目は、箱・線の言葉をまたがず、線の太さ＋余白だけ離れる（割れた・枠線が残る部品 0）', cut.bad === 0 && cut.pages >= 4, JSON.stringify(cut));
   // いいえ の札は、ひし形の外
   const lbl = await B.evalJs(`(() => { const s = document.querySelector('#dg0 .svg-wrap svg'), out = [];
     for (const l of s.querySelectorAll('.edge-label')) { const b = l.getBBox(); for (const g of s.querySelectorAll('.item')) { if (g.querySelector('.box').getAttribute('data-shape') !== 'flowChartDecision') continue; const t = g.querySelector('text').getBBox(), d = g.querySelector('.box').getBBox();

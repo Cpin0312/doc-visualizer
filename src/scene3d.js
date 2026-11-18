@@ -232,8 +232,8 @@
           it.meshes.push(plane);
         }
         // やわらかい影
-        var sh = new T.Mesh(keep(new T.PlaneGeometry(r.w * S * 1.25, r.h * S * 1.4)), keep(new T.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false })));
-        sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, 0.3) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, 0.3));
+        var sh = new T.Mesh(keep(new T.PlaneGeometry(r.w * S * 1.25, r.h * S * 1.4)), keep(new T.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));   // 大きく回しても板と深さを争わない（点々にならない）
+        sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, 0.8) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, 0.8));
         orient(sh);
         group.add(sh);
         it.top = Math.max(it.top, d);
@@ -314,7 +314,7 @@
     rootG.add(rim);
 
     // ---------- カメラ ----------
-    var cam = new T.PerspectiveCamera(32, 16 / 9, 0.05, 2000);
+    var cam = new T.PerspectiveCamera(32, 16 / 9, 0.2, 2000);   // 近い面を 0.05 → 0.2（深さの細かさが 4 倍。重なった面のちらつきを減らす）
     var bounds = new T.Box3().setFromObject(rootG), target0 = bounds.getCenter(new T.Vector3());
     var baseAz = ground ? -0.14 : -0.06, baseEl = ground ? 1.15 : 0.06;
     var view = { az: baseAz, el: baseEl, dist: 10, target: target0.clone(), dAz: 0, dEl: 0 };
