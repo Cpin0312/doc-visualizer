@@ -138,6 +138,7 @@
     return s;
   }
 
+  var BEVEL = 1.2, SHADOW_H = 0.5, LIFT = BEVEL + 1.1;   // 箱の底（LIFT − BEVEL = 1.1）は影（0.5）より上
   var DEPTH = { flowchart: 20, flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14 };
   var CHARTS = { chart: 1, pie: 1, donut: 1, line: 1, hbar: 1, stacked: 1 };
   // 円グラフの扇は「M x y L x y … Z」の多角形。中心からの点に直す
@@ -211,11 +212,13 @@
           R.poly.forEach(function (p, k) { sh2[k ? 'lineTo' : 'moveTo']((p[0] - cx) * S, (cy - p[1]) * S); });
           return sh2;
         })() : slabShape(r.w * S, r.h * S, Math.max(r.rx || 0, 2) * S);
-        var geo = keep(new T.ExtrudeGeometry(shape, { depth: d * S, bevelEnabled: true, bevelThickness: 1.2 * S, bevelSize: 1.2 * S, bevelSegments: 2, curveSegments: 6 }));
+        var geo = keep(new T.ExtrudeGeometry(shape, { depth: d * S, bevelEnabled: true, bevelThickness: BEVEL * S, bevelSize: BEVEL * S, bevelSegments: 2, curveSegments: 6 }));
         var capMat = keep(new T.MeshStandardMaterial({ color: new T.Color(R.fill || '#ffffff'), roughness: 0.55, metalness: 0.05 }));
         var sideMat = keep(new T.MeshStandardMaterial({ color: new T.Color(R.side || '#5b7db1'), roughness: 0.5, metalness: 0.08 }));
         var mesh = new T.Mesh(geo, [capMat, sideMat]);
-        var c = P(r.x + r.w / 2, r.y + r.h / 2, 0);
+        // 箱は板から少し浮かせる：角の丸み（bevel）が板の下にもぐり、影の面が箱の側面を切ると、
+        // 大きく回したときにその交わりが縞・階段になる。板 0 → 影 SHADOW_H → 箱の底 の順に、どの面も交わらない
+        var c = P(r.x + r.w / 2, r.y + r.h / 2, LIFT);
         mesh.position.copy(c);
         orient(mesh);
         mesh.userData.item = i;
@@ -225,7 +228,7 @@
           var tex = keep(texture(r, face, R.poly ? null : (R.fill || '#ffffff')));   // ひし形などは、形の外を透かす
           var fm = keep(new T.MeshBasicMaterial({ map: tex, transparent: true }));
           var plane = new T.Mesh(keep(new T.PlaneGeometry(r.w * S, r.h * S)), fm);
-          plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, d + 1.3));
+          plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, LIFT + d + BEVEL + 0.4));   // 箱の上の面（丸みの分を含む）より少し上
           orient(plane);
           plane.userData.item = i;
           group.add(plane);
@@ -233,10 +236,10 @@
         }
         // やわらかい影
         var sh = new T.Mesh(keep(new T.PlaneGeometry(r.w * S * 1.25, r.h * S * 1.4)), keep(new T.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));   // 大きく回しても板と深さを争わない（点々にならない）
-        sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, 0.8) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, 0.8));
+        sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, SHADOW_H) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, SHADOW_H));
         orient(sh);
         group.add(sh);
-        it.top = Math.max(it.top, d);
+        it.top = Math.max(it.top, LIFT + d);
       });
       // 扇の囲みの真ん中や点の平均は、扇の外（ドーナツの穴など）に出ることがある。2D が書いた扇の真ん中の角の点を使う
       var mid = box.getAttribute('data-cx') ? [+box.getAttribute('data-cx'), +box.getAttribute('data-cy')] : poly && poly.length ? poly.reduce(function (a, p) { return [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length]; }, [0, 0]) : [br.x + br.w / 2, br.y + br.h / 2];
@@ -293,7 +296,7 @@
       els.forEach(function (el) { used.add(el); });
       var sp = new T.Sprite(keep(new T.SpriteMaterial({ map: keep(texture(lr, els, null)), transparent: true })));
       sp.scale.set(lr.w * S, lr.h * S, 1);
-      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, (DEPTH[diag.type] || 16) + 4));
+      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, (DEPTH[diag.type] || 16) + LIFT + 4));
       sp.renderOrder = 5;
       rootG.add(sp);
     });
@@ -309,7 +312,7 @@
     rootG.add(base);
     // 板の縁（少し厚み）
     var rim = new T.Mesh(keep(new T.BoxGeometry(bgR.w * S, bgR.h * S, 6 * S)), keep(new T.MeshStandardMaterial({ color: 0xdfe6f0 })));
-    rim.position.copy(P(W / 2, H / 2, -4));
+    rim.position.copy(P(W / 2, H / 2, -6));   // 縁の上の面（-3）を板（0）から離す
     orient(rim);
     rootG.add(rim);
 

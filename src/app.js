@@ -494,6 +494,9 @@
     el.style.left = Math.round(Math.max(M, Math.min(x, vw - w - M))) + 'px';
     el.style.top = Math.round(Math.max(top, Math.min(y, vh - h - M))) + 'px';
   }
+  // 中身の高さが変わったら（欄を開く・閉じる・文字の大きさなど、どんな理由でも）置き直す。
+  // 窓そのものでなく中身を見るので、placePanel が max-height を変えても、また呼ばれることはない
+  if (window.ResizeObserver) new ResizeObserver(function () { if (!$('panel').hidden) placePanel(); }).observe($('panelBody'));
   // 押したことの判定は、ここ1か所（2D のクリック・キーボード・3D）。あとで「動かす」と区別するのもここ
   function press(d, i, anchor, byKey) {
     state.anchor = anchor; state.byKey = byKey;
@@ -736,6 +739,7 @@
   // 図を見えない所に置いて、部品の x・y の範囲を測る
   function partSpans(svg) {
     var m = document.createElement('div');
+    m.className = 'measure';   // 印刷の画面でも消さない（消すと大きさが 0 になり、切り口が箱をまたぐ）
     m.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden';
     m.innerHTML = R.uniq(svg);
     document.body.appendChild(m);

@@ -90,7 +90,7 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 @page { size: A4 landscape; margin: 0; }
 @media print {
   html, body { background: #fff; font-size: 14px; }
-  body > *:not(#print) { display: none !important; }
+  body > *:not(#print):not(.measure) { display: none !important; }
   #print { display: block; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

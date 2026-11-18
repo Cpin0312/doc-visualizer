@@ -863,6 +863,23 @@ async function savePptx(T, md, tag) {
   const b2 = await box('受付');
   ok('形と色：「自動」で元の形に戻す（layout からその値だけ消す）', b2.tag === 'rect' && !/"shape"/.test(await B.evalJs('DocVisualizer.text()')), JSON.stringify(b2));
   await keyPress('Escape', 'Escape', 27);
+  // 欄を開いて中身が伸びても、窓は画面の中に置き直し、どの行にも本物のマウスで届く（低い窓・下寄りの箱でも）
+  for (const vh of [813, 560]) {
+    await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: vh, deviceScaleFactor: DSF, mobile: false }); await sleep(300);
+    await B.evalJs(`(() => { window.scrollTo(0, 0); const dg = document.getElementById('diagrams'); dg.style.marginTop = ''; const b = document.querySelector('#dg0 .item[aria-label="確認"] .box').getBoundingClientRect(); dg.style.marginTop = Math.max(0, ${vh} * 0.5 - b.top) + 'px'; })()`);
+    await sleep(200);
+    const bc = await B.evalJs(`(() => { const b = document.querySelector('#dg0 .item[aria-label="確認"] .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: bc.x, y: bc.y, button: 'left', clickCount: 1 });
+    await waitFor(`!document.getElementById('panel').hidden`);
+    await clickAt('#panel details.styl summary'); await sleep(400);
+    const reach = await B.evalJs(`(() => { const p = document.getElementById('panel'), r = p.getBoundingClientRect(), vh = window.innerHeight, rows = Array.from(p.querySelectorAll('.styl .srow')), miss = [];
+      for (const row of rows) { const btn = row.querySelector('button'); btn.scrollIntoView({ block: 'nearest' }); const q = btn.getBoundingClientRect(), hit = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2); if (!(hit === btn || btn.contains(hit))) miss.push(row.getAttribute('aria-label')); }
+      return { open: p.querySelector('details.styl').open, top: Math.round(r.top), bottom: Math.round(r.bottom), vh, rows: rows.length, miss }; })()`);
+    ok('形と色：欄を開くと窓を置き直し、画面の中におさまり、5 つの行すべてに届く（画面の高さ ' + vh + '、箱は真ん中より下）', reach.open && reach.top >= 0 && reach.bottom <= reach.vh && reach.rows === 5 && !reach.miss.length, JSON.stringify(reach));
+    await keyPress('Escape', 'Escape', 27);
+  }
+  await B.evalJs(`document.getElementById('diagrams').style.marginTop = ''; window.scrollTo(0, 0)`);
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: DSF, mobile: false }); await sleep(300);
   // 線：右クリック
   const ep = await B.evalJs(`(() => { const p = document.querySelector('#dg0 path.edge[data-ek="確認>出荷"]'), q = p.getPointAtLength(p.getTotalLength() * 0.4), m = p.ownerSVGElement.getScreenCTM(); return { x: q.x * m.a + m.e, y: q.y * m.d + m.f }; })()`);
   await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: ep.x, y: ep.y, button: 'right', buttons: 2, clickCount: 1 });
