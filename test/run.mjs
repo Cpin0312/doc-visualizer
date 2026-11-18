@@ -194,6 +194,12 @@ async function clickAt(sel) {
   await B.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
   ok('Esc で説明を閉じる', await waitFor(`document.getElementById('panel').hidden`));
+  // R2 の直し：開いている箱をもう1回押すと閉じる。ほかの箱なら切りかわる
+  await clickAt('#dg0 .item[aria-label="受付"] .box');
+  const t1 = await waitFor(`!document.getElementById('panel').hidden`);
+  await clickAt('#dg0 .item[aria-label="受付"] .box');
+  const t2 = await waitFor(`document.getElementById('panel').hidden && document.querySelectorAll('#dg0 .item.sel').length === 0`);
+  ok('同じ箱をもう1回押すと説明を閉じる（選びもはずす）', t1 && t2);
 
   // 文字の大きさ
   const before = await B.evalJs(`document.querySelector('#dg0 .item text').getAttribute('font-size')`);
@@ -235,6 +241,10 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   await sleep(300);
   await shot('3d_08_top');
 
+  // R2 の直し：はじめは全体が入る（どの箱の真ん中も 3D の画面の中）
+  const inView = await B.evalJs(`Array.from(document.querySelectorAll('#diagrams .diagram-box')).map((b, d) => { const c = b.querySelector('.view3d canvas').getBoundingClientRect(); let n = 0, outN = 0;
+    for (let i = 0; ; i++) { const p = DocVisualizer.where3d(d, i); if (!p) break; n++; if (p.x < c.left || p.x > c.right || p.y < c.top || p.y > c.bottom) outN++; } return n + '/' + outN; })`);
+  ok('3D：はじめは全体が入る（7つの図とも、箱がみな画面の中）', inView.length === 7 && inView.every(v => v.endsWith('/0') && !v.startsWith('0/')), inView.join(' '));
   // 3D の箱を押すと説明が出る（本物のマウスで押す。押す場所は箱の真ん中が見える所）
   await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`);
   await sleep(500);
@@ -287,6 +297,12 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   await key('p', 'KeyP', 80); await key('ArrowRight', 'ArrowRight', 39);
   const p2d = await waitFor(`!document.getElementById('present').hidden && ({ svg: document.querySelectorAll('#pStage svg').length, sel: document.querySelectorAll('#pStage .item.sel').length, dim: document.querySelectorAll('#pStage .item.dim').length })`);
   ok('発表（2D）：その箱を目立たせ、ほかを薄くする', p2d && p2d.svg === 1 && p2d.sel === 1 && p2d.dim >= 1, JSON.stringify(p2d));
+  // R2 の直し：発表に社外秘の印。2D の図は枠いっぱい（文字は 11px 以上）
+  const pf = await B.evalJs(`(() => { const st = document.getElementById('pStage'), s = st.querySelector('svg'), b = s.getBoundingClientRect(), k = b.width / +s.getAttribute('data-w');
+    const mf = Math.min(...Array.from(s.querySelectorAll('text')).map(t => +t.getAttribute('font-size')));
+    return { secret: document.getElementById('pSecret').hidden ? '' : document.getElementById('pSecret').textContent, w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32, minPx: +(mf * k).toFixed(1) }; })()`);
+  ok('発表：社外秘の印が出る', pf.secret === '関係者限り', pf.secret);
+  ok('発表（2D）：図を枠いっぱいに合わせる（文字は 11px 以上）', (Math.abs(pf.w - pf.cw) <= 2 || Math.abs(pf.h - pf.ch) <= 2) && pf.minPx >= 10.95, JSON.stringify(pf));
   await key('Escape', 'Escape', 27);
   await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
   // F5 では始まらない（読みこみ直しのキーは使わない）：P 以外のキーで発表が開かない
@@ -390,6 +406,14 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   await B.send('Emulation.setEmulatedMedia', { media: '' });
 }
 
+// R2 の直し：矢印の頭の id が重ならない（印刷・発表に写しても）。どの url(#…) も同じ svg の中の印を指す
+{
+  const idc = await B.evalJs(`(() => { const ids = Array.from(document.querySelectorAll('[id]')).map(e => e.id), dup = ids.filter((v, i) => ids.indexOf(v) !== i);
+    let refs = 0, bad = 0; document.querySelectorAll('svg [marker-end], svg [fill^="url("], svg [clip-path], svg use').forEach(e => { ['marker-end', 'fill', 'clip-path', 'href'].forEach(a => { const v = e.getAttribute(a); const m = v && /#([^)"]+)/.exec(v); if (!m) return; refs++; const t = e.ownerSVGElement && e.ownerSVGElement.querySelector('[id="' + m[1] + '"]'); if (!t) bad++; }); });
+    return { dup: dup.length, refs, bad, printArrows: document.querySelectorAll('#print svg [marker-end]').length }; })()`);
+  ok('矢印の頭：id が重ならず、印刷用の図の矢印は自分の svg の印を指す', idc.dup === 0 && idc.bad === 0 && idc.printArrows > 0, JSON.stringify(idc));
+}
+
 // PDF：長い説明・本文が切れずに、ページを分けて出る
 {
   const long = join(tmpdir(), 'docvis-long.md');
@@ -406,6 +430,10 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   const overflow = await B.evalJs(`(() => { document.getElementById('print').style.display = 'block'; const bad = Array.from(document.querySelectorAll('#print .page')).filter(p => p.scrollHeight > p.clientHeight + 2).length; document.getElementById('print').style.display = ''; return bad; })()`);
   ok('PDF：長い説明はページを分け、最後の段落と出どころまで出る', Array.from({ length: 12 }, (_, i) => `${i + 1}段落目`).every(k => all.includes(k)) && all.includes('長い資料9ページ') && overflow === 0, `PDF ${doc.numPages} ページ・はみ出すページ ${overflow}・12段落目 ${all.includes('12段落目')}・出どころ ${all.includes('長い資料9ページ')}`);
   ok('PDF：本文（説明でない見出し）も出る', all.includes('本文のさいごの行です'));
+  // PowerPoint も同じ中身：長い説明はスライドを分け、本文のスライドもある
+  const { st: lp, rd: lr } = await savePptx(B, long, 'long');
+  const lt = lr ? lr.slides.map(x => x.texts.join('\n')).join('\n') : '';
+  ok('PowerPoint：長い説明はスライドを分け、本文も「本文」のスライドで入る（PDF と同じ中身）', lr && Array.from({ length: 12 }, (_, i) => `${i + 1}段落目`).every(k => lt.includes(k)) && lt.includes('長い資料 9ページ') && lt.includes('本文のさいごの行です') && lr.slides.some(x => x.texts[0] === '本文') && lr.slides.some(x => /（つづき）$/.test(x.texts[0])) && lr.slides.every(x => x.minPt >= 11), lp && JSON.stringify({ slides: lp.slides, body: lp.bodySlides }));
 }
 
 // R1 の直し：戻る矢印が2本の担当ごとの流れ。言葉が重ならず、線が帯の外に出ない
@@ -447,8 +475,8 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
 }
 
 // ---------- PowerPoint（R3）：ダウンロードで保存 → python-pptx で読み返す ----------
-const dlDir = join(out, 'dl');
 async function savePptx(T, md, tag) {
+  const dlDir = join(out, 'dl');
   rmSync(dlDir, { recursive: true, force: true }); mkdirSync(dlDir, { recursive: true });
   const done = [];
   T.on(m => { if (m.method === 'Browser.downloadProgress' && m.params.state !== 'inProgress') done.push(m.params.state); });

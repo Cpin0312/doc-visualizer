@@ -224,6 +224,10 @@
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
   }
+  // 押した箱が、いま開いている箱なら閉じる（もう1回押すと閉じる）。ほかの箱なら開く
+  function toggleItem(d, i) {
+    if (state.sel && state.sel.d === d && state.sel.i === i && !$('panel').hidden) closePanel(); else openItem(d, i);
+  }
   function closePanel() {
     $('panel').hidden = true;
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(null); redraw(k); } });
@@ -250,7 +254,7 @@
     try {
       doc.diagrams.forEach(function (d, i) {
         var box = $('dg' + i), svg = box.querySelector('.svg-wrap svg');
-        var sc = D3.create(d, svg, { onPick: function (it) { openItem(i, it); } });
+        var sc = D3.create(d, svg, { onPick: function (it) { toggleItem(i, it); } });
         var wrap = document.createElement('div'), scroll = document.createElement('div');
         wrap.className = 'view3d'; scroll.className = 'v3scroll';
         // 画面の形は、3D で見たときの図の形に合わせる（高さ 280〜620px）。文字が 11px を下まわるなら、形を保って大きくし、横へ動かして見る
@@ -307,6 +311,16 @@
 
   // ---- 発表（P かボタン。F5 は読みこみ直しになるので使わない） ----
   var present = { on: false, steps: [], k: 0, scene: null, canvas: null, d: -1 };
+  // 2D の発表：図を枠いっぱいに。ただし文字は 11px より小さくしない（入らなければ動かして見る）
+  function fitStage() {
+    var stage = $('pStage'), s = stage.querySelector('svg');
+    if (!s) return;
+    var w = +s.getAttribute('data-w'), h = +s.getAttribute('data-h'), cw = stage.clientWidth - 32, ch = stage.clientHeight - 32;
+    if (!(cw > 0 && ch > 0)) return;
+    var k = Math.max(Math.min(cw / w, ch / h), MIN_PX / minFont(s.outerHTML));
+    s.style.width = Math.floor(w * k) + 'px'; s.style.height = Math.floor(h * k) + 'px';
+  }
+  window.addEventListener('resize', function () { if (present.on && !present.scene) fitStage(); });
   function startPresent() {
     var doc = state.doc;
     if (!doc || !doc.diagrams.length || present.on) return;
@@ -326,6 +340,7 @@
     present.on = true; present.k = 0; present.d = -1;
     closePanel();
     $('present').hidden = false;
+    var ps = $('pSecret'); ps.hidden = !doc.secret; ps.textContent = doc.secret || '';
     var el = $('present');
     if (el.requestFullscreen) el.requestFullscreen().catch(function () { /* 全画面にできなくても続ける */ });
     showStep();
@@ -355,7 +370,8 @@
         present.scene = state.scenes[st.d];
       } else {
         present.scene = null;
-        stage.innerHTML = $('dg' + st.d).querySelector('.svg-wrap').innerHTML;
+        stage.innerHTML = R.uniq($('dg' + st.d).querySelector('.svg-wrap').innerHTML);
+        fitStage();
       }
     }
     var it = st.i == null ? null : d.items[st.i];
@@ -397,6 +413,11 @@
     });
     return notes;
   }
+  // 本文（箱の説明でない見出しと文。PDF と PowerPoint で同じもの）
+  function bodyBlocks(doc) {
+    return doc.body.map(function (b) { return { title: b.heading || '', text: b.lines.map(noteText).join('\n').trim(), src: '' }; })
+      .filter(function (b) { return b.title || b.text; });
+  }
   function buildPrint(doc) {
     var pages = [], t = esc(title(doc)), hn = hasNoteFn(doc), td = today();
     var cover = '<h1>' + t + '</h1><div class="cards">' + cardsHtml(doc) + '</div>';
@@ -411,7 +432,7 @@
       if (k < minK) k = minK;
       var tw = 1000 / k, th = 560 / k, nx = Math.ceil(w / tw - 0.02), ny = Math.ceil(h / th - 0.02), n = nx * ny;
       for (var ty = 0; ty < ny; ty++) for (var tx = 0; tx < nx; tx++) {
-        var part = n > 1 ? svg.replace(/viewBox="[^"]*"/, 'viewBox="' + Math.round(tx * tw) + ' ' + Math.round(ty * th) + ' ' + Math.round(Math.min(tw, w - tx * tw)) + ' ' + Math.round(Math.min(th, h - ty * th)) + '"')
+        var part = n > 1 ? R.uniq(svg).replace(/viewBox="[^"]*"/, 'viewBox="' + Math.round(tx * tw) + ' ' + Math.round(ty * th) + ' ' + Math.round(Math.min(tw, w - tx * tw)) + ' ' + Math.round(Math.min(th, h - ty * th)) + '"')
           .replace(/data-w="\d+"/, 'data-w="' + Math.round(Math.min(tw, w - tx * tw)) + '"').replace(/data-h="\d+"/, 'data-h="' + Math.round(Math.min(th, h - ty * th)) + '" data-k="' + k + '"') : svg;   // 分けた図は、どのページも同じ大きさで
         pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（' + P.TYPES[d.type].label + '）' + (n > 1 ? '（' + (ty * nx + tx + 1) + '/' + n + '）' : '') + '</h2><div class="p-fig">' + part + '</div>' +
           (legend ? '<div class="p-legend">' + legend + '</div>' : ''));
@@ -441,8 +462,7 @@
       flush();
     }
     paginate('箱の説明と出どころ', noteBlocks(doc));
-    paginate('本文', doc.body.map(function (b) { return { title: b.heading || '', text: b.lines.map(lineText).join('\n').trim(), src: '' }; })
-      .filter(function (b) { return b.title || b.text; }));
+    paginate('本文', bodyBlocks(doc));
     var N = pages.length;
     $('print').innerHTML = pages.map(function (p, i) {
       return '<section class="page">' + (doc.secret ? '<div class="p-secret">' + esc(doc.secret) + '</div>' : '') + p +
@@ -528,12 +548,13 @@
           return { name: d.name || P.TYPES[d.type].label, svg: R.svg(d, i, { fs: 15, today: td, hasNote: hn }), legend: tmp.textContent.replace('（押すと出る）', ''),
             capture: sc ? sc.capture(1200, 675) : null };   // 3D は今の向きで撮りなおす（WebGL がないときは絵なし）
         }),
-        notes: noteBlocks(doc)
+        notes: noteBlocks(doc),
+        body: bodyBlocks(doc)
       });
     } catch (e) { pptxBusy = false; pptxFail(e); return; }
     r.pptx.write({ outputType: 'blob', compression: true }).then(function (blob) {
       saveBlob(blob, r.fileName);
-      lastPptx = { fileName: r.fileName, slides: r.stats.slides, shapes: r.stats.shapes, tiles: r.stats.tiles, pics: r.stats.pics, bytes: blob.size };
+      lastPptx = { fileName: r.fileName, slides: r.stats.slides, shapes: r.stats.shapes, tiles: r.stats.tiles, pics: r.stats.pics, bodySlides: r.stats.bodySlides, bytes: blob.size };
       toast('PowerPoint「' + r.fileName + '」を保存しました（ダウンロードの場所）。保存されないときは「PDF」を使ってください', 7000);
     }).catch(pptxFail).then(function () { pptxBusy = false; });
   });
@@ -545,11 +566,11 @@
   });
   $('diagrams').addEventListener('click', function (e) {
     var g = e.target.closest && e.target.closest('.item');
-    if (g) openItem(+g.getAttribute('data-d'), +g.getAttribute('data-i'));
+    if (g) toggleItem(+g.getAttribute('data-d'), +g.getAttribute('data-i'));
   });
   $('diagrams').addEventListener('keydown', function (e) {
     var g = e.target.closest && e.target.closest('.item');
-    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openItem(+g.getAttribute('data-d'), +g.getAttribute('data-i')); }
+    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleItem(+g.getAttribute('data-d'), +g.getAttribute('data-i')); }
   });
   $('panelClose').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) {

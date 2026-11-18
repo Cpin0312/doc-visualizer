@@ -274,7 +274,7 @@
     // ---------- カメラ ----------
     var cam = new T.PerspectiveCamera(32, 16 / 9, 0.05, 2000);
     var bounds = new T.Box3().setFromObject(rootG), target0 = bounds.getCenter(new T.Vector3());
-    var baseAz = ground ? -0.14 : -0.3, baseEl = ground ? 1.0 : 0.18;
+    var baseAz = ground ? -0.14 : -0.06, baseEl = ground ? 1.15 : 0.06;
     var view = { az: baseAz, el: baseEl, dist: 10, target: target0.clone(), dAz: 0, dEl: 0 };
     var tween = null, focusI = null;
     function dirOf(az, el) { return new T.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)); }

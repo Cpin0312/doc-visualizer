@@ -98,8 +98,15 @@
       badges(it, b.x + b.w, b.y - 3, opts.fs, true) + '</g>';
   }
 
+  // id は SVG を作るたびに別のものにする（同じ id が2つあると、隠れた方を参照して矢印の頭が消える。印刷・発表・3D で写すときも uniq を通す）
+  var seq = 0, ARW = 'arw';
+  function uniq(str) {
+    var map = {};
+    str = str.replace(/\bid="([^"]+)"/g, function (m, id) { var n = id.replace(/-u\d+$/, '') + '-u' + (++seq); map[id] = n; return 'id="' + n + '"'; });
+    return str.replace(/url\(#([^)]+)\)|href="#([^"]+)"/g, function (m, a, b) { var id = a || b, n = map[id]; if (!n) return m; return a ? 'url(#' + n + ')' : 'href="#' + n + '"'; });
+  }
   function defs() {
-    return '<defs><marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="' + C.edge + '"/></marker></defs>';
+    return '<defs><marker id="' + ARW + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="' + C.edge + '"/></marker></defs>';
   }
   function wrapSvg(w, h, body, cls) {
     w = Math.ceil(w); h = Math.ceil(h);
@@ -171,7 +178,7 @@
         path = 'M' + r(sx) + ' ' + r(sy) + ' C' + r(cx) + ' ' + r(sy) + ' ' + r(cx) + ' ' + r(ey) + ' ' + r(ex) + ' ' + r(ey);
         mx = cx; my = (sy + ey) / 2;
       }
-      out += '<path class="edge" d="' + path + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#arw)"/>';
+      out += '<path class="edge" d="' + path + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
       if (e.label) {
         var w = tw(e.label, fs) + 12;
         labels += '<g class="edge-label"><rect x="' + r(mx - w / 2) + '" y="' + r(my - fs * 0.8) + '" width="' + r(w) + '" height="' + r(fs * 1.6) + '" rx="6" fill="#fff" stroke="' + C.grid + '"/>' +
@@ -465,6 +472,7 @@
   function svg(diag, d, opts) {
     opts = opts || {};
     opts.fs = opts.fs || 15;
+    ARW = 'arw-' + (++seq);
     switch (diag.type) {
       case 'flow': return flow(diag, d, opts, false);
       case 'lanes': return flow(diag, d, opts, true);
@@ -477,5 +485,5 @@
     return '';
   }
 
-  root.DocRender = { svg: svg, esc: esc, FONT: FONT, COLORS: C };
+  root.DocRender = { svg: svg, uniq: uniq, esc: esc, FONT: FONT, COLORS: C };
 })(typeof window !== 'undefined' ? window : this);
