@@ -24,6 +24,8 @@
   <button id="presentBtn" class="btn" type="button" disabled title="発表（P キーでも始まる）">発表</button>
   <span class="sep"></span>
   <button id="save" class="btn" type="button" disabled title="直した md をファイルに書く（Ctrl+S）">保存</button><span id="dirty" class="dirty" hidden>● 未保存</span>
+  <button id="newMd" class="btn" type="button" title="題名だけの md から始める">新しい md</button>
+  <button id="editMd" class="btn" type="button" disabled aria-pressed="false" title="左に md の文字を出して、直接直す">md を直接直す</button>
   <button id="pdf" class="btn" type="button" disabled>PDF</button>
   <button id="pptx" class="btn" type="button" disabled title="PowerPoint（.pptx）で保存する。図はあとで直せる図形と文字">PowerPoint</button>
   <button id="copyPrompt" class="btn" type="button" title="Copilot に貼る指示文をコピーする">Copilot 用の指示をコピー</button>
@@ -31,6 +33,7 @@
 <div id="error" class="error" role="alert" hidden></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <div id="secret" class="secret" hidden></div>
+<div id="srcPane" class="src-pane" hidden><label for="src">md の文字（直すと右が変わります）</label><textarea id="src" spellcheck="false" wrap="off"></textarea></div>
 <main id="main">
   <section id="welcome" class="welcome">
     <h2>md ファイルを選ぶか、ここにドラッグ＆ドロップしてください</h2>

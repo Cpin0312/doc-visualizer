@@ -60,8 +60,8 @@
     if (decodeWarn) doc.warnings.unshift({ line: 0, msg: decodeWarn, kind: 'fix' });
     showError('');
     state.doc = doc; state.text = String(text); state.undo = []; state.redo = []; state.fileName = fileName; state.meta = meta; state.sel = null;
-    src = src || {}; state.key = src.key || null; state.orig = src.orig || null; state.handle = src.handle || null; state.sample = !!src.sample; state.saved = state.text;
-    updateDirty();
+    src = src || {}; state.key = src.key || null; state.orig = src.orig || null; state.handle = src.handle || null; state.sample = !!src.sample; state.fresh = !!src.fresh; state.saved = state.text;
+    updateDirty(); syncSrc(true);
     closePanel();
     render();
     window.scrollTo(0, 0);
@@ -69,7 +69,7 @@
 
   // ---- 保存（R8c）：上書き（File System Access）か、できなければ「（編集）」つきでダウンロード ----
   function isDirty() { return !!state.doc && state.text !== state.saved; }
-  function updateDirty() { $('dirty').hidden = !isDirty(); $('save').disabled = !state.doc; }
+  function updateDirty() { $('dirty').hidden = !isDirty(); $('save').disabled = !state.doc; $('editMd').disabled = !state.doc; }
   function leaveOk() { return !isDirty() || window.confirm('保存していない直しがあります。保存せずに別の md を開きますか？'); }
   function editedName(n) { var m = /^(.*?)(\.[^.]*)?$/.exec(n || 'doc.md'); return m[1] + '（編集）' + (m[2] || '.md'); }
   function writeHandle(h, bytes) {
@@ -100,8 +100,9 @@
       toast(how, 6000);
     };
     var download = function (why) {
-      saveBlob(new Blob([bytes], { type: 'text/markdown' }), editedName(name));
-      done((why ? why + '。' : '') + '「' + editedName(name) + '」としてダウンロードしました（ダウンロードの一覧に出ないときは、会社の設定で止められています）');
+      var dn = state.fresh ? name : editedName(name);   // 新しい md は元のファイルがないので、名前はそのまま
+      saveBlob(new Blob([bytes], { type: 'text/markdown' }), dn);
+      done((why ? why + '。' : '') + '「' + dn + '」としてダウンロードしました（ダウンロードの一覧に出ないときは、会社の設定で止められています）');
     };
     if (state.sample) { download('見本は上書きしません'); return; }
     var h = state.handle;
@@ -115,6 +116,41 @@
       download('上書きできませんでした（' + ((e && e.message) || e) + '）');
     }).then(function () { saving = false; });
   }
+  // ---- md を直接直す（R8d-3）：左に md の文字、右に図。左を直すと少し待って右が変わる。右の操作は左に写る ----
+  var srcTimer = null, srcLast = 0;
+  function srcEol(v) { var e = /\r\n/.test(state.text) ? '\r\n' : /\r/.test(state.text) ? '\r' : '\n'; return e === '\n' ? v : v.replace(/\n/g, e); }   // 文字欄は改行を LF にするので、元の改行に戻す
+  function syncSrc(force) {
+    var ta = $('src');
+    if ($('srcPane').hidden || (!force && document.activeElement === ta)) return;
+    clearTimeout(srcTimer); srcTimer = null;
+    if (srcEol(ta.value) !== state.text) ta.value = state.text;
+  }
+  function applySrc() {
+    clearTimeout(srcTimer); srcTimer = null;
+    if (!state.doc) return;
+    var v = srcEol($('src').value);
+    if (v === state.text) return;
+    var now = Date.now();
+    applyText(v, true, now - srcLast < 3000);   // 続けて打った分は、戻す1回にまとめる
+    srcLast = now;
+  }
+  function placeSrc() { var b = document.querySelector('header.bar').getBoundingClientRect(); $('srcPane').style.top = Math.max(0, Math.round(b.bottom)) + 'px'; }
+  function setSplit(on) {
+    $('srcPane').hidden = !on; document.body.classList.toggle('split', on);
+    $('editMd').setAttribute('aria-pressed', String(on)); $('editMd').textContent = on ? '直す画面を閉じる' : 'md を直接直す';
+    if (on) { placeSrc(); srcLast = 0; syncSrc(true); $('src').focus(); } else applySrc();
+    if (state.doc) render();   // 図の場所の幅が変わるので、2D・3D とも今の幅で描き直す（3D の大きさは作るときに決まる）
+  }
+  $('editMd').addEventListener('click', function () { setSplit($('srcPane').hidden); });
+  $('src').addEventListener('input', function () { clearTimeout(srcTimer); srcTimer = setTimeout(applySrc, 500); });
+  $('src').addEventListener('blur', applySrc);
+  window.addEventListener('resize', function () { if (!$('srcPane').hidden) placeSrc(); });
+  $('newMd').addEventListener('click', function () {
+    if (!leaveOk()) return;
+    show('# 新しい資料\n', '新しい資料.md', 'UTF-8・改行 LF（新しい md）', null, { key: 'utf8', fresh: true });
+    setSplit(true);
+    var ta = $('src'); ta.setSelectionRange(2, 7);   // 題名をすぐ打ちかえられるように
+  });
   window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   // ---- 表示 ----
@@ -194,7 +230,7 @@
     if (pushUndo) state.redo = [];
     var oldText = state.text;
     state.text = text; state.doc = doc;
-    updateDirty();
+    updateDirty(); syncSrc(false);
     // layout の区画のほかが変わった（名前・印・行を直した）ときは、全部を描き直す
     var bare = function (t, dc) { try { return P.writeLayout(t, dc, null); } catch (e) { return t; } };
     if (doc.diagrams.length !== old.diagrams.length || bare(text, doc) !== bare(oldText, old)) { closePanel(); render(); return true; }

@@ -1163,6 +1163,60 @@ async function savePptx(T, md, tag) {
   await B.evalJs('window.confirm = () => true; HTMLAnchorElement.prototype.click = window.__click; delete window.showSaveFilePicker');
   if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8d-3：md を直接直す（左右の画面）と、新しい md
+{
+  const ms = ['# 左右', '', '~~~flow 流れ', '受付 -> 確認', '~~~', ''].join('\r\n');   // CRLF の md でも、改行はそのまま
+  const fs2 = join(out, 'r8d3_split.md'); writeFileSync(fs2, ms);
+  await B.evalJs('window.confirm = () => true');
+  await pick(fs2); await waitFor(`document.getElementById('status').textContent.includes('r8d3_split.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+  await clickAt('#editMd'); await sleep(300);
+  const sp = await B.evalJs(`(() => { const p = document.getElementById('srcPane'), r = p.getBoundingClientRect(), m = document.querySelector('#main').getBoundingClientRect(), ta = document.getElementById('src'); return { vis: !p.hidden, right: Math.round(r.right), mainLeft: Math.round(m.left), same: ta.value.replace(/\\n/g, '\\r\\n') === DocVisualizer.text(), foc: document.activeElement === ta, top: Math.round(r.top), bar: Math.round(document.querySelector('header.bar').getBoundingClientRect().bottom) }; })()`);
+  ok('左右の画面：「md を直接直す」で左に md の文字が出て、図は右に寄る（重ならない）', sp.vis && sp.same && sp.foc && sp.mainLeft >= sp.right - 1 && sp.top >= sp.bar - 1, JSON.stringify(sp));
+  // 左で1行足す → 少し待つと右の箱が増える。改行は CRLF のまま
+  await B.evalJs(`(() => { const ta = document.getElementById('src'), i = ta.value.lastIndexOf('~~~'); ta.setSelectionRange(i, i); })()`);
+  await B.send('Input.insertText', { text: '確認 -> 発送\n' });
+  const grew = await waitFor(`!!document.querySelector('#dg0 .item[aria-label="発送"]')`, 2500);
+  let t = await T();
+  ok('左右の画面：左で1行足すと、少し待って右の図に箱が増える（md の改行は CRLF のまま）', !!grew && t === ms.replace('~~~\r\n\r\n', '~~~\r\n\r\n').replace('確認\r\n~~~', '確認\r\n確認 -> 発送\r\n~~~') && !/[^\r]\n/.test(t), JSON.stringify(t.slice(0, 80)));
+  await B.send('Input.insertText', { text: '発送 -> 完了\n' }); await waitFor(`!!document.querySelector('#dg0 .item[aria-label="完了"]')`, 2500);
+  await clickAt('#title'); await sleep(200);   // 左から出る
+  await undo();
+  ok('左右の画面：続けて打った分は、画面の Ctrl+Z の1回でまとめて元どおり（左の文字も戻る）', (await T()) === ms && (await B.evalJs(`document.getElementById('src').value.replace(/\\n/g, '\\r\\n')`)) === ms);
+  // 右の操作は左に写る
+  await clickAt('#dg0 .add-box'); await waitFor(`document.querySelector('input.rename')`, 2000);
+  await B.evalJs(`document.querySelector('input.rename').value = '右で足す'`); await keyPress('Enter', 'Enter', 13); await sleep(400);
+  ok('左右の画面：右で箱を足すと、左の文字にもその行が出る', (await B.evalJs(`document.getElementById('src').value`)).includes('右で足す') && (await T()).includes('右で足す\r\n'));
+  await undo();
+  await clickAt('#editMd'); await sleep(300);
+  ok('左右の画面：もう一度押すと閉じて、図は元の幅に戻る', await B.evalJs(`document.getElementById('srcPane').hidden && !document.body.classList.contains('split') && document.querySelector('#main').getBoundingClientRect().left > 0`));
+  {   // 3D が使えないブラウザでは w0 が null（2D のまま）
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`, 3000); await sleep(300);
+    const vw = () => B.evalJs(`(() => { const v = document.querySelector('#dg0 .view3d'), s = document.querySelector('#dg0 .v3scroll'); return v ? { v: Math.round(v.getBoundingClientRect().width), s: Math.round(s.getBoundingClientRect().width), r: Math.round(s.getBoundingClientRect().right) } : null; })()`);
+    const w0 = await vw(); await clickAt('#editMd'); await sleep(600); const w1 = await vw(), vwid = await B.evalJs('document.documentElement.clientWidth');
+    await clickAt('#editMd'); await sleep(400);
+    if ((await B.evalJs('DocVisualizer.mode()')) === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+    ok('左右の画面：3D でも、開くと図を今の幅で作り直す（右へはみ出さない）', !w0 || (w1 && w1.r <= vwid && w1.s < w0.s), JSON.stringify({ w0, w1, vwid }));
+  }
+  // 新しい md
+  await B.evalJs('window.confirm = () => true');
+  await clickAt('#newMd'); await sleep(400);
+  const nw = await B.evalJs(`({ t: DocVisualizer.text(), split: !document.getElementById('srcPane').hidden, sel: (() => { const ta = document.getElementById('src'); return ta.value.slice(ta.selectionStart, ta.selectionEnd); })(), title: document.getElementById('title').textContent })`);
+  ok('新しい md：題名だけの md で始まり、左右の画面が開いて、題名をすぐ打ちかえられる', nw.t === '# 新しい資料\n' && nw.split && nw.sel === '新しい資料' && nw.title === '新しい資料', JSON.stringify(nw));
+  await B.send('Input.insertText', { text: '週報' });
+  await B.evalJs(`(() => { const ta = document.getElementById('src'); ta.setSelectionRange(ta.value.length, ta.value.length); })()`);
+  await B.send('Input.insertText', { text: '\n~~~flow 手順\n書く -> 出す\n~~~\n' });
+  await waitFor(`!!document.querySelector('#dg0 .item[aria-label="出す"]')`, 2500);
+  await B.evalJs(`window.showSaveFilePicker = undefined; window.__dl = null; window.__click = window.__click || HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl = this.download; };`);
+  await clickAt('#save'); await sleep(400);
+  const nt = await T(), ndl = await B.evalJs('window.__dl');
+  ok('新しい md：左で図を書くと右に出て、保存は「新しい資料.md」のまま（（編集）は付けない）', nt === '# 週報\n\n~~~flow 手順\n書く -> 出す\n~~~\n' && ndl === '新しい資料.md' && !(await B.evalJs('DocVisualizer.dirty()')), JSON.stringify({ nt, ndl }));
+  await B.evalJs('HTMLAnchorElement.prototype.click = window.__click; delete window.showSaveFilePicker');
+  await clickAt('#editMd'); await sleep(200);
+  if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R8d：題名とカード。値の所だけ書きかえ、空で消え、ないものは足す（```markdown の包みの中に）
 {
   const md = ['# 受付の見直し', '', '> ひとことで：電話を減らす', '> **結論**：窓口を1つに', '', '~~~flow', 'A -> B', '~~~', ''].join('\n'), d = P.parseDoc(md);

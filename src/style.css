@@ -141,3 +141,12 @@ body.linking .svg-wrap .item { cursor: crosshair; }
 .dirty { align-self: center; color: #c0392b; font-size: 0.85rem; font-weight: 600; margin-right: 4px; }
 .card-add { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
 #cards .card[data-k], #title { cursor: text; }
+
+/* md を直接直す（R8d-3）：左に md の文字、右に図 */
+.src-pane { position: fixed; left: 0; bottom: 0; width: 40vw; z-index: 10; display: flex; flex-direction: column; background: #fff; border-right: 1px solid var(--line); padding: 8px; box-sizing: border-box; }
+.src-pane[hidden] { display: none; }
+.src-pane label { font-size: 0.8rem; color: #555; margin-bottom: 4px; }
+.src-pane textarea { flex: 1; width: 100%; resize: none; box-sizing: border-box; font: 13px/1.5 ui-monospace, Consolas, "MS Gothic", monospace; padding: 8px; border: 1px solid var(--line); border-radius: 6px; tab-size: 4; }
+body.split main { margin-left: 40vw; max-width: none; }
+body.split .secret { left: calc(40vw + 14px); }
+@media print { .src-pane { display: none !important; } body.split main { margin-left: 0; } }
