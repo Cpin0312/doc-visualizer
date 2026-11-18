@@ -754,6 +754,61 @@ async function savePptx(T, md, tag) {
   if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
   await shot('r8a_flowchart', false);
 }
+// R7 の直し：PDF の分け目は部品を割らない・いいえ の札は形の外・3つに分かれる判断・戻る矢印は交わらない・lanes は自分の帯の中
+{
+  const md7 = ['# R7 の直し', '', '```flowchart 判断が2つ（在庫と金額）', '(開始) -> /注文を受ける/ -> <在庫ある?>', '<在庫ある?> -> <10万円をこえる?> : はい', '<在庫ある?> -> [[発注する]] : いいえ', '[[発注する]] -> 在庫を入れる -> 注文を受ける',
+    '<10万円をこえる?> -> 部長が承認 : はい', '<10万円をこえる?> -> 出荷する : いいえ', '部長が承認 -> 出荷する', '出荷する -> (終わり)', '```', '',
+    '```flowchart 判断が3つに分かれる', '(開始) -> <種類は?>', '<種類は?> -> 見積 : 新規', '<種類は?> -> 契約 : 更新', '<種類は?> -> 解約 : 解約', '見積 -> (終わり)', '契約 -> (終わり)', '解約 -> (終わり)', '```', '',
+    '```flowchart 戻る矢印が何本も', '(開始) -> 受付 -> 確認 -> 承認 -> (終わり)', '確認 -> 受付 : 不備', '承認 -> 確認 : 差し戻し', '承認 -> 受付 : 最初から', '```', '',
+    '~~~lanes 担当', '[営業] 受付 -> [経理] 確認', '~~~', ''].join('\n');
+  const f7 = join(out, 'r7fix.md'); writeFileSync(f7, md7);
+  await pick(f7); await waitFor(`document.getElementById('status').textContent.includes('r7fix.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  // PDF：分けたページの枠が、どの部品もまたがない
+  const cut = await B.evalJs(`(() => {
+    const host = document.createElement('div'); host.style.cssText = 'position:absolute;left:-100000px;top:0'; document.body.appendChild(host);
+    const res = [];
+    for (const s0 of document.querySelectorAll('#print .p-fig svg')) {
+      const vb = s0.getAttribute('viewBox').split(' ').map(Number), full = s0.getAttribute('data-w') !== null;
+      host.innerHTML = s0.outerHTML; const s = host.querySelector('svg');
+      let bad = 0;
+      for (const el of s.querySelectorAll('.item, .edge-label')) { const b = el.getBBox();
+        const ox = b.x < vb[0] + vb[2] - 0.5 && b.x + b.width > vb[0] + 0.5, oy = b.y < vb[1] + vb[3] - 0.5 && b.y + b.height > vb[1] + 0.5;
+        const inside = b.x >= vb[0] - 0.5 && b.x + b.width <= vb[0] + vb[2] + 0.5 && b.y >= vb[1] - 0.5 && b.y + b.height <= vb[1] + vb[3] + 0.5;
+        if (ox && oy && !inside) bad++; }
+      res.push(bad);
+    }
+    host.remove(); return { pages: res.length, bad: res.reduce((a, b) => a + b, 0), split: document.querySelectorAll('#print h2').length };
+  })()`);
+  ok('PDF：ページの分け目は、箱・線の言葉をまたがない（割れた部品 0）', cut.bad === 0 && cut.pages >= 4, JSON.stringify(cut));
+  // いいえ の札は、ひし形の外
+  const lbl = await B.evalJs(`(() => { const s = document.querySelector('#dg0 .svg-wrap svg'), out = [];
+    for (const l of s.querySelectorAll('.edge-label')) { const b = l.getBBox(); for (const g of s.querySelectorAll('.item')) { if (g.querySelector('.box').getAttribute('data-shape') !== 'flowChartDecision') continue; const t = g.querySelector('text').getBBox(), d = g.querySelector('.box').getBBox();
+      const cx = d.x + d.width / 2, cy = d.y + d.height / 2; const corners = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]];
+      if (corners.some(([x, y]) => Math.abs(x - cx) / (d.width / 2) + Math.abs(y - cy) / (d.height / 2) < 0.98)) out.push(l.textContent + '→' + g.getAttribute('aria-label')); } }
+    return out; })()`);
+  ok('2D：判断の はい・いいえ の札は、ひし形の外（中の字に重ならない）', lbl.length === 0, lbl.join(' ') || 'なし');
+  const br3 = await B.evalJs(`(() => { const s = document.querySelector('#dg1 .svg-wrap svg'), x = n => { const b = s.querySelector('.item[aria-label="' + n + '"] .box').getBBox(); return [b.x, b.x + b.width, b.y]; };
+    const a = x('見積'), b = x('契約'), c = x('解約'); return { order: a[1] < b[0] && b[1] < c[0], sameRow: a[2] === b[2] && b[2] === c[2] }; })()`);
+  ok('2D：3つに分かれる判断は、書いた順に左から右へ（重ならない）', br3.order && br3.sameRow, JSON.stringify(br3));
+  const cross = await B.evalJs(`(() => { const s = document.querySelector('#dg2 .svg-wrap svg'), segs = [];
+    for (const p of s.querySelectorAll('path.edge')) { const n = p.getAttribute('d').match(/-?[\\d.]+/g).map(Number), pts = []; for (let i = 0; i + 1 < n.length; i += 2) pts.push([n[i], n[i + 1]]); if (pts.length < 4) continue; for (let i = 0; i + 1 < pts.length; i++) segs.push({ p: pts[i], q: pts[i + 1], k: p.getAttribute('data-ek') }); }
+    const X = (a, b) => { const d = (u, v, w) => (v[0] - u[0]) * (w[1] - u[1]) - (v[1] - u[1]) * (w[0] - u[0]); const d1 = d(a.p, a.q, b.p), d2 = d(a.p, a.q, b.q), d3 = d(b.p, b.q, a.p), d4 = d(b.p, b.q, a.q); return d1 * d2 < -1 && d3 * d4 < -1; };
+    let n = 0, which = []; for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) if (segs[i].k !== segs[j].k && X(segs[i], segs[j])) { n++; which.push(segs[i].k + '×' + segs[j].k); }
+    return { n, which, backs: new Set(segs.map(x => x.k)).size }; })()`);
+  ok('2D：戻る矢印が3本あっても交わらない（外側の道ほど遠くへ回る）', cross.n === 0 && cross.backs === 3, JSON.stringify(cross));
+  // lanes：自分の帯の中だけで動く
+  await B.evalJs(`document.getElementById('dg3').scrollIntoView({ block: 'center' })`); await sleep(200);
+  const lr = await B.evalJs(`(() => { const b = document.querySelector('#dg3 .item[aria-label="受付"] .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: lr.x, y: lr.y, button: 'left', buttons: 1, clickCount: 1 });
+  for (let k = 1; k <= 8; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: lr.x, y: lr.y + k * 30, button: 'left', buttons: 1 });
+  await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: lr.x, y: lr.y + 240, button: 'left', buttons: 0, clickCount: 1 }); await sleep(300);
+  const lane = await B.evalJs(`(() => { const g = document.querySelector('#dg3 .item[aria-label="受付"]'), b = g.querySelector('.box').getBBox(), band = g.getAttribute('data-band').split(' ').map(Number); return { y: b.y, bottom: b.y + b.height, band, md: /"受付":\\{"x":\\d+,"y":\\d+\\}/.test(DocVisualizer.text()) }; })()`);
+  ok('lanes：箱を下へ大きく動かしても、自分の帯（担当）の中にとどまる', lane.md && lane.bottom <= lane.band[1] + 0.5 && lane.y >= lane.band[0] - 0.5, JSON.stringify(lane));
+  await shot('r7fix', true);
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

@@ -285,17 +285,31 @@
       }
     });
 
+    // 矢印の言葉：箱の高さより少し上に浮かべ、こちらを向ける（板に描くと、厚みのある箱（ひし形など）のうしろに隠れる）
+    Array.prototype.forEach.call(svg.querySelectorAll('.edge-label'), function (g) {
+      var rc = g.querySelector('rect');
+      if (!rc) return;
+      var lr = rectOf(rc), els = Array.prototype.slice.call(g.querySelectorAll('rect,text'));
+      els.forEach(function (el) { used.add(el); });
+      var sp = new T.Sprite(keep(new T.SpriteMaterial({ map: keep(texture(lr, els, null)), transparent: true })));
+      sp.scale.set(lr.w * S, lr.h * S, 1);
+      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, (DEPTH[diag.type] || 16) + 4));
+      sp.renderOrder = 5;
+      rootG.add(sp);
+    });
+
     // 下の板（地面か壁）：残りの形と文字を1枚に描く
     var rest = all.filter(function (el) { return !used.has(el) && !el.closest('.mark'); });
     var pad = 30, bgR = { x: -pad, y: -pad, w: W + pad * 2, h: H + pad * 2 };
     var bgTex = keep(texture(bgR, rest, '#ffffff'));
-    var base = new T.Mesh(keep(new T.PlaneGeometry(bgR.w * S, bgR.h * S)), keep(new T.MeshBasicMaterial({ map: bgTex })));
+    // 板の面と縁・影は高さが近く、深さの争い（斜めの縞のちらつき）が出る。面を polygonOffset で手前に、縁は少し下げる
+    var base = new T.Mesh(keep(new T.PlaneGeometry(bgR.w * S, bgR.h * S)), keep(new T.MeshBasicMaterial({ map: bgTex, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })));
     base.position.copy(P(W / 2, H / 2, 0));
     orient(base);
     rootG.add(base);
     // 板の縁（少し厚み）
     var rim = new T.Mesh(keep(new T.BoxGeometry(bgR.w * S, bgR.h * S, 6 * S)), keep(new T.MeshStandardMaterial({ color: 0xdfe6f0 })));
-    rim.position.copy(P(W / 2, H / 2, -3.2));
+    rim.position.copy(P(W / 2, H / 2, -4));
     orient(rim);
     rootG.add(rim);
 

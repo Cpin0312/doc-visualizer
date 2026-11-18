@@ -91,7 +91,7 @@
   }
   function drawBox(d, it, b, opts) {
     var k = strongest(it), stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
-    return itemOpen(d, it) +
+    return itemOpen(d, it, b.band ? ' data-band="' + r(b.band[0] + 4) + ' ' + r(b.band[1] - 4) + '"' : '') +
       '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="10" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.6) + '"/>' +
       (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') +
       textEl(b.lines, b.x + b.w / 2, b.y + b.h / 2, opts.fs) +
@@ -167,7 +167,9 @@
     diag.items.forEach(function (it, v) {
       var p = L[it.pk], b = B[v];
       if (!b || !p || p.x == null) return;
-      b.x = Math.max(0, Math.min(p.x, W - b.w)); b.y = Math.max(0, Math.min(p.y, H - b.h));
+      // 帯（担当）のある図は、自分の帯の中だけ（帯を変えるのは md の [担当] を書きかえる R8b）
+      var y0 = b.band ? b.band[0] + 4 : 0, y1 = b.band ? b.band[1] - 4 : H;
+      b.x = Math.max(0, Math.min(p.x, W - b.w)); b.y = Math.max(y0, Math.min(p.y, y1 - b.h));
       moved[v] = true;
     });
     return moved;
@@ -273,7 +275,7 @@
         cells.forEach(function (c, ci) {
           var cw = Math.max.apply(null, cols[ci].map(function (v) { return M[v].w; }).concat([0]));
           var ch = c.reduce(function (a, v) { return a + M[v].h; }, 0) + Math.max(0, c.length - 1) * vgap, yy = y + (h0 - ch) / 2 + fs * 0.4;
-          c.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: yy, w: M[v].w, h: M[v].h, lines: M[v].lines }; yy += M[v].h + vgap; });
+          c.forEach(function (v) { B[v] = { x: colX[ci] + (cw - M[v].w) / 2, y: yy, w: M[v].w, h: M[v].h, lines: M[v].lines, band: [y, y + h] }; yy += M[v].h + vgap; });
         });
         y += h;
       });
@@ -600,7 +602,7 @@
       return { w: m.w, h: m.h, lines: m.lines, shape: sh };
     });
     var isBack = function (e) { return L.back[e.from + '>' + e.to] || e.from === e.to || L.layer[e.to] <= L.layer[e.from]; };
-    // 判断から出る矢印：はい は左、いいえ は右（言葉がなければ、出た順に左・右）
+    // 判断から出る矢印：はい は左、いいえ は右。3つ以上は、はい・書いた順・いいえ の順に左から右へ（真ん中は下から出る）
     var side = {};
     diag.items.forEach(function (it, v) {
       if (it.style.shape !== 'decision') return;
@@ -609,8 +611,14 @@
       var no = /^(いいえ|no|n|×|ng|なし|ない|違う|ちがう)$/i, yes = /^(はい|yes|y|○|ok|あり|ある)$/i;
       var nk = function (t) { return String(t || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase(); };
       var hasYes = outs.some(function (e) { return yes.test(nk(e.label)); });
-      var right = outs.filter(function (e) { return no.test(nk(e.label)); })[0] || (hasYes ? outs.filter(function (e) { return !yes.test(nk(e.label)); })[0] : null) || outs[1];
-      outs.forEach(function (e) { side[diag.edges.indexOf(e)] = e === right ? 1 : -1; });
+      if (outs.length === 2) {
+        var right = outs.filter(function (e) { return no.test(nk(e.label)); })[0] || (hasYes ? outs.filter(function (e) { return !yes.test(nk(e.label)); })[0] : null) || outs[1];
+        outs.forEach(function (e) { side[diag.edges.indexOf(e)] = e === right ? 1 : -1; });
+        return;
+      }
+      var rank = function (e) { return yes.test(nk(e.label)) ? 0 : no.test(nk(e.label)) ? 2 : 1; };
+      var ord = outs.slice().sort(function (p, q) { return rank(p) - rank(q) || outs.indexOf(p) - outs.indexOf(q); });
+      ord.forEach(function (e, k) { side[diag.edges.indexOf(e)] = (k - (ord.length - 1) / 2) * 2 / (ord.length - 1); });   // -1 … 0 … +1
     });
     var rows = [];
     diag.items.forEach(function (it, v) { (rows[L.layer[v]] = rows[L.layer[v]] || []).push(v); });
@@ -620,7 +628,7 @@
       var want = row.map(function (v, k) {
         var ins = diag.edges.map(function (e, ei) { return { e: e, ei: ei }; }).filter(function (o) { return o.e.to === v && !isBack(o.e) && cx[o.e.from] != null; });
         if (!ins.length) return k * (maxW + gap);
-        return ins.reduce(function (a, o) { return a + cx[o.e.from] + (side[o.ei] || 0) * (B[o.e.from].w / 2 + B[v].w / 2 + gap) * 0.6; }, 0) / ins.length;
+        return ins.reduce(function (a, o) { var sd = side[o.ei] || 0; return a + cx[o.e.from] + sd * (B[o.e.from].w / 2 + B[v].w / 2 + gap) * (Math.abs(sd) < 1 ? 1 : 0.6); }, 0) / ins.length;
       });
       var ord = row.map(function (v, k) { return k; }).sort(function (a, b) { return want[a] - want[b] || a - b; });
       var prev = null;
@@ -638,6 +646,22 @@
     var maxR = Math.max.apply(null, B.map(function (b) { return b.x + b.w; })), paths = '', labels = '', nb = 0;
     var nBack = diag.edges.filter(isBack).length, FW = maxR + fs * 2.4 + nBack * fs * 1.3 + 20, FH = y - fs * 1.4;
     var moved = applyLayout(diag, B, FW, FH), lay;
+    // 戻る矢印：短いものほど内側の列（入れ子にして交わらない）。箱の右のふちの、出る所・入る所の高さも並べる
+    // （上から：出る線（内→外）、入る線（外→内））
+    var backs = diag.edges.map(function (e, ei) { return { e: e, ei: ei, span: Math.abs(L.layer[e.from] - L.layer[e.to]) }; })
+      .filter(function (o) { return isBack(o.e) && !((moved[o.e.from] || moved[o.e.to] || edgeLay(diag, o.e.pk).bend) && o.e.from !== o.e.to); })
+      .sort(function (p, q) { return p.span - q.span || p.ei - q.ei; });
+    var col = {}, att = {}, at = {};
+    backs.forEach(function (o, k) { col[o.ei] = k; (att[o.e.from] = att[o.e.from] || []).push({ ei: o.ei, out: 1, span: o.span }); (att[o.e.to] = att[o.e.to] || []).push({ ei: o.ei, out: 0, span: o.span }); });
+    Object.keys(att).forEach(function (v) {
+      var lst = att[v].sort(function (p, q) { return (q.out - p.out) || (p.out ? p.span - q.span : q.span - p.span) || p.ei - q.ei; }), b = B[v];
+      lst.forEach(function (o, k) {
+        var yy = b.y + b.h * (0.2 + 0.6 * (k + 1) / (lst.length + 1)), t = (yy - b.y) / b.h, sh = diag.items[v].style.shape, xx = b.x + b.w;
+        if (sh === 'decision') xx = b.x + b.w / 2 + b.w / 2 * (1 - Math.abs(t - 0.5) * 2);
+        else if (sh === 'io') xx = b.x + b.w - b.h * 0.35 * t;
+        at[o.ei + (o.out ? 'o' : 'i')] = [xx, yy];
+      });
+    });
     var lab = function (t, x, yy) { labels += edgeLabel(t, x + (lay.label ? lay.label[0] : 0), yy + (lay.label ? lay.label[1] : 0), lf, lay.pk); };
     diag.edges.forEach(function (e, ei) {
       var a = B[e.from], b = B[e.to], acx = a.x + a.w / 2, acy = a.y + a.h / 2, bcx = b.x + b.w / 2, dd, el = edgeLay(diag, e.pk);
@@ -647,14 +671,18 @@
         var fe = freeEdge(a, b, lay.bend, hasReverse(diag, e) ? fs * 1.6 : 0); dd = fe.d;
         if (e.label) lab(e.label, fe.mx, fe.my - lf * 1.1);
       } else if (isBack(e)) {
-        // 右を回って、行き先の上から入る（判断の左右の角は、はい・いいえで使うので空けておく）
-        var xr = maxR + fs * 1.6 + nb++ * fs * 1.3, ty = b.y - fs * 1.2 - (nb - 1) * 4;
-        dd = 'M' + r(a.x + a.w) + ' ' + r(acy) + ' L' + r(xr) + ' ' + r(acy) + ' L' + r(xr) + ' ' + r(ty) + ' L' + r(bcx) + ' ' + r(ty) + ' L' + r(bcx) + ' ' + r(b.y - 2);
-        if (e.label) lab(e.label, xr, (acy + ty) / 2);
-      } else if (side[ei]) {
-        var sx = side[ei] < 0 ? a.x : a.x + a.w;
+        // 右を回って、行き先の右のふちへ入る（判断の左右の角は、はい・いいえで使うので空けておく）
+        var xr = maxR + fs * 1.6 + col[ei] * fs * 1.3, p0 = at[ei + 'o'], p1 = at[ei + 'i'];
+        nb++;
+        dd = 'M' + r(p0[0]) + ' ' + r(p0[1]) + ' L' + r(xr) + ' ' + r(p0[1]) + ' L' + r(xr) + ' ' + r(p1[1]) + ' L' + r(p1[0] + 2) + ' ' + r(p1[1]);
+        if (e.label) lab(e.label, xr, (p0[1] + p1[1]) / 2);
+      } else if (Math.abs(side[ei] || 0) >= 1) {
+        var sg = side[ei] < 0 ? -1 : 1, sx = sg < 0 ? a.x : a.x + a.w, lw = tw(e.label || '', lf) + 12;
         dd = 'M' + r(sx) + ' ' + r(acy) + ' L' + r(bcx) + ' ' + r(acy) + ' L' + r(bcx) + ' ' + r(b.y - 2);
-        if (e.label) lab(e.label, (sx + bcx) / 2 || sx + side[ei] * fs * 2, acy - lf * 1.1);
+        // 札は線の上で、形の外（角から外へ）に置く。ひし形の中の字に重ねない
+        var lx = (sx + bcx) / 2;
+        lx = sg > 0 ? Math.max(lx, sx + lw / 2 + 6) : Math.min(lx, sx - lw / 2 - 6);
+        if (e.label) lab(e.label, lx, acy - lf * 1.1);
       } else {
         var sy = a.y + a.h, my = b.y - fs * 1.8;
         dd = Math.abs(acx - bcx) < 1 ? 'M' + r(acx) + ' ' + r(sy) + ' L' + r(bcx) + ' ' + r(b.y - 2) : 'M' + r(acx) + ' ' + r(sy) + ' L' + r(acx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(b.y - 2);

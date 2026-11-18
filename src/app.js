@@ -190,7 +190,8 @@
     if (!p0) return;
     if ((g = e.target.closest('.item'))) {
       var it = d.items[+g.getAttribute('data-i')], bb = g.querySelector('.box').getBBox();
-      t = { kind: 'box', pk: it.pk, base: [bb.x, bb.y], w: bb.width, h: bb.height };
+      var band = (g.getAttribute('data-band') || '').split(' ').map(Number);
+      t = { kind: 'box', pk: it.pk, base: [bb.x, bb.y], w: bb.width, h: bb.height, band: band.length === 2 ? band : null };
     } else if ((g = e.target.closest('.edge-label[data-ek]'))) {
       var pk = g.getAttribute('data-ek'), l0 = (lay[pk] || {}).label || [0, 0];
       t = { kind: 'label', pk: pk, base: l0.slice() };
@@ -205,7 +206,7 @@
   }
   function dragValue(t, svg, x, y) {
     var p = svgPoint(svg, x, y) || t.p0, dx = p[0] - t.p0[0], dy = p[1] - t.p0[1];
-    if (t.kind === 'box') return { x: Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W - t.w))), y: Math.round(Math.max(0, Math.min(t.base[1] + dy, t.H - t.h))) };
+    if (t.kind === 'box') return { x: Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W - t.w))), y: Math.round(Math.max(t.band ? t.band[0] : 0, Math.min(t.base[1] + dy, (t.band ? t.band[1] : t.H) - t.h))) };
     if (t.kind === 'label') return { label: [Math.round(t.base[0] + dx), Math.round(t.base[1] + dy)] };
     return { bend: [Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W))), Math.round(Math.max(0, Math.min(t.base[1] + dy, t.H)))] };
   }
@@ -439,10 +440,11 @@
           // 箱を地面の上で動かす（動かせる図だけ）。離したら md の配置に書く
           canMove: P.MOVABLE[d.type] ? function () { return true; } : null,
           onMove: function (it, dx, dy) {
-            var g = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"] .box'), bb = g && g.getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
+            var gi = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"]'), g = gi && gi.querySelector('.box'), bb = g && g.getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
             if (!bb) return;
+            var band = (gi.getAttribute('data-band') || '').split(' ').map(Number), y0 = band.length === 2 ? band[0] : 0, y1 = band.length === 2 ? band[1] : H;
             closePanel();
-            setLayout(i, state.doc.diagrams[i].items[it].pk, { x: Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), y: Math.round(Math.max(0, Math.min(bb.y + dy, H - bb.height))) });
+            setLayout(i, state.doc.diagrams[i].items[it].pk, { x: Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), y: Math.round(Math.max(y0, Math.min(bb.y + dy, y1 - bb.height))) });
           }
         });
         if (view && sc.setView) sc.setView(view);
@@ -615,6 +617,34 @@
     return doc.body.map(function (b) { return { title: b.heading || '', text: b.lines.map(noteText).join('\n').trim(), src: '' }; })
       .filter(function (b) { return b.title || b.text; });
   }
+  // PDF のページの分け目：部品（箱・線の言葉・文字）をまたがない所を選ぶ。どの種類の図も同じ
+  // 図を見えない所に置いて、部品の x・y の範囲を測る
+  function partSpans(svg) {
+    var m = document.createElement('div');
+    m.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden';
+    m.innerHTML = R.uniq(svg);
+    document.body.appendChild(m);
+    var xs = [], ys = [];
+    try {
+      Array.prototype.forEach.call(m.querySelectorAll('.item, .edge-label, text'), function (el) {
+        var b = el.getBBox();
+        if (b.width || b.height) { xs.push([b.x, b.x + b.width]); ys.push([b.y, b.y + b.height]); }
+      });
+    } finally { m.remove(); }
+    return { x: xs, y: ys };
+  }
+  // 0 から total を size 以下に分ける。分け目は size の 3 割〜10 割の所で、どの部品の中にも入らない所。なければ（ページより大きい部品）size の所で分ける
+  function cutsAt(iv, total, size) {
+    var out = [0], s = 0;
+    var inside = function (c) { return iv.some(function (r) { return r[0] + 0.5 < c && c < r[1] - 0.5; }); };
+    while (total - s > size * 1.02) {
+      var best = s + size;
+      for (var c = Math.floor(s + size); c > s + size * 0.3; c--) if (!inside(c)) { best = c; break; }
+      out.push(best); s = best;
+    }
+    out.push(total);
+    return out;
+  }
   function buildPrint(doc) {
     var pages = [], t = esc(title(doc)), hn = hasNoteFn(doc), td = today();
     var cover = '<h1>' + t + '</h1><div class="cards">' + cardsHtml(doc) + '</div>';
@@ -627,10 +657,13 @@
       var w = +/data-w="(\d+)"/.exec(svg)[1], h = +/data-h="(\d+)"/.exec(svg)[1];
       var k = Math.min(1000 / w, 560 / h, 1.6), minK = MIN_PX / minFont(svg);
       if (k < minK) k = minK;
-      var tw = 1000 / k, th = 560 / k, nx = Math.ceil(w / tw - 0.02), ny = Math.ceil(h / th - 0.02), n = nx * ny;
+      var tw = 1000 / k, th = 560 / k, cx = [0, w], cy = [0, h];
+      if (w > tw * 1.02 || h > th * 1.02) { var iv = partSpans(svg); cx = cutsAt(iv.x, w, tw); cy = cutsAt(iv.y, h, th); }
+      var nx = cx.length - 1, ny = cy.length - 1, n = nx * ny;
       for (var ty = 0; ty < ny; ty++) for (var tx = 0; tx < nx; tx++) {
-        var part = n > 1 ? R.uniq(svg).replace(/viewBox="[^"]*"/, 'viewBox="' + Math.round(tx * tw) + ' ' + Math.round(ty * th) + ' ' + Math.round(Math.min(tw, w - tx * tw)) + ' ' + Math.round(Math.min(th, h - ty * th)) + '"')
-          .replace(/data-w="\d+"/, 'data-w="' + Math.round(Math.min(tw, w - tx * tw)) + '"').replace(/data-h="\d+"/, 'data-h="' + Math.round(Math.min(th, h - ty * th)) + '" data-k="' + k + '"') : svg;   // 分けた図は、どのページも同じ大きさで
+        var x0 = Math.round(cx[tx]), y0 = Math.round(cy[ty]), pw = Math.round(cx[tx + 1]) - x0, ph = Math.round(cy[ty + 1]) - y0;
+        var part = n > 1 ? R.uniq(svg).replace(/viewBox="[^"]*"/, 'viewBox="' + x0 + ' ' + y0 + ' ' + pw + ' ' + ph + '"')
+          .replace(/data-w="\d+"/, 'data-w="' + pw + '"').replace(/data-h="\d+"/, 'data-h="' + ph + '" data-k="' + k + '"') : svg;   // 分けた図は、どのページも同じ倍率で
         pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（' + P.TYPES[d.type].label + '）' + (n > 1 ? '（' + (ty * nx + tx + 1) + '/' + n + '）' : '') + '</h2><div class="p-fig">' + part + '</div>' +
           (legend ? '<div class="p-legend">' + legend + '</div>' : ''));
       }
