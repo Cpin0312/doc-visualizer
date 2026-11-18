@@ -164,3 +164,21 @@
 | R3-14 | 外 0・エラー 0・CSP のまま | 全ケースで外への読みこみ 0、コンソールエラー 0。CSP のもとで Blob のダウンロードが働く | ○ |
 
 R3 の未確認：本物の PowerPoint・Keynote・LibreOffice は Mac になく、スライドの「見た目」（図形の位置・色・重なり）は目で確かめていない（構造・文字・図形の数・はみ出しの有無だけ）。Windows の PowerPoint の字体（Yu Gothic UI がない PC）。注意：3D の絵のスライドは各図の直後に入る（DESIGN は「3D の絵を1枚」）。
+
+## 11. R4 の確かめ（コミット 9662c47、公開前の最後。2026-11-18）
+道具：別の場所に `git clone`（作業ツリーは触らない）→ `npm ci`・`npm run build`・`npm test`。画面は verify/r2d・r2e・r3a・r3b・r3c・r4.mjs。
+| # | 確かめること | 試した結果と事実 | ○× |
+|---|---|---|---|
+| R4-1 | dist の sha1 が 5a6eccc のものと同じか | **同じではない**。5a6eccc の dist は 1,314,769 B（sha1 3e97c5ae…）、9662c47 は 1,314,964 B（sha1 1a887593…）。`git diff 5a6eccc 9662c47 -- dist` は 4 行追加・3 行削除で、中身はコメント2行（server.js→試験）と PowerPoint の知らせの文だけ。→ 指示どおり R3 の主な動きを1巡し直した（下の行）。開発役の「1バイトも変わっていない」は事実と違う | ×（申告の食い違い。中身の差は小さく、下で全部 ○） |
+| R4-1b | 1巡し直し（新しい dist） | r2d（3D クリック・ドラッグ・切りかえ・選び直し 4 回で geometries 96 不変・ヒープ 10MB）、r2e（発表 P/→/スペース/←/Esc/F5、動きを減らす、隠れたタブ）、r3a（timeline の旗3つ・箱をもう1回押して閉じる 3D/2D マウス/Enter/スペース・発表の社外秘と2D の大きさ）、r3b（01・14・19 の .pptx 保存）、r3c（作る途中の失敗で赤い帯）、pptx_check（16 枚・社外秘/頁番号・11pt・Yu Gothic UI）：すべて前回と同じ結果。外 0・エラー 0 | ○ |
+| R4-2 | PowerPoint の知らせが言い切らない形 | 本物のクリック：「PowerPoint のファイル「…pptx」を作りました。ダウンロードの一覧に出ないときは、会社の設定で止められています。「PDF」を使ってください」。ダウンロードを deny にしても同じ文（ファイルは保存されない）。「保存しました」はもう出ない | ○ |
+| R4-3a | README：Windows での開き方が先 | 「使い方（Windows）」が最初の見出し（Download raw file→ダブルクリック→Edge/Chrome→md を選ぶ→見本）。Mac は1行 | ○ |
+| R4-3b | 書いてある手順どおりに Mac で開ける | clone した dist/DocVisualizer.html を file:// で開き、01 を input で読ませた：図 7 つ・canvas 7・PDF/PowerPoint ボタン有効・外 0・エラー 0 | ○ |
+| R4-3c | サーバー・ネットが要らないと書いてある／3D・PDF・PowerPoint の案内 | 冒頭に「サーバーもネットも使いません」。「会社の PC で 3D が出ないとき」「PDF の出し方（背景のグラフィック）」「PowerPoint…保存できないとき」あり | ○ |
+| R4-3d | npm ci → npm run build → npm test が README どおり通る（clone で） | `npm ci` 終了 0。`npm run build` 終了 0（1284.1KB）、**作り直した dist の sha1 がコミット済みの dist と同じ（1a887593…、`git status` 変更なし）**。`npm test` 終了 0：126 ○ / 0 × | ○ |
+| R4-4 | LICENSE（MIT）と部品のライセンス文が dist の中に | LICENSE は MIT。dist に three.js（Copyright 2010-2024 three.js authors・MIT）、PptxGenJS（Copyright 2015-2022 Brent Ely・MIT）、JSZip の説明が入っている（179〜230 行目）。注意：README は「dist の頭にも入っています」と書くが、実際は2つ目の `<script>` の中（頭の方）。文は正しい | ○（注意） |
+| R4-5 | .github/workflows/windows.yml を読む | 順：checkout→setup-node 22（cache npm）→setup-python→`npm ci`→`pip install python-pptx==1.0.2`→`npm run build`＋`git diff --exit-code -- dist`（dist が同じか）→画面の試験（Windows は EDGE_PATH、Mac は Chrome）→成果物の保存。windows-latest と macos-latest。permissions は contents: read のみ。おかしい所はない。**心配が2つ**：①test/cdp.mjs に `--enable-unsafe-swiftshader` などの指定がなく、GPU のない CI の Edge/Chrome では WebGL が使えず 3D の試験が落ちるかもしれない（Chrome 137 以降の動き。Mac の私の試験は GPU あり）。②CI は Node 22、ここは Node 26.12 で作った（同じ dist ができるかは CI で初めて分かる）。回すのは Push のあと＝未確認 | ○（読んだ範囲）／回すのは未確認 |
+| R4-6 | 公開してよいか（git ls-files 82 個と git log --all -p） | gmail・メール（noreply 以外）・合言葉・token/API キー・/Users/・C:\Users・ほかの道具の名前・セッション id・ほかの道具の設定の場所と番号・会社名：**0 件**。コミットは 1 本の履歴で、作者は noreply アドレスのみ。最大ファイル dist 1.3MB（5MB 超なし）、履歴にも 5MB 超なし。残る語：①DESIGN.md/PROGRESS.md/VERIFY.md の「マスター」（持ち主の呼び名＝人の名前ではない）②DESIGN.md の「NoteManager」「AnyProject の CLAUDE.md」（ほかの自分のフォルダの名前）③LICENSE の `Cpin0312`（GitHub のアカウント名、公開する名前）④`Co-Authored-By: Claude`。公開してよいかの判断は親・マスターに | ○（残る語は知らせる） |
+| R4-7 | 別の場所の clone で dist を開いて 01 → 図 7 つ | 上の R4-3b のとおり。clone は 82 ファイル。dist は単独で動くので、入るべきファイルは揃っている（build と test が clone で通ったことで src・test・fixtures・samples・package-lock も揃っている） | ○ |
+
+未確認：本物の Windows（Edge）での CI、Push 後の CI の結果、本物の PowerPoint、フルスクリーン発表の本物の動き。
