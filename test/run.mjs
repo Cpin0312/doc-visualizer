@@ -303,6 +303,15 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
     return { secret: document.getElementById('pSecret').hidden ? '' : document.getElementById('pSecret').textContent, w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32, minPx: +(mf * k).toFixed(1) }; })()`);
   ok('発表：社外秘の印が出る', pf.secret === '関係者限り', pf.secret);
   ok('発表（2D）：図を枠いっぱいに合わせる（文字は 11px 以上）', (Math.abs(pf.w - pf.cw) <= 2 || Math.abs(pf.h - pf.ch) <= 2) && pf.minPx >= 10.95, JSON.stringify(pf));
+  // 枠の大きさが窓の resize なしで変わっても合わせ直す（下の画面のスクロールバーが出る・消える）。細い窓でも合う
+  const fill = () => B.evalJs(`(() => { const st = document.getElementById('pStage'), b = st.querySelector('svg').getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32 }; })()`);
+  const fits = f => Math.abs(f.w - f.cw) <= 2 || Math.abs(f.h - f.ch) <= 2;
+  const fl = [];
+  for (const v of ['scroll', 'hidden']) { await B.evalJs(`document.documentElement.style.overflowY = '${v}'`); await sleep(250); fl.push(await fill()); }
+  await B.evalJs(`document.documentElement.style.overflowY = ''`);
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: 1, mobile: false }); await sleep(250); fl.push(await fill());
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false }); await sleep(250); fl.push(await fill());
+  ok('発表（2D）：スクロールバーが出る・消える・窓を細くする・戻すのどれでも枠いっぱい', fl.every(fits), JSON.stringify(fl));
   await key('Escape', 'Escape', 27);
   await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
   // F5 では始まらない（読みこみ直しのキーは使わない）：P 以外のキーで発表が開かない

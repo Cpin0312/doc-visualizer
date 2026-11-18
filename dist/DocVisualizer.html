@@ -2388,6 +2388,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     s.style.width = Math.floor(w * k) + 'px'; s.style.height = Math.floor(h * k) + 'px';
   }
   window.addEventListener('resize', function () { if (present.on && !present.scene) fitStage(); });
+  // 枠の大きさは、窓の resize がなくても変わる（下の画面のスクロールバーが消えるときなど）。変わったら合わせ直す
+  if (window.ResizeObserver) new ResizeObserver(function () { if (present.on && !present.scene) fitStage(); }).observe($('pStage'));
   function startPresent() {
     var doc = state.doc;
     if (!doc || !doc.diagrams.length || present.on) return;
