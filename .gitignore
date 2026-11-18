@@ -3,3 +3,4 @@ test/out/
 .DS_Store
 verify/out/
 verify/md/16_over5mb.md
+examples/出力/
