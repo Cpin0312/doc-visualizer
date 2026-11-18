@@ -93,6 +93,13 @@
   - 直ったとする：矢印キー 3 回で 24 動き、Ctrl+Z 1 回で元へ。旗・カードをドラッグで動かすと layout に書き、PDF・PowerPoint にも出る。
   - 進み具合：作った（2026-11-19）。--out の html で 181○/0×、150% も 181○。dist はまだ（確かめ役が 0a6b980 を試し中）。
 - **R8b-2**（layout だけ）：道具の帯と右クリックのメニューで、形・色・線の太さ・大きさ・文字の大きさ、線の形（直線・折れ線・曲線）・矢印の先・点線。
+  - 設計（2026-11-19）：
+    - 出し方：箱を押したときのポップアップ（#panel）の下に「形と色」の欄を足す（動かせる図だけ）。右クリック（contextmenu）でも同じポップアップを開く。線を右クリック → 線の欄（線の形・矢印の先・点線）。別の帯は作らない（ポップアップ1つにまとめ、キーボードでも届く）。
+    - layout の鍵：箱 `shape`（rect・round・ellipse・diamond・para・hexagon・chevron・cylinder・doc）、`color`（blue・green・yellow・red・gray・purple）、`stroke`（1〜4）、`scale`（0.6〜2、0.2 きざみ）、`font`（0.8・1・1.25）。線 `route`（straight・elbow・curve）、`head`（end・none・both）、`dash`（true）。値の外は捨てて知らせる（cleanPart）。
+    - 描く：drawBox を形ごとの path にする（曲線の形は点で近似した多角形＝3D の押し出しがそのまま使える）。`data-shape` に PowerPoint の形の名前（roundRect・ellipse・diamond・parallelogram・hexagon・chevron・can・flowChartDocument など）。大きさ・文字の大きさは箱を測るときに掛ける（並べ方もその大きさで）。
+    - フローチャートの形（style.shape）は md が決める。layout の shape があればそれを上に使う。グラフ・日程・kpi・比べるには形の欄を出さない。
+    - 直ったとする：形を変えると 2D・3D・PowerPoint（形の名前）・PDF が変わる。色・太さ・大きさ・文字の大きさが変わる。線の形・矢印・点線が変わり、PowerPoint にも出る。どれも Ctrl+Z で戻る。
+  - 進み具合：作った（2026-11-19）。--out の html で 186○/0×、150% も 186○。欄はポップアップの中で、はじめはたたむ（開いたままだと、となりの箱を隠した）。dist はまだ。
 - **R8b-3**（md の行を書きかえる）：2回押して名前を直す（span）、印を付ける・外す、箱・線を足す・消す、Delete、lanes の帯をまたぐと [担当] を書きかえる。
 
 ## R8c 保存（ファイルに書く）

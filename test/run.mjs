@@ -841,6 +841,56 @@ async function savePptx(T, md, tag) {
   ok('日程の札・数字のカードもドラッグで動く。日付の点は線の上のまま、点から札へ線がつながる。PDF にも出る', t1[0] > t0[0] + 20 && stem.x2 >= stem.bx - 0.5 && stem.x2 <= stem.bx + stem.bw + 0.5 && stem.cx < t1[0] + 1 && tc1[0] < tc0[0] - 20 && /"説明会":\{"x":\d+,"y":\d+\}/.test(tt) && /"時間":\{"x":\d+,"y":\d+\}/.test(tt) && Math.abs(pr - tc1[0]) < 1 && tt.includes('2027-01-10 説明会'), JSON.stringify({ t0, t1, stem, tc0, tc1, pr }));
   if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8b-2：形・色・線の太さ・大きさ・文字の大きさ・線の形・矢印の先・点線（ポップアップの欄・右クリック）。layout にだけ書く
+{
+  const mdc = ['# R8b-2', '', '~~~flow 流れ', '受付 -> 確認 -> 出荷', '~~~', ''].join('\n');
+  const fc = join(out, 'r8b2.md'); writeFileSync(fc, mdc);
+  await pick(fc); await waitFor(`document.getElementById('status').textContent.includes('r8b2.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const box = n => B.evalJs(`(() => { const e = document.querySelector('#dg0 .item[aria-label="${n}"] .box'), b = e.getBBox(); return { tag: e.tagName, shape: e.getAttribute('data-shape'), fill: e.getAttribute('fill'), sw: e.getAttribute('stroke-width'), w: +b.width.toFixed(1), fs: Math.max(...Array.from(e.parentNode.querySelectorAll('text')).map(t => +t.getAttribute('font-size'))) }; })()`);
+  const b0 = await box('受付');
+  await clickAt('#dg0 .item[aria-label="受付"] .box');
+  await waitFor(`!document.getElementById('panel').hidden`);
+  const closed = await B.evalJs(`!document.querySelector('#panel details.styl').open`);
+  await B.evalJs(`document.querySelector('#panel details.styl').open = true`);
+  const pressBtn = async (k, v) => { await clickAt(`#panel .styl button[data-k="${k}"][data-v='${JSON.stringify(v)}']`); await sleep(250); };
+  await pressBtn('shape', 'ellipse'); await pressBtn('color', 'green'); await pressBtn('stroke', 3); await pressBtn('scale', 1.4); await pressBtn('font', 1.25);
+  const b1 = await box('受付'), still = await B.evalJs(`!document.getElementById('panel').hidden && document.querySelector('#panel .styl button[data-k="shape"][aria-pressed="true"]').textContent`), t1 = await B.evalJs('DocVisualizer.text()');
+  ok('形と色：楕円・緑・太い・140%・文字 大 に変わり、layout にだけ書く（ポップアップは開いたまま。欄ははじめたたんである）', closed && b1.tag === 'path' && b1.shape === 'ellipse' && b1.fill === '#ecf8f1' && b1.sw === '3' && b1.w > b0.w * 1.3 && b1.fs > b0.fs && still === '楕円' && t1.startsWith(mdc) && /"受付":\{"shape":"ellipse","color":"green","stroke":3,"scale":1.4,"font":1.25\}/.test(t1), JSON.stringify({ b0, b1, still }));
+  await pressBtn('shape', '');
+  const b2 = await box('受付');
+  ok('形と色：「自動」で元の形に戻す（layout からその値だけ消す）', b2.tag === 'rect' && !/"shape"/.test(await B.evalJs('DocVisualizer.text()')), JSON.stringify(b2));
+  await keyPress('Escape', 'Escape', 27);
+  // 線：右クリック
+  const ep = await B.evalJs(`(() => { const p = document.querySelector('#dg0 path.edge[data-ek="確認>出荷"]'), q = p.getPointAtLength(p.getTotalLength() * 0.4), m = p.ownerSVGElement.getScreenCTM(); return { x: q.x * m.a + m.e, y: q.y * m.d + m.f }; })()`);
+  await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: ep.x, y: ep.y, button: 'right', buttons: 2, clickCount: 1 });
+  await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: ep.x, y: ep.y, button: 'right', buttons: 0, clickCount: 1 });
+  const eh = await waitFor(`!document.getElementById('panel').hidden && document.querySelector('#panelBody h2').textContent`, 2000);
+  await pressBtn('route', 'curve'); await pressBtn('head', 'both'); await pressBtn('dash', true);
+  const pe = await B.evalJs(`(() => { const p = document.querySelector('#dg0 path.edge[data-ek="確認>出荷"]'); return { d: p.getAttribute('d'), s: !!p.getAttribute('marker-start'), e: !!p.getAttribute('marker-end'), dash: p.getAttribute('stroke-dasharray') }; })()`);
+  ok('線：右クリックで「線の形と矢印」。曲線・両方の矢印・点線になる', eh === '線：確認 → 出荷' && /C/.test(pe.d) && pe.s && pe.e && pe.dash, JSON.stringify({ eh, pe }));
+  await keyPress('Escape', 'Escape', 27);
+  // 3D も作れる（形を変えた箱を押せる）・PowerPoint の形と矢印
+  await pick(fc); await waitFor(`document.getElementById('status').textContent.includes('r8b2.md')`);
+  const fc2 = join(out, 'r8b2_styled.md');
+  writeFileSync(fc2, P.writeLayout(mdc, P.parseDoc(mdc), { v: 1, diagrams: [{ type: 'flow', name: '流れ', parts: { '確認': { shape: 'hexagon', color: 'red' }, '受付>確認': { head: 'both', dash: true } } }] }));
+  if (await B.evalJs('!!window.DocScene && !document.getElementById("mode").disabled')) {
+    await pick(fc2); await waitFor(`document.getElementById('status').textContent.includes('r8b2_styled.md')`);
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
+    await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(400);
+    const q = await B.evalJs('DocVisualizer.where3d(0, 1)');
+    for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: q.x, y: q.y, button: 'left', clickCount: 1 });
+    const h3 = await waitFor(`!document.getElementById('panel').hidden && document.querySelector('#panelBody h2').textContent`, 2000);
+    ok('3D：形を変えた箱（六角形）も立体になり、押すと開く', h3 === '確認' && (await B.evalJs('DocVisualizer.mode()')) === '3d', String(h3));
+    await keyPress('Escape', 'Escape', 27);
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  }
+  const { rd } = await savePptx(B, fc2, 'r8b2');
+  const AU = rd ? rd.slides.flatMap(x => x.auto || []) : [], heads = rd ? rd.slides.reduce((a, x) => a + (x.heads || 0), 0) : 0;
+  ok('PowerPoint：形を変えた箱は PowerPoint の形（六角形）、両方の矢印は先と元の両方に矢じり', AU.includes('HEXAGON') && heads >= 1, AU.join(' ') + ' heads=' + heads);
+  if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

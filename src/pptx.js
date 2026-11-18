@@ -159,6 +159,7 @@
       return p.moveTo ? { x: rel(p.x, mx), y: rel(p.y, my), moveTo: true } : { x: rel(p.x, mx), y: rel(p.y, my) };
     });
     if (arrow && line !== EMPTY) line.endArrowType = 'triangle';
+    if (line !== EMPTY && /url\(#arw[^)]*\)/.test(el.getAttribute('marker-start') || '')) line.beginArrowType = 'triangle';
     slide.addShape(pptx.ShapeType.custGeom, { x: X(mx), y: Y(my), w: w, h: h, points: points, fill: fillO, line: line });
     return 1;
   }

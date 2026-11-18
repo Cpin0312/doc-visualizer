@@ -113,3 +113,13 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 .diagram-box .movable .item, .diagram-box .movable .edge-label { cursor: move; }
 .reset-layout { margin-left: 10px; font: inherit; font-size: 0.8rem; font-weight: normal; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); cursor: pointer; vertical-align: middle; }
 .reset-layout:hover { background: #eef3fb; }
+/* R8b-2：ポップアップの「形と色」「線の形と矢印」 */
+.styl { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; }
+.styl summary { font-size: 0.85rem; font-weight: bold; cursor: pointer; margin: 2px 0 4px; }
+.styl .srow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; }
+.styl .srow > span { font-size: 0.78rem; color: var(--sub); min-width: 4.5em; }
+.styl button { font: inherit; font-size: 0.78rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); cursor: pointer; }
+.styl button[aria-pressed="true"] { background: #e6eefc; border-color: #3b6fd8; font-weight: bold; }
+.styl button.sw::before { content: ''; display: inline-block; width: 0.8em; height: 0.8em; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.styl .sw.blue::before { background: #3b6fd8; } .styl .sw.green::before { background: #2f9e5b; } .styl .sw.yellow::before { background: #c99400; }
+.styl .sw.red::before { background: #d64545; } .styl .sw.gray::before { background: #7a8699; } .styl .sw.purple::before { background: #7b52c7; }

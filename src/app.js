@@ -152,13 +152,74 @@
     else {
       if (!L.parts || typeof L.parts !== 'object') L.parts = {};
       var cur = L.parts[pk] && typeof L.parts[pk] === 'object' ? L.parts[pk] : {};
-      Object.keys(patch).forEach(function (key) { cur[key] = patch[key]; });
-      L.parts[pk] = cur;
+      Object.keys(patch).forEach(function (key) { if (patch[key] == null) delete cur[key]; else cur[key] = patch[key]; });
+      if (!Object.keys(cur).length) { delete L.parts[pk]; cur = null; }
+      if (cur) L.parts[pk] = cur;
+      if (!Object.keys(L.parts).length) obj.diagrams.splice(k, 1);   // 何もなくなった図は、区画から消す（md を元どおりに）
     }
     var text;
     try { text = P.writeLayout(state.text, doc, obj); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return; }
     applyText(text, true, merge);
   }
+  // ---- 形・色・大きさ・線の形（R8b-2）：ポップアップの下の欄。値は layout にだけ書く ----
+  var STYLABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  var OPT_BOX = [
+    ['shape', '形', [['', '自動'], ['rect', '四角'], ['round', '角丸'], ['ellipse', '楕円'], ['diamond', 'ひし形'], ['para', '平行四辺形'], ['hexagon', '六角形'], ['chevron', '矢羽根'], ['cylinder', '円柱'], ['doc', '書類']]],
+    ['color', '色', [['', '自動'], ['blue', '青'], ['green', '緑'], ['yellow', '黄'], ['red', '赤'], ['gray', '灰'], ['purple', '紫']]],
+    ['stroke', '線の太さ', [['', 'ふつう'], [1, '細い'], [3, '太い'], [4, 'とても太い']]],
+    ['scale', '大きさ', [[0.6, '60%'], [0.8, '80%'], ['', '100%'], [1.4, '140%'], [2, '200%']]],
+    ['font', '文字', [[0.8, '小'], ['', '中'], [1.25, '大']]]];
+  var OPT_EDGE = [
+    ['route', '線の形', [['', '自動'], ['straight', '直線'], ['elbow', '折れ線'], ['curve', '曲線']]],
+    ['head', '矢印の先', [['', '自動'], ['end', '先だけ'], ['none', 'なし'], ['both', '両方']]],
+    ['dash', '線', [['', '実線'], [true, '点線']]]];
+  function partNow(diag, pk) { return (diag.layout || {})[pk] || {}; }
+  // 箱の欄はたたんでおく（ポップアップを小さく保ち、となりの箱を隠さない）。線の欄と、変えた直後は開く
+  var styleOpen = false;
+  function styleHtml(d, pk, cur, edge) {
+    return '<details class="styl" data-d="' + d + '" data-pk="' + esc(pk) + '"' + (edge || styleOpen ? ' open' : '') + '><summary>' + (edge ? '線の形と矢印' : '形と色を変える') + '</summary>' + (edge ? OPT_EDGE : OPT_BOX).map(function (o) {
+      return '<div class="srow" role="group" aria-label="' + o[1] + '"><span>' + o[1] + '</span>' + o[2].map(function (v) {
+        var on = (cur[o[0]] == null ? '' : cur[o[0]]) === v[0];
+        return '<button type="button" data-k="' + o[0] + '" data-v="' + esc(JSON.stringify(v[0])) + '" aria-pressed="' + on + '"' + (o[0] === 'color' && v[0] ? ' class="sw ' + v[0] + '"' : '') + '>' + v[1] + '</button>';
+      }).join('') + '</div>';
+    }).join('') + '</details>';
+  }
+  function openEdge(d, pk, anchor) {
+    var diag = state.doc.diagrams[d], ends = pk.replace(/#\d+$/, '').split('>');
+    var nm = function (k) { var it = diag.items.filter(function (x) { return x.pk === k; })[0]; return it ? it.label : k; };
+    closePanel();
+    state.anchor = anchor; state.byKey = false; state.selEdge = { d: d, pk: pk };
+    $('panelBody').innerHTML = '<h2>線：' + esc(nm(ends[0])) + ' → ' + esc(nm(ends[1])) + '</h2>' + styleHtml(d, pk, partNow(diag, pk), true);
+    $('panel').hidden = false;
+    placePanel();
+  }
+  $('panel').addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.styl button');
+    if (!b) return;
+    var box = b.closest('.styl'), d = +box.getAttribute('data-d'), pk = box.getAttribute('data-pk'), k = b.getAttribute('data-k'), v = JSON.parse(b.getAttribute('data-v')), patch = {};
+    patch[k] = v === '' ? null : v;
+    var sel = state.sel, se = state.selEdge, key = b.getAttribute('data-k') + b.getAttribute('data-v');
+    setLayout(d, pk, patch);
+    // 同じ箱・線の欄を開き直す（押したボタンにフォーカスを戻す）
+    styleOpen = true;
+    if (se && se.pk === pk) openEdge(d, pk, state.anchor);
+    else if (sel) { var g = document.querySelector('#dg' + sel.d + ' .item[data-i="' + sel.i + '"]'); if (g) state.anchor = anchorOf(g); openItem(sel.d, sel.i); }
+    styleOpen = false;
+    var nb = Array.prototype.filter.call($('panelBody').querySelectorAll('.styl button'), function (x) { return x.getAttribute('data-k') + x.getAttribute('data-v') === key; })[0];
+    if (nb) nb.focus();
+  });
+  // 右クリック：箱なら説明と「形と色」、線・線の言葉なら「線の形と矢印」
+  $('diagrams').addEventListener('contextmenu', function (e) {
+    var svg = e.target.closest && e.target.closest('.svg-wrap svg'), box = svg && svg.closest('.diagram-box');
+    if (!svg || !state.doc) return;
+    var i = +box.id.slice(2), d = state.doc.diagrams[i];
+    if (!STYLABLE[d.type]) return;
+    var g = e.target.closest('.item'), anchor = { x: e.clientX, y: e.clientY, w: 0, h: 0 };
+    if (g) { e.preventDefault(); state.selEdge = null; state.anchor = e.clientX || e.clientY ? anchor : anchorOf(g); state.byKey = !(e.clientX || e.clientY); openItem(i, +g.getAttribute('data-i')); return; }
+    var lb = e.target.closest('.edge-label[data-ek]'), ed = lb || edgeUnder(svg, e.clientX, e.clientY);
+    if (ed) { e.preventDefault(); openEdge(i, ed.getAttribute('data-ek'), anchor); }
+  });
+
   // 矢印キーで箱を動かす（8、Shift で 1）。続けて押した同じ箱の動きは、戻す1回にまとめる
   var lastKey = null;
   function keyMove(g, dx, dy) {
@@ -343,7 +404,7 @@
     var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]');
     if (g) g.classList.add('sel');
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(k === d ? i : null); redraw(k); } });
-    state.sel = { d: d, i: i };
+    state.sel = { d: d, i: i }; state.selEdge = null;
     var n = noteFor(it.key), h = '<h2>' + esc(it.label) + '</h2>';
     h += it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('');
     var extra = [];
@@ -367,6 +428,7 @@
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>';
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
+    if (STYLABLE[diag.type]) h += styleHtml(d, it.pk, partNow(diag, it.pk), false);
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();

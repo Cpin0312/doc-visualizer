@@ -17,7 +17,7 @@ for s in p.slides:
         'minPt': min([r.font.size.pt for r in runs if r.font.size] or [0]),
         'fonts': sorted(set(r.font.name or '' for r in runs)),
         'shapes': len(s.shapes), 'geo': len(geo),
-        'cust': sum('custGeom' in x for x in xml), 'arrows': sum('tailEnd' in x for x in xml),
+        'cust': sum('custGeom' in x for x in xml), 'arrows': sum('tailEnd' in x for x in xml), 'heads': sum('headEnd' in x and 'type="triangle"' in x.split('headEnd')[1][:40] for x in xml),
         'pics': sum(1 for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE),
         'secret': any(sh.name == 'secret' for sh in s.shapes),
         'pos': {sh.text_frame.text: [sh.left + sh.width / 2, sh.top + sh.height / 2] for sh in s.shapes if sh.has_text_frame and sh.text_frame.text},

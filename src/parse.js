@@ -578,6 +578,18 @@
     });
   }
   var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, timeline: 1, kpi: 1 };
+  // 形・色などの値（R8b-2）。決まった値だけを使う
+  var oneOf = function (list) { return function (v) { return list.indexOf(v) >= 0; }; };
+  var STYLE_OK = {
+    shape: oneOf(['rect', 'round', 'ellipse', 'diamond', 'para', 'hexagon', 'chevron', 'cylinder', 'doc']),
+    color: oneOf(['blue', 'green', 'yellow', 'red', 'gray', 'purple']),
+    stroke: function (v) { return typeof v === 'number' && v >= 1 && v <= 4; },
+    scale: function (v) { return typeof v === 'number' && v >= 0.6 && v <= 2; },
+    font: oneOf([0.8, 1, 1.25]),
+    route: oneOf(['straight', 'elbow', 'curve']),
+    head: oneOf(['end', 'none', 'both']),
+    dash: function (v) { return v === true; }
+  };
   function isPair(v) { return Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]) && typeof v[0] === 'number' && typeof v[1] === 'number'; }
   function cleanPart(p) {
     var o = {}, bad = false;
@@ -585,6 +597,7 @@
     Object.keys(p).forEach(function (k) {
       if (k === 'x' || k === 'y') { if (typeof p[k] === 'number' && isFinite(p[k])) o[k] = p[k]; else bad = true; }
       else if (k === 'bend' || k === 'label') { if (isPair(p[k])) o[k] = p[k].slice(); else bad = true; }
+      else if (STYLE_OK[k]) { if (STYLE_OK[k](p[k])) o[k] = p[k]; else bad = true; }
       else bad = true;   // shortcut: 知らない鍵は描くのに使わない（R8b で形・色を足す）。md の中には残る
     });
     if ((o.x == null) !== (o.y == null)) { delete o.x; delete o.y; bad = true; }
