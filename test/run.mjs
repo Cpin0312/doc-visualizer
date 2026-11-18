@@ -509,7 +509,7 @@ async function savePptx(T, md, tag) {
   const S = rd ? rd.slides : [];
   ok('PowerPoint：16:9・枚数（表紙＋図7つ＋3D の絵7つ＋箱の説明2つ＝17）', rd && rd.w === 13.333 && rd.h === 7.5 && S.length === 17 && st && st.slides === 17, rd && `${rd.w}×${rd.h}・${S.length} 枚`);
   ok('PowerPoint：表紙に題名・ひとことで・結論・すること', S[0] && ['新しい受付のしくみ', 'ひとことで', '結論', 'すること', '受付を1つの窓口にまとめ'].every(k => S[0].texts.join('\n').includes(k)), S[0] && S[0].texts.join(' / ').slice(0, 120));
-  const dg = [1, 3, 5, 7, 9, 11, 13].map(i => S[i] || {});
+  const dg = [1, 3, 5, 7, 9, 11, 13].map(i => S[i] || { texts: [] }); // 読み返せないときも止まらずに × を出す
   ok('PowerPoint：図7つ（流れ・担当・日程・木・グラフ・数字・比べる）は直せる図形と文字（絵ではない）', dg.every(x => x.pics === 0 && x.geo >= 3 && x.texts.length >= 4) && dg[0].cust >= 4 && dg[0].arrows >= 4, dg.map(x => `図形${x.geo}・線${x.cust}・矢印${x.arrows}・文字${x.texts && x.texts.length}`).join(' | '));
   ok('PowerPoint：図の箱の名前が文字で入る（受付・振り分け・説明会・410・85%・1つにまとめる）', dg[0].texts.includes('振り分け') && dg[2].texts.includes('説明会') && dg[4].texts.includes('410') && dg[5].texts.includes('85%') && dg[6].texts.includes('1つにまとめる'));
   ok('PowerPoint：3D の絵が図ごとに1枚', [2, 4, 6, 8, 10, 12, 14].every(i => S[i] && S[i].pics === 1 && S[i].texts[0].endsWith('（3D）')), S.map(x => x.pics).join(''));
