@@ -1,4 +1,4 @@
-# Windows（本物の Edge・file://）と Mac で、作り直しと試験を回す。公開リポジトリなら無料
+# Windows（本物の Edge・file://）で、作り直しと試験を回す。Mac は手で回すとき（workflow_dispatch）だけ。公開リポジトリなら無料
 name: test
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["windows-latest","macos-latest"]') || fromJSON('["windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,13 @@ jobs:
             [ -f "$EDGE_PATH" ] || unset EDGE_PATH   # 見つからなければ、決まった場所を探す
           fi
           node test/run.mjs
+      - name: 画面の試験（Windows・画面の拡大 150%）
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          export EDGE_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+          [ -f "$EDGE_PATH" ] || unset EDGE_PATH
+          DOCVIS_DSF=1.5 node test/run.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

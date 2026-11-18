@@ -81,6 +81,9 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 let B;
 // ヘッドレスでも WebGL が使えるように、ソフトの描き手（SwiftShader）を使う
 const GL_ON = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+// Windows の画面の拡大（125%・150%）を試すときは DOCVIS_DSF=1.5 のように渡す
+const DSF = +process.env.DOCVIS_DSF || 1;
+if (DSF !== 1) GL_ON.push('--force-device-scale-factor=' + DSF);
 try { B = await launch({ extra: GL_ON }); } catch (e) {
   // ブラウザがないときは落ちずに知らせて止まる（node の読みとりの結果は残す）
   console.log('\n× ブラウザの試験を始められない：' + e.message);
@@ -89,7 +92,7 @@ try { B = await launch({ extra: GL_ON }); } catch (e) {
   console.log(`読みとり ${results.length - bad.length} ○ / ${bad.length} ×。ブラウザの試験は未確認（終わりの番号 2）`);
   process.exit(2);
 }
-console.log('ブラウザ：' + B.exe + '（' + (await B.evalJs('navigator.userAgent')) + '）');
+console.log('ブラウザ：' + B.exe + '・拡大 ' + DSF * 100 + '%（' + (await B.evalJs('navigator.userAgent')) + '）');
 const net = [], errors = [];
 B.on(m => {
   if (m.method === 'Network.requestWillBeSent') net.push(m.params.request.url);
@@ -98,7 +101,7 @@ B.on(m => {
   if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') errors.push('ログ：' + m.params.entry.text);
 });
 await B.send('Network.enable'); await B.send('Runtime.enable'); await B.send('Log.enable'); await B.send('Page.enable'); await B.send('DOM.enable');
-await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
+await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: DSF, mobile: false });
 const hi = process.argv.indexOf('--html');
 const htmlPath = hi > 0 ? resolve(process.argv[hi + 1]) : join(root, 'dist', 'DocVisualizer.html');
 console.log('試す HTML：' + htmlPath);
@@ -309,8 +312,8 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   const fl = [];
   for (const v of ['scroll', 'hidden']) { await B.evalJs(`document.documentElement.style.overflowY = '${v}'`); await sleep(250); fl.push(await fill()); }
   await B.evalJs(`document.documentElement.style.overflowY = ''`);
-  await B.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: 1, mobile: false }); await sleep(250); fl.push(await fill());
-  await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false }); await sleep(250); fl.push(await fill());
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 700, deviceScaleFactor: DSF, mobile: false }); await sleep(250); fl.push(await fill());
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: DSF, mobile: false }); await sleep(250); fl.push(await fill());
   ok('発表（2D）：スクロールバーが出る・消える・窓を細くする・戻すのどれでも枠いっぱい', fl.every(fits), JSON.stringify(fl));
   await key('Escape', 'Escape', 27);
   await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
@@ -565,7 +568,7 @@ B.close();
   const nErr = [];
   N.on(m => { if (m.method === 'Runtime.exceptionThrown') nErr.push(JSON.stringify(m.params.exceptionDetails).slice(0, 200)); if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') nErr.push('console.error'); });
   await N.send('Runtime.enable'); await N.send('Page.enable'); await N.send('DOM.enable');
-  await N.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
+  await N.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: DSF, mobile: false });
   await N.send('Page.navigate', { url });
   for (let i = 0; i < 50; i++) { if (await N.evalJs('document.readyState === "complete" && !!window.DocVisualizer').catch(() => false)) break; await sleep(100); }
   const { root: d0 } = await N.send('DOM.getDocument', { depth: 1 });
