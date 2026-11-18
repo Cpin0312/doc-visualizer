@@ -110,7 +110,7 @@
   }
 
   function drawPath(pptx, slide, el, R, s, X, Y, fillO, line) {
-    var segs = parsePath(el.getAttribute('d') || ''), arrow = /url\(#arw\)/.test(el.getAttribute('marker-end') || '');
+    var segs = parsePath(el.getAttribute('d') || ''), arrow = /url\(#arw[^)]*\)/.test(el.getAttribute('marker-end') || '');
     if (!segs.length) return 0;
     var bb = el.getBBox(), whole = bb.x >= R.x - 0.5 && bb.y >= R.y - 0.5 && bb.x + bb.width <= R.x + R.w + 0.5 && bb.y + bb.height <= R.y + R.h + 0.5;
     var pts = [], last = null;
@@ -233,6 +233,35 @@
           });
         });
       });
+      // 本文：PDF と同じ中身。見出しごとに続けて入れ、あふれたらスライドを分ける（長い1つは行で、長い行は字で切る）
+      var bpages = [], bcur = [], bused = 0, BUDGET = 700;
+      var bflush = function () { if (bcur.length) bpages.push(bcur); bcur = []; bused = 0; };
+      (data.body || []).forEach(function (b) {
+        var rows = [], first = true;
+        b.text.split('\n').forEach(function (ln) { for (var p = 0; p === 0 || p < ln.length; p += 500) rows.push(ln.slice(p, p + 500)); });
+        if (!b.text) rows = [];
+        while (rows.length || first) {
+          var part = [], cost = 60;
+          while (rows.length && (!part.length || cost + rows[0].length + 40 <= BUDGET - bused)) { cost += rows[0].length + 40; part.push(rows.shift()); }
+          if (bused && bused + cost > BUDGET) { rows = part.concat(rows); bflush(); continue; }   // 次のスライドへ（取った行は戻す）
+          bcur.push({ title: b.title ? b.title + (first ? '' : '（つづき）') : '', rows: part });
+          bused += cost; first = false;
+          if (rows.length) bflush();
+        }
+      });
+      bflush();
+      bpages.forEach(function (pg, k) {
+        plans.push(function (sl) {
+          sl.addText('本文' + (bpages.length > 1 ? '（' + (k + 1) + '/' + bpages.length + '）' : ''), { x: AX, y: 0.3, w: 9.6, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, color: '1F2A37', margin: 0 });
+          var runs = [];
+          pg.forEach(function (e) {
+            if (e.title) runs.push({ text: e.title, options: { fontSize: 18, bold: true, breakLine: true, paraSpaceBefore: runs.length ? 8 : 0 } });
+            e.rows.forEach(function (r) { runs.push({ text: r, options: { fontSize: 16, breakLine: true } }); });
+          });
+          if (runs.length) sl.addText(runs, { x: AX, y: AY, w: AW, h: 5.5, fontFace: FONT, color: '1F2A37', valign: 'top', margin: 0, paraSpaceAfter: 4 });
+        });
+      });
+      stats.bodySlides = bpages.length;
       var N = plans.length;
       plans.forEach(function (f, i) {
         var sl = pptx.addSlide();
