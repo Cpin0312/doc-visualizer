@@ -57,6 +57,8 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const x = P.parseDoc('# t\n```flow\n<script>alert(1)</script> -> A&B\n```');
   ok('読みとり：< や & は文字のまま（表示のときにエスケープ）', x.diagrams[0].items[0].label === '<script>alert(1)</script>');
 
+  const plus = P.parseDoc('```chart\n4月 : +120\n5月 : 80\n```\n```flow\nA + B -> C\n```');
+  ok('読みとり：数字の前の + と、中身のない記号は印にしない', plus.diagrams[0].items[0].value === 120 && plus.diagrams[0].items[0].marks.length === 0 && plus.diagrams[1].items[0].label === 'A + B' && plus.diagrams[1].items[0].marks.length === 0, JSON.stringify(plus.diagrams.map(d => d.items.map(i => [i.label, i.value, i.marks.length]))));
   for (const [f, enc] of [['sjis_crlf.md', 'Shift_JIS'], ['bom_crlf.md', 'UTF-8（BOM つき）'], ['eucjp.md', 'EUC-JP']]) {
     const r = P.decodeBytes(new Uint8Array(readFileSync(join(root, 'test', 'fixtures', f))));
     ok('文字コード（node）：' + f + ' → ' + enc, r.encoding === enc && /文字コードの試し|問い合わせの件数/.test(r.text), r.encoding);
@@ -224,8 +226,8 @@ async function clickAt(sel) {
     const pg = await doc.getPage(i);
     const [, , w, h] = pg.view;
     if (!(w > h && Math.abs(w - 842) < 4 && Math.abs(h - 595) < 4)) landscape = false;
-    // 字体によっては「方」が部首の文字（⽅）で出るので、NFKC にそろえ、空白と制御文字を除いて比べる
-    texts.push((await pg.getTextContent()).items.map(x => x.str).join('').normalize('NFKC').replace(/[\s\x00-\x1f]+/g, ''));
+    // 字体によっては「方」「長」が部首の文字（⽅・⻑）で出るので、NFKC にそろえ、空白と制御文字を除いて比べる
+    texts.push((await pg.getTextContent()).items.map(x => x.str).join('').normalize('NFKC').replace(/[\s\x00-\x1f]+/g, '').replace(/⻑/g, '長'));
   }
   writeFileSync(join(out, '08_pdf_text.json'), JSON.stringify(texts, null, 1));
   ok('PDF：ページの数（表紙＋図7つ＋説明）', doc.numPages === pages && pages >= 9, `PDF ${doc.numPages} ページ・画面の印刷用 ${pages}`);
@@ -237,6 +239,35 @@ async function clickAt(sel) {
   await B.send('Emulation.setEmulatedMedia', { media: 'print' });
   await shot('08_print_media');
   await B.send('Emulation.setEmulatedMedia', { media: '' });
+}
+
+// PDF：長い説明・本文が切れずに、ページを分けて出る
+{
+  const long = join(tmpdir(), 'docvis-long.md');
+  const para = '長い説明の文です。'.repeat(40);
+  writeFileSync(long, '# 長い資料\n> ひとことで：長い\n\n```flow\n受付 -> 確認\n```\n\n## 受付\n' + Array.from({ length: 12 }, (_, i) => `${i + 1}段落目：` + para).join('\n') + '\n[元：長い資料 9ページ]\n\n## 背景\n本文のさいごの行です。\n');
+  await pick(long);
+  await waitFor(`document.getElementById('status').textContent.includes('docvis-long.md')`);
+  const r = await B.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: true });
+  const pdfjs = await import(pathToFileURL(join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs')).href);
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(Buffer.from(r.data, 'base64')), verbosity: 0 }).promise;
+  let all = '';
+  for (let i = 1; i <= doc.numPages; i++) all += (await (await doc.getPage(i)).getTextContent()).items.map(x => x.str).join('').normalize('NFKC').replace(/[\s\x00-\x1f]+/g, '').replace(/⻑/g, '長');
+  writeFileSync(join(out, 'long_pdf_text.txt'), all);
+  const overflow = await B.evalJs(`(() => { document.getElementById('print').style.display = 'block'; const bad = Array.from(document.querySelectorAll('#print .page')).filter(p => p.scrollHeight > p.clientHeight + 2).length; document.getElementById('print').style.display = ''; return bad; })()`);
+  ok('PDF：長い説明はページを分け、最後の段落と出どころまで出る', Array.from({ length: 12 }, (_, i) => `${i + 1}段落目`).every(k => all.includes(k)) && all.includes('長い資料9ページ') && overflow === 0, `PDF ${doc.numPages} ページ・はみ出すページ ${overflow}・12段落目 ${all.includes('12段落目')}・出どころ ${all.includes('長い資料9ページ')}`);
+  ok('PDF：本文（説明でない見出し）も出る', all.includes('本文のさいごの行です'));
+}
+
+// 確かめ役の md（verify/md があれば、読むだけ。直さない）：落ちず、エラーを出さない
+if (existsSync(join(root, 'verify', 'md'))) {
+  for (const f of readdirSync(join(root, 'verify', 'md')).sort()) {
+    const path = join(root, 'verify', 'md', f);
+    await pick(path);
+    const st = await waitFor(`(document.getElementById('status').textContent.includes(${JSON.stringify(f)}) || !document.getElementById('error').hidden) && ({ s: document.getElementById('status').textContent, e: document.getElementById('error').hidden ? '' : document.getElementById('error').textContent, svgs: document.querySelectorAll('#diagrams svg').length, w: document.getElementById('warnings').hidden ? 0 : document.querySelectorAll('#warnings li').length })`);
+    console.log('   確かめ役の md：' + f + ' → ' + (st ? (st.e ? '断った：' + st.e.slice(0, 40) : `図 ${st.svgs}・知らせ ${st.w}・${st.s.replace(/^.*（/, '（')}`) : '反応なし'));
+    if (!st) ok('確かめ役の md に反応する：' + f, false);
+  }
 }
 
 // 外への読みこみ 0 件・エラー 0 件

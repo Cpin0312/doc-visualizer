@@ -26,7 +26,7 @@ const scripts = [
   rd('src/app.js')
 ].map(code).join('\n;\n');
 
-const version = `${pkg.version}（${new Date().toISOString().slice(0, 10)} build）`;
+const version = pkg.version;   // 日付は入れない（同じ源から同じ dist ができるように）
 let html = rd('src/index.html');
 const put = (marker, text) => {
   if (!html.includes(marker)) throw new Error('印がない：' + marker);

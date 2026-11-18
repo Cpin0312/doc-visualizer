@@ -65,6 +65,8 @@
     var marks = [];
     var label = s.replace(RE_MARK, function (all, pre, sym, text) {
       if (noPlus && (sym === '+' || sym === '＋')) return all;
+      // 中身のない記号（「A + B」）と、数字の前の +（「+120」）は印にしない
+      if (!text || ((sym === '+' || sym === '＋') && /^[0-9０-９]/.test(text))) return all;
       var kind = MARK_KIND[sym];
       marks.push({ kind: kind, text: text || MARK_DEFAULT[kind] });
       return pre;

@@ -32,6 +32,7 @@
   // ---- 読みこみ ----
   function loadFile(file) {
     if (!file) return;
+    showError('');
     if (!OK_EXT.test(file.name)) { showError('「' + file.name + '」は md ではないので読みませんでした（.md・.markdown・.txt を選んでください）。画面は前のままです。'); return; }
     if (file.size === 0) { showError('「' + file.name + '」は空のファイルです。画面は前のままです。'); return; }
     if (file.size > MAX_BYTES) { showError('「' + file.name + '」は大きすぎます（' + (file.size / 1048576).toFixed(1) + 'MB。5MB まで）。画面は前のままです。'); return; }
@@ -228,24 +229,40 @@
       pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（' + P.TYPES[d.type].label + '）</h2><div class="p-fig">' +
         R.svg(d, i, { fs: 15, today: td, hasNote: hn }) + '</div>' + (legend ? '<div class="p-legend">' + legend + '</div>' : ''));
     });
-    // 箱の説明と出どころ（ページからあふれないよう、文字数で分ける）
-    var blocks = [];
+    // 箱の説明と出どころ、本文。ページからあふれないよう文字数で分け、長い1つは行で（長い行は字で）切る
+    function lineText(l) { return l.code ? l.code.join('\n') : l.text; }
+    function paginate(head, blocks) {
+      var budget = 1400, cur = '', used = 0;
+      function flush() { if (cur) pages.push('<h2>' + head + '</h2>' + cur); cur = ''; used = 0; }
+      blocks.forEach(function (b) {
+        var rows = [];
+        b.text.split('\n').forEach(function (ln) { for (var p = 0; p === 0 || p < ln.length; p += 600) rows.push(ln.slice(p, p + 600)); });
+        var first = true;
+        while (rows.length || first) {
+          var part = [], cost = 120;
+          while (rows.length && (!part.length || cost + rows[0].length + 40 <= budget - used)) { cost += rows[0].length + 40; part.push(rows.shift()); }
+          if (used && used + cost > budget) { rows = part.concat(rows); flush(); continue; }   // 次のページへ（取った行は戻す）
+          cur += '<div class="p-note">' + (b.title ? '<h3>' + esc(b.title) + (first ? '' : '（つづき）') + '</h3>' : '') +
+            (part.join('').trim() ? '<div>' + part.map(esc).join('<br>') + '</div>' : '') +
+            (!rows.length && b.src ? '<div class="src">' + esc(b.src) + '</div>' : '') + '</div>';
+          used += cost; first = false;
+          if (rows.length) flush();
+        }
+      });
+      flush();
+    }
+    var notes = [], seen = {};
     doc.diagrams.forEach(function (d) {
       d.items.forEach(function (it) {
         var n = noteFor(it.key);
-        if (!(n && n.lines.length) && !it.sources.length) return;
-        if (blocks.some(function (b) { return b.key === it.key; })) return;
-        var text = n ? n.lines.filter(function (l) { return !l.code; }).map(function (l) { return l.text; }).join('\n').trim() : '';
-        blocks.push({ key: it.key, html: '<div class="p-note"><h3>' + esc(it.label) + '</h3>' + (text ? '<div>' + esc(text).replace(/\n/g, '<br>') + '</div>' : '') +
-          (it.sources.length ? '<div class="src">出どころ：' + it.sources.map(esc).join('／') + '</div>' : '') + '</div>', cost: 120 + text.length + (text.match(/\n/g) || []).length * 40 });
+        if ((!(n && n.lines.length) && !it.sources.length) || seen[it.key]) return;
+        seen[it.key] = true;
+        notes.push({ title: it.label, text: n ? n.lines.map(lineText).join('\n').trim() : '', src: it.sources.length ? '出どころ：' + it.sources.join('／') : '' });
       });
     });
-    var budget = 1500, cur = '', used = 0;
-    blocks.forEach(function (b) {
-      if (used && used + b.cost > budget) { pages.push('<h2>箱の説明と出どころ</h2>' + cur); cur = ''; used = 0; }
-      cur += b.html; used += b.cost;
-    });
-    if (cur) pages.push('<h2>箱の説明と出どころ</h2>' + cur);
+    paginate('箱の説明と出どころ', notes);
+    paginate('本文', doc.body.map(function (b) { return { title: b.heading || '', text: b.lines.map(lineText).join('\n').trim(), src: '' }; })
+      .filter(function (b) { return b.title || b.text; }));
     var N = pages.length;
     $('print').innerHTML = pages.map(function (p, i) {
       return '<section class="page">' + (doc.secret ? '<div class="p-secret">' + esc(doc.secret) + '</div>' : '') + p +
@@ -276,6 +293,7 @@
   }
 
   // ---- つなぐ ----
+  $('pickLabel').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
   $('file').addEventListener('change', function (e) { loadFile(e.target.files[0]); e.target.value = ''; });
   SAMPLES.forEach(function (s, i) {
     var o = document.createElement('option'); o.value = String(i); o.textContent = s.title; $('sample').appendChild(o);
