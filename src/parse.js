@@ -644,6 +644,60 @@
     var last = inner.length ? inner[inner.length - 1].no : 0;
     return last < all.length ? last + 1 : null;   // 外側の ```markdown の閉じの行（なければ null）
   }
+  // ---- md の行を書きかえる（R8b-3）。どれも純粋な関数で、新しい md の文字を返す。ほかの行は1文字も変えない ----
+  function splitText(text) {
+    text = String(text);
+    var bom = text.charCodeAt(0) === 0xFEFF ? '\uFEFF' : '', body = bom ? text.slice(1) : text;
+    return { bom: bom, eol: /\r\n/.test(body) ? '\r\n' : /\r/.test(body) ? '\r' : '\n', lines: body.split(/\r\n|\r|\n/) };
+  }
+  function joinText(t) { return t.bom + t.lines.join(t.eol); }
+  // 図の書き方とまちがわれる記号は全角に直す
+  function safeName(name) {
+    var t = trim(String(name || '').replace(/[\r\n]+/g, ' '));
+    t = t.replace(/->/g, '－＞').replace(/=>/g, '＝＞').replace(/[:!?+\[\]|@]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); });
+    t = t.replace(/^[(<\/]/, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); }).replace(/[)>\/]$/, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); });
+    return t;
+  }
+  // 1行の中の [start, end) を、右から順に置きかえる
+  function replaceSpans(t, spans) {
+    var byLine = {};
+    spans.forEach(function (sp) { (byLine[sp.line] = byLine[sp.line] || []).push(sp); });
+    Object.keys(byLine).forEach(function (no) {
+      var L = t.lines[no - 1];
+      if (L == null) throw new Error(no + ' 行目が見つからない');
+      byLine[no].sort(function (a, b) { return b.start - a.start; }).forEach(function (sp) { L = L.slice(0, sp.start) + sp.text + L.slice(sp.end); });
+      t.lines[no - 1] = L;
+    });
+  }
+  // layout の鍵も新しい名前に（動かした位置・形を失わない）
+  function renameLayoutKeys(obj, d, oldPk, newPk) {
+    if (!obj || d.layoutIndex == null || !obj.diagrams[d.layoutIndex]) return obj;
+    var parts = obj.diagrams[d.layoutIndex].parts || {}, out = {};
+    Object.keys(parts).forEach(function (k) {
+      var nk2 = k.split('>').map(function (x) { var m = /^(.*?)(#\d+)?$/.exec(x); return m[1] === oldPk ? newPk + (m[2] || '') : x; }).join('>');
+      out[nk2] = parts[k];
+    });
+    obj.diagrams[d.layoutIndex].parts = out;
+    return obj;
+  }
+  function renameItem(text, doc, di, id, name) {
+    var d = doc.diagrams[di], it = d && d.items[id], nn = safeName(name);
+    if (!it) throw new Error('箱が見つからない');
+    if (!nn) throw new Error('名前が空');
+    if (!it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の名前の場所が md の中で分からない');
+    var t = splitText(text);
+    replaceSpans(t, it.spans.map(function (sp) { return { line: sp.line, start: sp.start, end: sp.end, text: nn }; }));
+    // 説明の見出し「## 名前」も直す
+    doc.notes.forEach(function (n) {
+      if (n.key !== it.key) return;
+      var L = t.lines[n.line - 1], m = /^([ \t\u3000]{0,3}#{1,6}[ \t\u3000]+)(.*?)([ \t\u3000#]*)$/.exec(L || '');
+      if (m) t.lines[n.line - 1] = m[1] + nn + m[3];
+    });
+    var out = joinText(t);
+    if (doc.layout && d.layoutIndex != null) out = writeLayout(out, doc, renameLayoutKeys(JSON.parse(JSON.stringify(doc.layout)), d, it.pk.replace(/#\d+$/, ''), nk(nn)));
+    return out;
+  }
+
   // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
   function writeLayout(text, doc, obj) {
     text = String(text);
@@ -701,6 +755,6 @@
     };
   }
 
-  var api = { writeLayout: writeLayout, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);
