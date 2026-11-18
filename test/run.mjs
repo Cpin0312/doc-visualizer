@@ -89,7 +89,7 @@ try { B = await launch({ extra: GL_ON }); } catch (e) {
   console.log(`読みとり ${results.length - bad.length} ○ / ${bad.length} ×。ブラウザの試験は未確認（終わりの番号 2）`);
   process.exit(2);
 }
-console.log('ブラウザ：' + B.exe);
+console.log('ブラウザ：' + B.exe + '（' + (await B.evalJs('navigator.userAgent')) + '）');
 const net = [], errors = [];
 B.on(m => {
   if (m.method === 'Network.requestWillBeSent') net.push(m.params.request.url);
@@ -330,7 +330,8 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   await sleep(1200);
   const r2 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
   ok('動きを減らす設定（prefers-reduced-motion）なら 3D は止まった絵', r1 === r2 && await B.evalJs('DocScene.reduced'));
-  await B.send('Emulation.setEmulatedMedia', { features: [] });
+  // 空に戻すと OS の設定に従う。CI の Windows・Mac は「動きを減らす」が入っているので、はっきり no-preference にする
+  await B.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await B.send('Page.reload', {});
   await waitFor('document.readyState === "complete" && !!window.DocVisualizer');
   await pick(join(root, 'samples', '01_flow.md'));
@@ -361,6 +362,8 @@ const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
   try { clip = await B.evalJs('navigator.clipboard.readText()'); } catch {}
   const prompt = readFileSync(join(root, 'copilot-prompt.md'), 'utf8').replace(/\r\n/g, '\n');
   ok('Copilot 用の指示をコピー（知らせが出る）', t && t.includes('コピーしました'), t);
+  // Windows のクリップボードは改行を CRLF にして返す
+  if (clip != null) clip = clip.replace(/\r\n/g, '\n');
   ok('コピーした中身が copilot-prompt.md と同じ', clip === prompt, clip == null ? '読み返せない（未確認）' : clip.length + ' 字');
 }
 

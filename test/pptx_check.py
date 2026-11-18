@@ -1,5 +1,6 @@
 # できた .pptx を python-pptx で読み返す（試験用）。python3 test/pptx_check.py <file.pptx> → JSON
 import json, sys
+sys.stdout.reconfigure(encoding='utf-8')  # Windows は既定が cp1252 なので、日本語を出すと落ちる
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 p = Presentation(sys.argv[1])
