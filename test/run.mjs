@@ -120,6 +120,8 @@ console.log('ブラウザ：' + B.exe + '・拡大 ' + DSF * 100 + '%（' + (awa
 const net = [], errors = [];
 B.on(m => {
   if (m.method === 'Network.requestWillBeSent') net.push(m.params.request.url);
+  // 本物の確かめの窓（未保存のまま別の md を開く・閉じる）は、はいで閉じる（止まらないように）
+  if (m.method === 'Page.javascriptDialogOpening') B.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
   if (m.method === 'Runtime.exceptionThrown') errors.push('例外：' + JSON.stringify(m.params.exceptionDetails).slice(0, 300));
   if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push('console.error：' + JSON.stringify(m.params.args).slice(0, 300));
   if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') errors.push('ログ：' + m.params.entry.text);
@@ -1036,6 +1038,71 @@ async function savePptx(T, md, tag) {
   ok('帯をまたぐ（3D）：Ctrl+Z の1回で md が元どおり', (await T()) === mdl);
   await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
   if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
+// R8c：書くバイトを作る関数。Shift_JIS の表の全部の字が行って戻る・UTF-8/BOM/UTF-16 も行って戻る
+{
+  const dec = new TextDecoder('shift_jis'); let n = 0, bad = 0;
+  for (let l = 0x81; l <= 0xFC; l++) { if (l > 0x9F && l < 0xE0) continue; for (let t = 0x40; t <= 0xFC; t++) { if (t === 0x7F) continue; const ch = dec.decode(new Uint8Array([l, t])); if (ch === '�') continue; n++; const r = P.encodeText(ch, 'sjis'); if (!r.bytes || dec.decode(r.bytes) !== ch) bad++; } }
+  const kana = P.encodeText('ｱｲｳ¥‾−', 'sjis').bytes, uni = 'a\r\nあ😀';
+  const rt = ['utf8', 'utf8bom', 'utf16le', 'utf16be'].every(k => { const b = P.encodeText(uni, k).bytes, d = P.decodeBytes(b); return d.text === uni && d.key === k; });
+  ok('保存の関数：Shift_JIS の表の全部の字（' + n + '）が行って戻る・半角カナと ¥ ‾ − も・UTF-8／BOM／UTF-16 も行って戻る', n > 7000 && bad === 0 && Buffer.from(kana).toString('hex') === 'b1b2b35c7e817c' && rt, JSON.stringify({ n, bad, kana: Buffer.from(kana).toString('hex') }));
+}
+// R8c：保存。上書き（showSaveFilePicker の代わりの試しで、書いたバイトを受け取る）・Shift_JIS のまま・表せない字・ダウンロード・● 未保存
+{
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  const fake = `window.__w = null; window.__picks = 0; window.showSaveFilePicker = async (o) => { window.__picks++; window.__sugg = o && o.suggestedName; return { name: o.suggestedName, kind: 'file', queryPermission: async () => 'granted', createWritable: async () => ({ write: async b => { window.__w = Array.from(b); }, close: async () => {} }) }; }; window.__dl = null; window.__click = window.__click || HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl = this.download; };`;
+  const rename = async (from, to) => {
+    if ((await B.evalJs('DocVisualizer.mode()')) === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+    const c = await B.evalJs(`(() => { const e = document.querySelector('#dg0 .item[aria-label="${from}"] .box'); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    for (const n of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: c.x, y: c.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: n });
+    await waitFor(`document.querySelector('input.rename')`, 2000);
+    await B.evalJs(`document.querySelector('input.rename').value = ${JSON.stringify(to)}`); await keyPress('Enter', 'Enter', 13); await sleep(400);
+  };
+  const ctrlS = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83, modifiers: mods }); await sleep(500); };
+  // UTF-8：直す → ● 未保存 → 保存（先を選ぶ）→ 書いたバイトが画面の md と同じ → 2回目は同じ先へ（選び直さない）
+  const mu = ['# 保存', '', '~~~flow 流れ', '受付 -> 確認', '~~~', ''].join('\n'), fu = join(out, 'r8c_utf8.md'); writeFileSync(fu, mu);
+  await pick(fu); await waitFor(`document.getElementById('status').textContent.includes('r8c_utf8.md')`); await B.evalJs(fake);
+  const d0 = await B.evalJs(`!document.getElementById('dirty').hidden`);
+  await rename('受付', '窓口');
+  const d1 = await B.evalJs(`!document.getElementById('dirty').hidden`);
+  await clickAt('#save'); await sleep(600);
+  const w1 = await B.evalJs('window.__w'), t1 = await B.evalJs('DocVisualizer.text()');
+  const d2 = await B.evalJs(`!document.getElementById('dirty').hidden`);
+  await rename('確認', '点検'); await ctrlS();
+  const w2 = await B.evalJs('window.__w'), picks = await B.evalJs('window.__picks'), sugg = await B.evalJs('window.__sugg');
+  ok('保存：直すと「● 未保存」、保存（ボタン・Ctrl+S）で消える。書いたバイトは画面の md と1文字も違わない。2回目は同じ先へ', !d0 && d1 && !d2 && w1 && Buffer.from(w1).toString('utf8') === t1 && t1.includes('窓口 -> 確認') && Buffer.from(w2).toString('utf8').includes('窓口 -> 点検') && picks === 1 && sugg === 'r8c_utf8.md', JSON.stringify({ d0, d1, d2, picks, sugg }));
+  // Shift_JIS：直していない行は元のバイトのまま・CRLF も残る
+  const sjText = ['# 社内の流れ', '', '~~~flow 流れ', '受付 -> 確認 -> 纊', '~~~', '', '## 受付', '電話で受ける（¥100）', ''].join('\r\n').replace('¥', '\\');
+  const sj = Buffer.from(P.encodeText(sjText, 'sjis').bytes), ed = Buffer.from([0xED, 0x40]), sjo = Buffer.concat([sj.subarray(0, sj.indexOf(Buffer.from([0xFA, 0x5C]))), ed, sj.subarray(sj.indexOf(Buffer.from([0xFA, 0x5C])) + 2)]);
+  const fs2 = join(out, 'r8c_sjis.md'); writeFileSync(fs2, sjo);
+  await pick(fs2); await waitFor(`document.getElementById('status').textContent.includes('r8c_sjis.md')`); await B.evalJs(fake);
+  const meta = await B.evalJs(`document.getElementById('status').textContent`);
+  await rename('確認', '点検'); await clickAt('#save'); await sleep(600);
+  const ws = Buffer.from(await B.evalJs('window.__w') || []), ts = await B.evalJs('DocVisualizer.text()'), L0 = sjo.toString('latin1').split('\n'), L1 = ws.toString('latin1').split('\n');
+  const same = L0.filter((l, k) => k !== 3).every(l => L1.includes(l)), ln3 = new TextDecoder('shift_jis').decode(Buffer.from(L1[3], 'latin1'));
+  ok('保存：Shift_JIS の md は Shift_JIS のまま。直していない行（NEC の字 ED40 の行も）は元のバイトと同じ、直した行だけ変わり、CRLF も残る', /Shift_JIS/.test(meta) && sjo.includes(ed) && same && new TextDecoder('shift_jis').decode(ws) === ts && ln3 === '受付 -> 点検 -> 纊\r' && ws.includes(Buffer.from([0x0D, 0x0A])), JSON.stringify({ meta: meta.slice(0, 60), same, ln3 }));
+  // 表せない字：やめると書かず、字と行を出す。UTF-8 を選ぶと UTF-8 で書く
+  await rename('点検', '確認😀'); await B.evalJs('window.__w = null; window.confirm = () => false'); await clickAt('#save'); await sleep(500);
+  const err = await B.evalJs(`document.getElementById('error').textContent`), wn = await B.evalJs('window.__w');
+  await B.evalJs('window.confirm = () => true'); await clickAt('#save'); await sleep(600);
+  const wu = Buffer.from(await B.evalJs('window.__w') || []);
+  ok('保存：Shift_JIS で表せない字（😀）は、やめると書かず、字と行を出す。UTF-8 を選ぶと UTF-8 で書く', wn === null && err.includes('😀') && err.includes('4 行目') && wu.toString('utf8') === (await B.evalJs('DocVisualizer.text()')), err.slice(0, 80));
+  // 上書きできないブラウザ・見本 → 「（編集）」つきでダウンロード
+  const fu2 = join(out, 'r8c_nofsa.md'); writeFileSync(fu2, mu);
+  await pick(fu2); await waitFor(`document.getElementById('status').textContent.includes('r8c_nofsa.md')`);
+  await B.evalJs('window.showSaveFilePicker = undefined; window.__dl = null'); await rename('受付', '窓口'); await clickAt('#save'); await sleep(400);
+  const dl1 = await B.evalJs('window.__dl');
+  await B.evalJs(`(() => { const s = document.getElementById('sample'); s.value = '0'; s.dispatchEvent(new Event('change')); })()`); await sleep(400);
+  await B.evalJs(fake); await rename(await B.evalJs(`document.querySelector('#dg0 .item').getAttribute('aria-label')`), '見本の箱'); await clickAt('#save'); await sleep(400);
+  const dl2 = await B.evalJs('window.__dl'), pk2 = await B.evalJs('window.__picks');
+  ok('保存：上書きできないときと見本は「（編集）」つきの名前でダウンロード（見本は上書きの先を聞かない）', dl1 === 'r8c_nofsa（編集）.md' && /（編集）\.md$/.test(dl2 || '') && pk2 === 0, JSON.stringify({ dl1, dl2, pk2 }));
+  // 未保存のまま別の md を開く → 確かめる（やめると今の md のまま）
+  await rename('見本の箱', '見本の箱2'); await B.evalJs('window.confirm = () => false');
+  await B.evalJs(`(() => { const s = document.getElementById('sample'); s.value = '1'; s.dispatchEvent(new Event('change')); })()`); await sleep(400);
+  const kept = await B.evalJs(`!!document.querySelector('#dg0 .item[aria-label="見本の箱2"]') && DocVisualizer.dirty()`);
+  ok('保存：未保存のまま別の md を開こうとすると確かめ、やめると今の md と直しが残る', kept);
+  await B.evalJs('window.confirm = () => true; HTMLAnchorElement.prototype.click = window.__click; delete window.showSaveFilePicker');
+  if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {

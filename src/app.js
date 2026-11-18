@@ -36,8 +36,8 @@
   }
 
   // ---- 読みこみ ----
-  function loadFile(file) {
-    if (!file) return;
+  function loadFile(file, handleP) {
+    if (!file || !leaveOk()) return;
     showError('');
     if (!OK_EXT.test(file.name)) { showError('「' + file.name + '」は md ではないので読みませんでした（.md・.markdown・.txt を選んでください）。画面は前のままです。'); return; }
     if (file.size === 0) { showError('「' + file.name + '」は空のファイルです。画面は前のままです。'); return; }
@@ -48,20 +48,74 @@
       if (!utf16 && Array.prototype.indexOf.call(head, 0) >= 0) { showError('「' + file.name + '」は文字のファイルではないようです。画面は前のままです。'); return; }
       var dec = P.decodeBytes(u8);
       var eol = /\r\n/.test(dec.text) ? 'CRLF' : /\r/.test(dec.text) ? 'CR' : 'LF';
-      show(dec.text, file.name, dec.encoding + '・改行 ' + eol, dec.warn);
+      return Promise.resolve(handleP).catch(function () { return null; }).then(function (h) {
+        show(dec.text, file.name, dec.encoding + '・改行 ' + eol, dec.warn, { key: dec.key, orig: u8, handle: h && h.kind === 'file' ? h : null });
+      });
     }).catch(function (e) { showError('読みこめませんでした：' + (e && e.message || e)); });
   }
 
-  function show(text, fileName, meta, decodeWarn) {
+  function show(text, fileName, meta, decodeWarn, src) {
     var doc;
     try { doc = P.parseDoc(text); } catch (e) { showError('読みとりの途中で止まりました：' + e.message + '。画面は前のままです。'); return; }
     if (decodeWarn) doc.warnings.unshift({ line: 0, msg: decodeWarn, kind: 'fix' });
     showError('');
     state.doc = doc; state.text = String(text); state.undo = []; state.redo = []; state.fileName = fileName; state.meta = meta; state.sel = null;
+    src = src || {}; state.key = src.key || null; state.orig = src.orig || null; state.handle = src.handle || null; state.sample = !!src.sample; state.saved = state.text;
+    updateDirty();
     closePanel();
     render();
     window.scrollTo(0, 0);
   }
+
+  // ---- 保存（R8c）：上書き（File System Access）か、できなければ「（編集）」つきでダウンロード ----
+  function isDirty() { return !!state.doc && state.text !== state.saved; }
+  function updateDirty() { $('dirty').hidden = !isDirty(); $('save').disabled = !state.doc; }
+  function leaveOk() { return !isDirty() || window.confirm('保存していない直しがあります。保存せずに別の md を開きますか？'); }
+  function editedName(n) { var m = /^(.*?)(\.[^.]*)?$/.exec(n || 'doc.md'); return m[1] + '（編集）' + (m[2] || '.md'); }
+  function writeHandle(h, bytes) {
+    var ask = h.queryPermission ? h.queryPermission({ mode: 'readwrite' }).then(function (p) { return p === 'granted' ? p : h.requestPermission({ mode: 'readwrite' }); }) : Promise.resolve('granted');
+    return ask.then(function (p) {
+      if (p !== 'granted') throw new Error('書きこみが許可されませんでした');
+      return h.createWritable().then(function (w) { return w.write(bytes).then(function () { return w.close(); }); });
+    });
+  }
+  var saving = false;
+  function save() {
+    if (!state.doc || saving) return;
+    var text = state.text, key = state.key || 'utf8', r;   // 書いている間に直しても、書くのはこの写し
+    if (key === 'eucjp' || key === 'unknown') {
+      if (!window.confirm('この md の文字コード（' + (key === 'eucjp' ? 'EUC-JP' : '分からない') + '）では書けないので、UTF-8 で保存します。よいですか？')) return;
+      key = 'utf8';
+    }
+    try { r = P.encodeText(text, key, state.orig); } catch (e) { showError('保存できませんでした：' + e.message + '。md は画面に残っています。'); return; }
+    if (r.bad) {
+      var list = r.bad.slice(0, 8).map(function (b) { return '「' + b.ch + '」（' + b.line + ' 行目）'; }).join('・') + (r.bad.length > 8 ? ' ほか ' + (r.bad.length - 8) + ' 字' : '');
+      if (!window.confirm('Shift_JIS では表せない字があります：' + list + '。UTF-8 で保存しますか？（やめると保存しません）')) { showError('保存しませんでした。Shift_JIS で表せない字：' + list + '。その字を直すか、UTF-8 で保存してください。'); return; }
+      key = 'utf8'; r = P.encodeText(text, key);
+    }
+    var bytes = r.bytes, name = state.fileName || 'doc.md';
+    var done = function (how) {
+      state.saved = text; state.key = key; state.orig = bytes;
+      updateDirty(); showError('');
+      toast(how, 6000);
+    };
+    var download = function (why) {
+      saveBlob(new Blob([bytes], { type: 'text/markdown' }), editedName(name));
+      done((why ? why + '。' : '') + '「' + editedName(name) + '」としてダウンロードしました（ダウンロードの一覧に出ないときは、会社の設定で止められています）');
+    };
+    if (state.sample) { download('見本は上書きしません'); return; }
+    var h = state.handle;
+    var pick = h ? Promise.resolve(h) : window.showSaveFilePicker ? window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'md', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }] }) : null;
+    if (!pick) { download('このブラウザは上書きできません'); return; }
+    saving = true;
+    pick.then(function (hh) {
+      return writeHandle(hh, bytes).then(function () { state.handle = hh; done('「' + hh.name + '」に保存しました'); });
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') { toast('保存をやめました', 2500); return; }
+      download('上書きできませんでした（' + ((e && e.message) || e) + '）');
+    }).then(function () { saving = false; });
+  }
+  window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
   // ---- 表示 ----
   function hasNoteFn(doc) {
@@ -136,6 +190,7 @@
     if (pushUndo) state.redo = [];
     var oldText = state.text;
     state.text = text; state.doc = doc;
+    updateDirty();
     // layout の区画のほかが変わった（名前・印・行を直した）ときは、全部を描き直す
     var bare = function (t, dc) { try { return P.writeLayout(t, dc, null); } catch (e) { return t; } };
     if (doc.diagrams.length !== old.diagrams.length || bare(text, doc) !== bare(oldText, old)) { closePanel(); render(); return true; }
@@ -940,7 +995,7 @@
   });
   $('sample').addEventListener('change', function (e) {
     var s = SAMPLES[+e.target.value];
-    if (s) show(s.text, s.name, '見本', '');
+    if (s && leaveOk()) show(s.text, s.name, '見本', '', { sample: true });
     e.target.value = '';
   });
   Array.prototype.forEach.call(document.querySelectorAll('.fs'), function (b) {
@@ -953,6 +1008,7 @@
       if (sel) openItem(sel.d, sel.i);
     });
   });
+  $('save').addEventListener('click', save);
   $('pdf').addEventListener('click', function () {
     if (!state.doc) return;
     toast('印刷の窓で、送り先を「PDF に保存」に、用紙を「A4・横」にしてください', 7000);
@@ -1053,6 +1109,7 @@
     }
     var tag = (e.target && e.target.tagName || '').toLowerCase();
     var typing = tag === 'input' || tag === 'select' || tag === 'textarea' || (e.target && e.target.isContentEditable);
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key || '').toLowerCase() === 's') { e.preventDefault(); save(); return; }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
       var k = (e.key || '').toLowerCase();
       if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(true); return; }
@@ -1079,8 +1136,11 @@
   window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; $('drop').hidden = true; } });
   window.addEventListener('drop', function (e) {
     e.preventDefault(); dragDepth = 0; $('drop').hidden = true;
-    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) loadFile(f);
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0], it = e.dataTransfer && e.dataTransfer.items && e.dataTransfer.items[0];
+    // 上書きの先（Edge・Chrome）。drop の中ですぐ聞かないと、あとでは取れない
+    var hp = null;
+    try { hp = it && it.getAsFileSystemHandle ? it.getAsFileSystemHandle() : null; } catch (er) { hp = null; }
+    if (f) loadFile(f, hp);
   });
   window.DocVisualizer = {
     version: '__VERSION__',
@@ -1091,6 +1151,7 @@
     text3d: function (d) { var sc = state.scenes[d], c = sc && sc.canvas; return sc ? +(sc.textScale(c.clientWidth, c.clientHeight) * minFont($('dg' + d).querySelector('.svg-wrap svg').outerHTML)).toFixed(1) : null; },
     mode: function () { return state.mode; },
     text: function () { return state.text; },
-    canUndo: function () { return [state.undo.length, state.redo.length]; }
+    canUndo: function () { return [state.undo.length, state.redo.length]; },
+    dirty: isDirty
   };
 })();

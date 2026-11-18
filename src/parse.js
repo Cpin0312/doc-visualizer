@@ -860,21 +860,83 @@
 
   // ---- 文字コード：BOM → UTF-8 → Shift_JIS / EUC-JP ----
   function decodeBytes(u8) {
-    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return { text: new TextDecoder('utf-8').decode(u8.subarray(3)), encoding: 'UTF-8（BOM つき）', warn: '' };
-    if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(u8.subarray(2)), encoding: 'UTF-16', warn: '' };
-    if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(u8.subarray(2)), encoding: 'UTF-16', warn: '' };
-    try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(u8), encoding: 'UTF-8', warn: '' }; } catch (e) { /* 次を試す */ }
+    if (u8.length >= 3 && u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) return { text: new TextDecoder('utf-8').decode(u8.subarray(3)), encoding: 'UTF-8（BOM つき）', key: 'utf8bom', warn: '' };
+    if (u8.length >= 2 && u8[0] === 0xFF && u8[1] === 0xFE) return { text: new TextDecoder('utf-16le').decode(u8.subarray(2)), encoding: 'UTF-16', key: 'utf16le', warn: '' };
+    if (u8.length >= 2 && u8[0] === 0xFE && u8[1] === 0xFF) return { text: new TextDecoder('utf-16be').decode(u8.subarray(2)), encoding: 'UTF-16', key: 'utf16be', warn: '' };
+    try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(u8), encoding: 'UTF-8', key: 'utf8', warn: '' }; } catch (e) { /* 次を試す */ }
     var cands = [['shift_jis', 'Shift_JIS'], ['euc-jp', 'EUC-JP']].map(function (c) {
       try {
         var t = new TextDecoder(c[0], { fatal: true }).decode(u8);
         var nonAscii = t.replace(/[\x00-\x7F]/g, '').length || 1;
         var hw = (t.match(/[\uFF61-\uFF9F]/g) || []).length;  // 半角カナだらけ＝たぶん読みまちがい
-        return { text: t, encoding: c[1], score: hw / nonAscii };
+        return { text: t, encoding: c[1], key: c[0] === 'shift_jis' ? 'sjis' : 'eucjp', score: hw / nonAscii };
       } catch (e) { return null; }
     }).filter(Boolean).sort(function (a, b) { return a.score - b.score; });
-    if (cands.length && cands[0].score < 0.3) return { text: cands[0].text, encoding: cands[0].encoding, warn: '' };
+    if (cands.length && cands[0].score < 0.3) return { text: cands[0].text, encoding: cands[0].encoding, key: cands[0].key, warn: '' };
     var lossy = cands.length ? cands[0] : { text: new TextDecoder('shift_jis').decode(u8), encoding: '不明' };
-    return { text: lossy.text, encoding: '不明', warn: '文字コードが分からないので、読めた範囲で出した（UTF-8 で保存し直すと確実）' };
+    return { text: lossy.text, encoding: '不明', key: 'unknown', warn: '文字コードが分からないので、読めた範囲で出した（UTF-8 で保存し直すと確実）' };
+  }
+
+  // ---- 保存（R8c）：md の文字をバイトに。表せない字があれば { bad } を返し、書かない ----
+  var sjisMap = null;
+  function sjisTable() {
+    if (sjisMap) return sjisMap;
+    var dec = new TextDecoder('shift_jis'), m = new Map();
+    for (var lead = 0x81; lead <= 0xFC; lead++) {
+      if (lead > 0x9F && lead < 0xE0) continue;
+      for (var tr = 0x40; tr <= 0xFC; tr++) {
+        if (tr === 0x7F) continue;
+        var ptr = (lead - (lead < 0xA0 ? 0x81 : 0xC1)) * 188 + tr - (tr < 0x7F ? 0x40 : 0x41);
+        if (ptr >= 8272 && ptr <= 8835) continue;   // NEC 選定 IBM 拡張（ED40〜EEFC）は使わない（WHATWG と Windows の決まり）
+        var ch = dec.decode(new Uint8Array([lead, tr]));
+        if (ch.length && ch !== '\uFFFD' && !m.has(ch)) m.set(ch, [lead, tr]);
+      }
+    }
+    sjisMap = m;
+    return m;
+  }
+  function encodeSjis(line, no, bad, out) {
+    var T = sjisTable();
+    for (var ch of line) {
+      var c = ch.codePointAt(0);
+      if (c < 0x80) out.push(c);
+      else if (c >= 0xFF61 && c <= 0xFF9F) out.push(c - 0xFF61 + 0xA1);
+      else if (c === 0xA5) out.push(0x5C);
+      else if (c === 0x203E) out.push(0x7E);
+      else { var b = T.get(c === 0x2212 ? '\uFF0D' : ch); if (b) out.push(b[0], b[1]); else bad.push({ ch: ch, line: no }); }
+    }
+  }
+  // key：decodeBytes が返したもの。orig：読んだときのバイト（Shift_JIS は、同じ文字の行なら元のバイトを使う）
+  function encodeText(text, key, orig) {
+    text = String(text);
+    if (key === 'utf8' || key === 'utf8bom') {
+      var u = new TextEncoder().encode(text);
+      if (key === 'utf8') return { bytes: u };
+      var w = new Uint8Array(u.length + 3); w.set([0xEF, 0xBB, 0xBF]); w.set(u, 3); return { bytes: w };
+    }
+    if (key === 'utf16le' || key === 'utf16be') {
+      var le = key === 'utf16le', o16 = new Uint8Array(2 + text.length * 2);
+      o16[0] = le ? 0xFF : 0xFE; o16[1] = le ? 0xFE : 0xFF;
+      for (var k = 0; k < text.length; k++) { var cu = text.charCodeAt(k); o16[2 + k * 2] = le ? cu & 255 : cu >> 8; o16[3 + k * 2] = le ? cu >> 8 : cu & 255; }
+      return { bytes: o16 };
+    }
+    if (key !== 'sjis') throw new Error('この文字コード（' + key + '）では書けない');
+    var reuse = new Map();
+    if (orig && orig.length) {
+      var dec = new TextDecoder('shift_jis'), st = 0;
+      for (var i = 0; i <= orig.length; i++) if (i === orig.length || orig[i] === 0x0A) {
+        var lb = orig.subarray(st, i), lt = dec.decode(lb);
+        if (!reuse.has(lt) && lt.indexOf('\uFFFD') < 0) reuse.set(lt, lb);
+        st = i + 1;
+      }
+    }
+    var out = [], bad = [];
+    text.split('\n').forEach(function (line, n) {
+      if (n) out.push(0x0A);
+      var r = reuse.get(line);
+      if (r) for (var j = 0; j < r.length; j++) out.push(r[j]); else encodeSjis(line, n + 1, bad, out);
+    });
+    return bad.length ? { bad: bad } : { bytes: new Uint8Array(out) };
   }
 
   function check(text) {
@@ -887,6 +949,6 @@
     };
   }
 
-  var api = { subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

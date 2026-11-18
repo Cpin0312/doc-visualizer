@@ -132,3 +132,4 @@ button.act[aria-pressed="true"] { background: #e8f0fe; border-color: #3b6fd8; fo
 .lane-acts { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.8rem; }
 body.linking .svg-wrap .item { cursor: crosshair; }
 .svg-wrap svg g.lane rect.drop-to { fill: #dbe7ff; stroke: #3b6fd8; stroke-width: 2; stroke-dasharray: 6 4; }
+.dirty { align-self: center; color: #c0392b; font-size: 0.85rem; font-weight: 600; margin-right: 4px; }
