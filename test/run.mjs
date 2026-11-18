@@ -1018,6 +1018,22 @@ async function savePptx(T, md, tag) {
   t = await T();
   ok('消す：線のポップアップの「この線を消す」で、その矢印の所で行が分かれる', t.split('\n')[4] === '[経理] 請求' && t.split('\n')[5] === '[経理] 入金', JSON.stringify({ e0, l: t.split('\n').slice(4, 6) }));
   await undo(); ok('消す：線も Ctrl+Z で元どおり', (await T()) === mdl);
+  // 3D でも、別の帯へドラッグすると担当が変わる
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(500);
+  const ids = P.parseDoc(mdl).diagrams[0].items, iC = ids.find(i => i.label === '確認').id, iS = ids.find(i => i.label === '請求').id;
+  const p0 = await B.evalJs(`DocVisualizer.where3d(0, ${iC})`), p1 = await B.evalJs(`DocVisualizer.where3d(0, ${iS})`);
+  if (p0 && p1) {
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p0.x, y: p0.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let k = 1; k <= 10; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p0.x + (p1.x - p0.x) * k / 10, y: p0.y + (p1.y - p0.y) * k / 10 + 6, button: 'left', buttons: 1 });
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p1.x, y: p1.y + 6, button: 'left', buttons: 0, clickCount: 1 }); await sleep(600);
+  }
+  t = await T();
+  const d3 = P.parseDoc(t).diagrams[0];
+  ok('帯をまたぐ（3D）：別の帯の上へドラッグすると、md の担当が変わる。Ctrl+Z の1回で元どおり', !!p0 && d3.items.find(i => i.label === '確認').lane === '経理' && d3.items.find(i => i.label === '受付').lane === '営業', JSON.stringify({ p0, p1, l: t.split('\n')[3] }));
+  await undo();
+  ok('帯をまたぐ（3D）：Ctrl+Z の1回で md が元どおり', (await T()) === mdl);
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
   if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）

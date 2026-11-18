@@ -363,18 +363,19 @@
     if (!t || !t.moving) return;
     if (t.raf) cancelAnimationFrame(t.raf);
     swallowClick = true; setTimeout(function () { swallowClick = false; }, 0);
-    var d = state.doc.diagrams[t.i], rs = $('dg' + t.i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child');
-    if (t.kind === 'box' && d.type === 'lanes' && rs[t.lane] && !laneHas(rs[t.lane], t.band)) {
-      // 別の帯に落とした：md の [担当] を書きかえ、置き場所も同じ「戻す1回」にまとめる
-      var it = d.items.filter(function (x) { return x.pk === t.pk; })[0], to = d.lanes[t.lane];
-      if (it && editMd(function () { return P.setLane(state.text, state.doc, t.i, it.id, to); }, '担当を変え', '「' + it.label + '」の担当を「' + to + '」にしました')) {
-        var r = rs[t.lane], y0 = +r.getAttribute('y'), y1 = y0 + +r.getAttribute('height');
-        setLayout(t.i, t.pk, { x: t.v.x, y: Math.round(Math.max(y0, Math.min(t.py - t.h / 2, y1 - t.h))) }, true);
-        return;
-      }
-    }
+    if (t.kind === 'box' && t.band && dropToLane(t.i, t.pk, t.lane, t.band, t.v.x, t.py, t.h)) return;
     setLayout(t.i, t.pk, t.v);
   });
+  // 別の帯（k 番目）に落とした：md の [担当] を書きかえ、置き場所（真ん中の高さ cy）も同じ「戻す1回」にまとめる。2D と 3D で同じ
+  function dropToLane(i, pk, k, band, x, cy, h) {
+    var d = state.doc.diagrams[i], rs = $('dg' + i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child'), r = rs[k];
+    if (d.type !== 'lanes' || !r || laneHas(r, band)) return false;
+    var it = d.items.filter(function (x) { return x.pk === pk; })[0], to = d.lanes[k];
+    if (!it || !editMd(function () { return P.setLane(state.text, state.doc, i, it.id, to); }, '担当を変え', '「' + it.label + '」の担当を「' + to + '」にしました')) return false;
+    var y0 = +r.getAttribute('y'), y1 = y0 + +r.getAttribute('height');
+    setLayout(i, pk, { x: x, y: Math.round(Math.max(y0, Math.min(cy - h / 2, y1 - h))) }, true);
+    return true;
+  }
   // 画面の点がどの帯（担当）の上か。帯がなければ -1
   function laneAt(svg, x, y) {
     var p = svgPoint(svg, x, y), rs = svg.querySelectorAll('g.lane > rect:first-child');
@@ -646,6 +647,11 @@
             if (!bb) return;
             var band = (gi.getAttribute('data-band') || '').split(' ').map(Number), y0 = band.length === 2 ? band[0] : 0, y1 = band.length === 2 ? band[1] : H;
             closePanel();
+            if (band.length === 2) {
+              var cy = bb.y + bb.height / 2 + dy, rs = $('dg' + i).querySelectorAll('.svg-wrap svg g.lane > rect:first-child'), k = -1;
+              for (var q = 0; q < rs.length; q++) { var ry = +rs[q].getAttribute('y'); if (cy >= ry && cy < ry + +rs[q].getAttribute('height')) k = q; }
+              if (k >= 0 && dropToLane(i, state.doc.diagrams[i].items[it].pk, k, band, Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), cy, bb.height)) return;
+            }
             setLayout(i, state.doc.diagrams[i].items[it].pk, { x: Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), y: Math.round(Math.max(y0, Math.min(bb.y + dy, y1 - bb.height))) });
           }
         });
