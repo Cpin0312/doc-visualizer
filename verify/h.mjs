@@ -3,11 +3,12 @@ import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 export const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-export async function openBrowser({nogl=false,offline=false,reduced=false,w=1400,h=900}={}){
+export async function openBrowser({nogl=false,offline=false,reduced=false,w=1400,h=900,scale=0,sb=0}={}){
   const cands=[process.env.CHROME_PATH,process.env.EDGE_PATH,'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge','C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe','C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe','/usr/bin/google-chrome'].filter(Boolean);
   const chrome=cands.find(p=>fs.existsSync(p)); if(!chrome) throw new Error('Chrome/Edge なし');
   const prof=fs.mkdtempSync(path.join(os.tmpdir(),'dv-prof-'));
   const a=['--headless=new','--remote-debugging-port=0','--user-data-dir='+prof,'--no-first-run','--no-default-browser-check',`--window-size=${w},${h}`];
+  if(scale)a.push('--force-device-scale-factor='+scale);
   if(nogl)a.push('--disable-gpu','--disable-3d-apis','--disable-webgl');
   const proc=spawn(chrome,[...a,'about:blank'],{stdio:'ignore'});
   let port;for(let i=0;i<100&&!port;i++){await sleep(100);try{port=fs.readFileSync(path.join(prof,'DevToolsActivePort'),'utf8').split('\n')[0];}catch{}}
@@ -27,6 +28,8 @@ export async function openBrowser({nogl=false,offline=false,reduced=false,w=1400
   for(const d of ['Page','Network','Runtime','Log','DOM'])await send(d+'.enable');
   if(reduced)await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   if(offline)await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
+  // Windows らしい太いスクロールバー（17px）を、ページを開く前に差しこむ（アプリは触らない）
+  if(sb)await send('Page.addScriptToEvaluateOnNewDocument',{source:`document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent='::-webkit-scrollbar{width:${sb}px;height:${sb}px}::-webkit-scrollbar-thumb{background:#999}::-webkit-scrollbar-track{background:#eee}';document.head.appendChild(s)})`});
   B.goto=async html=>{await send('Page.navigate',{url:pathToFileURL(path.resolve(html)).href});await sleep(1500);};
   B.pick=async md=>{const d=await send('DOM.getDocument',{depth:-1});const q=await send('DOM.querySelector',{nodeId:d.root.nodeId,selector:'input[type=file]'});await send('DOM.setFileInputFiles',{files:[path.resolve(md)],nodeId:q.nodeId});await sleep(2500);};
   B.mouse=async(x,y,type='click')=>{if(type==='click'){for(const t of ['mouseMoved','mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type:t,x,y,button:'left',clickCount:1});}};

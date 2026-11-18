@@ -1,0 +1,4 @@
+import {openBrowser} from './h.mjs';
+const b=await openBrowser({offline:true}); await b.goto('dist/DocVisualizer.html'); await b.pick(process.argv[2]);
+console.log(await b.ev(`JSON.stringify({status:document.getElementById('status').innerText,svg:document.querySelectorAll('#diagrams .svg-wrap svg').length,canvas:document.querySelectorAll('canvas').length,warn:document.getElementById('warnings').getBoundingClientRect().height,warnText:document.getElementById('warnings').innerText.slice(0,200),err:document.getElementById('error').innerText,types:[...document.querySelectorAll('.diagram-box h2 .tag, .diagram-box .tag, .diagram-box h2 span')].map(e=>e.innerText).slice(0,10)})`),'外',b.external(),'err',b.logs);
+await b.shot('verify/out/r5-example.png',{captureBeyondViewport:true}); await b.close();
