@@ -883,11 +883,11 @@
   // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
   // ---- 図ごとの操作（R8d-2）：コードブロックの全体（開きから閉じまで）を、まとめて動かす・複製する・消す ----
   // layout は「種類＋名前」が同じ図の中では順番でつながるので、新しい図の順に並べ直す。seq は新しい順の（元の）図
-  function relayout(text, doc, seq) {
+  function relayout(text, doc, seq, edit) {
     if (!doc.layout) return text;
     var src = doc.layout.diagrams, used = {}, out = [];
     doc.diagrams.forEach(function (d) { if (d.layoutIndex != null) used[d.layoutIndex] = 1; });
-    seq.forEach(function (d) { if (d.layoutIndex != null && src[d.layoutIndex]) out.push(JSON.parse(JSON.stringify(src[d.layoutIndex]))); });
+    seq.forEach(function (d) { if (d.layoutIndex != null && src[d.layoutIndex]) { var L = JSON.parse(JSON.stringify(src[d.layoutIndex])); if (edit) L = edit(L, d); if (L) out.push(L); } });
     src.forEach(function (L, k) { if (!used[k]) out.push(L); });   // どの図にもつながらない分は、そのまま後ろに残す
     var obj = JSON.parse(JSON.stringify(doc.layout)); obj.diagrams = out;
     return writeLayout(text, parseDoc(text), obj);
@@ -913,6 +913,49 @@
     t.lines.splice.apply(t.lines, [d.end, 0, ''].concat(t.lines.slice(d.line - 1, d.end)));
     var seq = doc.diagrams.slice(); seq.splice(di + 1, 0, d);
     return relayout(joinText(t), doc, seq);
+  }
+  // 図の名前・種類を変える：開きの行（~~~flow 名前）だけを書きかえる。layout も新しい名前・種類へ移す
+  function setDiagramHead(text, doc, di, type, name) {
+    var d = blockOf(doc, di), t = splitText(text), L = t.lines[d.line - 1], fm = RE_FENCE.exec(L);
+    if (!fm) throw new Error('図の開きの行が読めない');
+    if (type && !TYPES[type]) throw new Error('知らない種類');
+    var nn = name == null ? d.name : trim(name);
+    if (nn && !safeName(nn)) throw new Error('名前に使えない字がある（' + badInName(nn) + '）');
+    var word = type ? (type === d.type ? fenceInfo(fm[2]).word : type) : fenceInfo(fm[2]).word, nt = type || d.type;
+    t.lines[d.line - 1] = /^[ \t\u3000]{0,3}(`{3,}|~{3,})/.exec(L)[0] + word + (nn ? ' ' + nn : '');
+    return relayout(joinText(t), doc, doc.diagrams, function (E, x) {
+      if (x !== d) return E;
+      if (!MOVABLE[nt]) return null;
+      E.type = nt; E.name = nn || ''; return E;
+    });
+  }
+  // 変えられる種類：同じ仲間の中で、変えても箱の数が同じで、知らせが増えないものだけ
+  var KIN = [['chart', 'hbar', 'pie', 'donut'], ['line', 'stacked'], ['flow', 'flowchart']];
+  function typeChoices(text, doc, di) {
+    var d = doc.diagrams[di], g = d && KIN.filter(function (k) { return k.indexOf(d.type) >= 0; })[0];
+    if (!g || !d.end) return [];
+    return g.filter(function (ty) {
+      if (ty === d.type) return false;
+      try { var nd = parseDoc(setDiagramHead(text, doc, di, ty)); var x = nd.diagrams[di]; return x && x.type === ty && x.items.length === d.items.length && nd.warnings.length <= doc.warnings.length; } catch (e) { return false; }
+    });
+  }
+  // 図を足す（ひな形つき）：本文の終わり（layout・外側の包みの前）に足す
+  var TEMPLATE = {
+    flow: ['受付 -> 確認 -> 完了'], flowchart: ['(開始) -> <よいか?>', '<よいか?> -> 進める : はい', '<よいか?> -> 直す : いいえ', '進める -> (終わり)'],
+    lanes: ['[担当A] 申請 -> [担当B] 確認 -> 完了'], timeline: ['2026-12-01 始める', '2026-12-15 見直す', '2027-01-05 終える'],
+    tree: ['- 大きな分け方', '  - 小さな分け方1', '  - 小さな分け方2'], chart: ['4月 : 100', '5月 : 120', '6月 : 90'],
+    hbar: ['A : 30', 'B : 50', 'C : 20'], pie: ['A : 50', 'B : 30', 'C : 20'], donut: ['A : 50', 'B : 30', 'C : 20'],
+    line: ['系列 : 受付, 完了', '4月 : 10, 8', '5月 : 12, 11', '6月 : 15, 13'], stacked: ['系列 : 紙, Web', '1〜3月 : 8, 2', '4〜6月 : 6, 5'],
+    kpi: ['売上 : 1,000万円 : 前年比 +5%', '件数 : 42件 : 先月より +3'], compare: ['| 項目 | 案A | 案B |', '|---|---|---|', '| 値段 | ○ | △ |', '| 早さ | △ | ○ |']
+  };
+  function addDiagram(text, doc, type) {
+    if (!TEMPLATE[type]) throw new Error('知らない種類');
+    var t = splitText(text), L = t.lines, at = doc.layoutAt ? doc.layoutAt.start - 1 : doc.wrapEnd ? doc.wrapEnd - 1 : L.length;
+    while (at > 0 && L[at - 1] === '') at--;   // 区切り（layout・包みの閉じ・ファイルの終わり）の前の空行は、図の後ろに残す
+    var block = ['~~~' + type + ' 新しい' + TYPES[type].label].concat(TEMPLATE[type], ['~~~']);
+    L.splice.apply(L, [at, 0].concat(at > 0 ? [''] : [], block));
+    if (at + block.length + (at > 0 ? 1 : 0) >= L.length) L.push('');   // 終わりは改行で
+    return joinText(t);
   }
   function removeDiagram(text, doc, di) {
     var d = blockOf(doc, di), t = splitText(text), s0 = d.line - 1, n = d.end - s0;
@@ -1039,6 +1082,6 @@
     };
   }
 
-  var api = { moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -1004,6 +1004,26 @@ async function savePptx(T, md, tag) {
   const t2 = await T(), n2 = await B.evalJs(`document.querySelectorAll('.diagram-box').length`);
   ok('図の操作（画面）：「消す」で図が中身ごと消える（確かめのあと）', t2 === rm && n2 === 1, String(n2));
   await undo(); ok('図の操作（画面）：消すのも Ctrl+Z の1回で元どおり', (await T()) === mg);
+  // 名前・種類・図を足す
+  const okT = Object.keys(P.TEMPLATE).filter(ty => { const d = P.parseDoc(P.addDiagram('# T\n', P.parseDoc('# T\n'), ty)); return !d.warnings.length && d.diagrams.length === 1 && d.diagrams[0].type === ty; });
+  const nmd = P.setDiagramHead(mg, G, 0, null, '一番'), ty1 = P.setDiagramHead(mg, G, 1, 'flowchart');
+  const neg = '```chart 棒\nA : 5\nB : -3\n```\n';
+  ok('図の操作（関数）：名前・種類は開きの行だけ変わり、置き場所もついていく。ひな形はどの種類も知らせなしで読める。負の数のある棒は円・ドーナツにできない',
+    okT.length === Object.keys(P.TYPES).length && sum(nmd) === '一番:x:{"x":{"x":11,"y":11}} | 二:p:{"p":{"x":22,"y":22}}' && nmd.split('\n')[2] === '~~~flow 一番' && ty1.includes('~~~flowchart 二') && JSON.stringify(P.parseDoc(ty1).diagrams[1].layout) === '{"p":{"x":22,"y":22}}' && P.typeChoices(neg, P.parseDoc(neg), 0).join() === 'hbar' && P.typeChoices(mg, G, 0).join() === 'flowchart',
+    JSON.stringify({ okT: okT.length, c: P.typeChoices(neg, P.parseDoc(neg), 0) }));
+  await clickAt('#dg1 .dg-menu summary'); await sleep(200);
+  const tbtn = await B.evalJs(`[...document.querySelectorAll('#dg1 [data-dg=type]')].map(b => b.textContent).join()`);
+  await clickAt('#dg1 [data-dg=type][data-t=flowchart]'); await sleep(400);
+  ok('図の操作（画面）：「…」に変えられる種類が出て、押すと md の開きの行が変わる', tbtn === '→ フローチャート' && (await T()) === ty1, tbtn);
+  await undo();
+  await clickAt('#dg0 .dg-menu summary'); await sleep(200); await clickAt('#dg0 [data-dg=name]'); await waitFor(`document.querySelector('input.rename')`, 2000);
+  await B.evalJs(`document.querySelector('input.rename').value = '一番'`); await keyPress('Enter', 'Enter', 13); await sleep(400);
+  ok('図の操作（画面）：「名前」で図の名前を直せる（置き場所はそのまま）', (await T()) === nmd);
+  await undo();
+  await B.evalJs(`(() => { const s = document.querySelector('[data-adddg]'); s.value = 'pie'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(400);
+  const ad = await T();
+  ok('図を足す：「＋ 図を足す」で選んだ種類のひな形が、layout の前に足されて図になる', ad === P.addDiagram(mg, G, 'pie') && (await B.evalJs(`document.querySelectorAll('.diagram-box').length`)) === 3 && ad.indexOf('~~~pie') < ad.indexOf('~~~layout'), String(await B.evalJs(`document.querySelectorAll('.diagram-box').length`)));
+  await undo(); ok('図を足す：Ctrl+Z の1回で元どおり', (await T()) === mg);
 }
 // R8b-3：画面から md を書きかえる（＋ 箱・印・線を引く・消す・担当・帯をまたぐドラッグ）。どれも Ctrl+Z の1回で元に戻る
 {

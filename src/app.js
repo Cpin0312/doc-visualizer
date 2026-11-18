@@ -182,9 +182,11 @@
         (P.MOVABLE[d.type] ? '<button type="button" class="reset-layout" data-d="' + i + '"' + (hasLayout(d) ? '' : ' hidden') + '>元の配置に戻す</button>' : '') +
         '<details class="dg-menu"><summary aria-label="図「' + esc(d.name || P.TYPES[d.type].label) + '」の操作">…</summary><div class="dg-acts">' +
         (i > 0 ? '<button type="button" data-dg="up" data-d="' + i + '">上へ</button>' : '') + (i < doc.diagrams.length - 1 ? '<button type="button" data-dg="down" data-d="' + i + '">下へ</button>' : '') +
+        '<button type="button" data-dg="name" data-d="' + i + '">名前</button><span class="dg-types" data-d="' + i + '"></span>' +
         '<button type="button" data-dg="dup" data-d="' + i + '">複製</button><button type="button" data-dg="del" data-d="' + i + '">消す</button></div></details></h2>' +
         '<div class="svg-wrap' + (P.MOVABLE[d.type] ? ' movable' : '') + '">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
-    }).join('');
+    }).join('') + '<div class="add-dg"><select data-adddg aria-label="図を足す"><option value="">＋ 図を足す…</option>' +
+      Object.keys(P.TEMPLATE).map(function (ty) { return '<option value="' + ty + '">' + esc(P.TYPES[ty].label) + '</option>'; }).join('') + '</select></div>';
     Array.prototype.forEach.call(document.querySelectorAll('.svg-wrap'), fitWide);
     build3d(doc);
     renderLegend(doc);
@@ -1150,6 +1152,11 @@
   function diagramAct(di, act) {
     var d = state.doc.diagrams[di], nm = d && (d.name || P.TYPES[d.type].label), text;
     if (!d) return;
+    if (act === 'name') {
+      var h = $('dg' + di).querySelector('h2');
+      editInline(h, d.name || '', '図「' + nm + '」の新しい名前', function (v) { editMd(function () { return P.setDiagramHead(state.text, state.doc, di, null, v); }, '図の名前を直せ', '図の名前を直しました'); });
+      return;
+    }
     if (act === 'del' && !window.confirm('図「' + nm + '」（' + d.items.length + ' こ）を、md から中身ごと消しますか？（Ctrl+Z で戻せます）')) return;
     try {
       text = act === 'up' ? P.moveDiagram(state.text, state.doc, di, -1) : act === 'down' ? P.moveDiagram(state.text, state.doc, di, 1) :
@@ -1160,11 +1167,24 @@
     if (box) { box.scrollIntoView({ block: 'nearest' }); var sm = box.querySelector('.dg-menu summary'); if (sm) sm.focus(); }
     toast({ up: '図を上へ動かしました', down: '図を下へ動かしました', dup: '図を複製しました', del: '図「' + nm + '」を消しました' }[act] + '（Ctrl+Z で戻せます）', 2500);
   }
+  // 「…」を開いたときに、変えられる種類を調べて出す（描くたびには調べない）
+  $('diagrams').addEventListener('toggle', function (e) {
+    var m = e.target; if (!m.classList || !m.classList.contains('dg-menu') || !m.open) return;
+    var sp = m.querySelector('.dg-types'), di = +sp.getAttribute('data-d');
+    sp.innerHTML = P.typeChoices(state.text, state.doc, di).map(function (ty) { return '<button type="button" data-dg="type" data-d="' + di + '" data-t="' + ty + '">→ ' + esc(P.TYPES[ty].label) + '</button>'; }).join('');
+  }, true);
+  $('diagrams').addEventListener('change', function (e) {
+    var sel = e.target; if (!sel.hasAttribute || !sel.hasAttribute('data-adddg') || !sel.value) return;
+    var ty = sel.value, n = state.doc.diagrams.length;
+    if (editMd(function () { return P.addDiagram(state.text, state.doc, ty); }, '図を足せ', '「' + P.TYPES[ty].label + '」の図を足しました。中身は「md を直接直す」で書きかえられます') && $('dg' + n)) $('dg' + n).scrollIntoView({ block: 'center' });
+  });
   $('diagrams').addEventListener('pointerdown', startDrag2);
   $('diagrams').addEventListener('click', function (e) {
     if (swallowClick) { swallowClick = false; return; }
     var rb = e.target.closest && e.target.closest('.reset-layout');
     if (rb) { setLayout(+rb.getAttribute('data-d'), null, null); toast('元の配置に戻しました（Ctrl+Z で取り消せます）', 2500); return; }
+    var tb = e.target.closest && e.target.closest('[data-dg=type]');
+    if (tb) { var td = +tb.getAttribute('data-d'), ty = tb.getAttribute('data-t'); editMd(function () { return P.setDiagramHead(state.text, state.doc, td, ty); }, '図の種類を変えられ', '図の種類を「' + P.TYPES[ty].label + '」にしました'); return; }
     var mb = e.target.closest && e.target.closest('[data-dg]');
     if (mb) { diagramAct(+mb.getAttribute('data-d'), mb.getAttribute('data-dg')); return; }
     var nb = e.target.closest && e.target.closest('.add-box');
