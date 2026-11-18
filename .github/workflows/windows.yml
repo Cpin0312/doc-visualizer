@@ -1,0 +1,48 @@
+# Windows（本物の Edge・file://）と Mac で、作り直しと試験を回す。公開リポジトリなら無料
+name: test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: python -m pip install python-pptx==1.0.2
+      - name: build（コミットした dist と同じものができるか）
+        run: |
+          npm run build
+          git diff --stat --exit-code -- dist
+      - name: 画面の試験（Windows は Edge、Mac は Chrome）
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            export EDGE_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+            [ -f "$EDGE_PATH" ] || unset EDGE_PATH   # 見つからなければ、決まった場所を探す
+          fi
+          node test/run.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-out-${{ matrix.os }}
+          path: |
+            test/out/*.json
+            test/out/*.png
+            test/out/*.pdf
+            test/out/*.pptx
+          retention-days: 7

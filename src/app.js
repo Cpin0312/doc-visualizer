@@ -555,7 +555,8 @@
     r.pptx.write({ outputType: 'blob', compression: true }).then(function (blob) {
       saveBlob(blob, r.fileName);
       lastPptx = { fileName: r.fileName, slides: r.stats.slides, shapes: r.stats.shapes, tiles: r.stats.tiles, pics: r.stats.pics, bodySlides: r.stats.bodySlides, bytes: blob.size };
-      toast('PowerPoint「' + r.fileName + '」を保存しました（ダウンロードの場所）。保存されないときは「PDF」を使ってください', 7000);
+      // ブラウザは、ダウンロードを止めても知らせてくれない。だから「保存しました」と言い切らない
+      toast('PowerPoint のファイル「' + r.fileName + '」を作りました。ダウンロードの一覧に出ないときは、会社の設定で止められています。「PDF」を使ってください', 9000);
     }).catch(pptxFail).then(function () { pptxBusy = false; });
   });
   $('copyPrompt').addEventListener('click', function () {

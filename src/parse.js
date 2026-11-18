@@ -1,8 +1,8 @@
-/* DocVisualizer の読みとり（画面と server.js の両方が使う。ここだけが正本）
+/* DocVisualizer の読みとり（画面と試験（node）の両方が使う。ここだけが正本）
  * 使い方：ブラウザでは window.DocParse、node では require('./src/parse.js')
  *   parseDoc(text) → 読みとった文書
  *   decodeBytes(Uint8Array) → { text, encoding, warn }
- *   check(text) → 図の数・種類・箱の数・知らせ（server 用の短い形）
+ *   check(text) → 図の数・種類・箱の数・知らせ（試験用の短い形）
  * きまり：Copilot の書きまちがいに強く、ゆるく読む。読めない行は飛ばして知らせる。
  * 表に出す文字は元のまま（全角→半角などは、読みとりの判断にだけ使う）。
  */

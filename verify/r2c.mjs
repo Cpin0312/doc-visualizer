@@ -1,0 +1,17 @@
+import {openBrowser,sleep} from './h.mjs';
+import fs from 'node:fs';
+const D='dist/DocVisualizer.html', O='verify/out/r2/';
+const [,, name, md, nogl] = process.argv;
+const b=await openBrowser({offline:true,nogl:nogl==='nogl',w:1123,h:794});
+await b.goto(D); await b.pick(md);
+console.log(name,'mode',await b.ev(`DocVisualizer.mode()+' '+document.getElementById('mode').innerText+' disabled='+document.getElementById('mode').disabled+' | '+document.getElementById('glnote').innerText`));
+const pdf=await b.send('Page.printToPDF',{landscape:true,paperWidth:11.69,paperHeight:8.27,printBackground:true,preferCSSPageSize:true});
+fs.writeFileSync(O+name+'.pdf',Buffer.from(pdf.data,'base64'));
+await b.send('Emulation.setEmulatedMedia',{media:'print'});
+await b.send('Emulation.setDeviceMetricsOverride',{width:1123,height:794,deviceScaleFactor:1,mobile:false});
+await sleep(500);
+const rs=JSON.parse(await b.ev(`JSON.stringify([...document.querySelectorAll('#print .page')].map(p=>{const r=p.getBoundingClientRect();return {t:p.querySelector('h1,h2')?.innerText||'',y:r.top+scrollY,h:r.height,imgs:p.querySelectorAll('img.p-3d').length,svgs:p.querySelectorAll('svg').length}}))`));
+console.log('印刷ページ',rs.length,JSON.stringify(rs.map(r=>[r.t.slice(0,14),r.imgs,r.svgs])));
+for(let i=0;i<rs.length;i++) await b.shot(`${O}${name}-p${i+1}.png`,{captureBeyondViewport:true,clip:{x:0,y:rs[i].y,width:1123,height:794,scale:0.7}});
+console.log('外',b.external(),'errors',b.logs);
+await b.close();

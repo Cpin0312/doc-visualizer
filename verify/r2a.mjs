@@ -1,0 +1,13 @@
+import {openBrowser,sleep} from './h.mjs';
+const D='dist/DocVisualizer.html', O='verify/out/r2/';
+const b=await openBrowser({offline:true});
+await b.goto(D);
+console.log('ライセンス文', await b.ev(`document.documentElement.outerHTML.includes('Permission is hereby granted')`));
+await b.pick('verify/md/01_copilot_wrapped.md');
+console.log(await b.ev(`JSON.stringify({status:status.innerText,mode:document.getElementById('mode').innerText,dis:document.getElementById('mode').disabled,canvases:document.querySelectorAll('canvas').length,gl:document.getElementById('glnote').innerText,ver:window.DocVisualizer&&window.DocVisualizer.mode()})`));
+await sleep(1500);
+console.log('3Dへ',await b.ev(`JSON.stringify({m:DocVisualizer.mode(),btn:document.getElementById('mode').innerText,canvases:document.querySelectorAll('canvas').length,visible:[...document.querySelectorAll('canvas')].filter(c=>c.getBoundingClientRect().height>0).length})`));
+await b.shot(O+'3d-top.png');
+await b.shot(O+'3d-full.png',{captureBeyondViewport:true,clip:{x:0,y:0,width:1385,height:5200,scale:0.6}});
+console.log('外',b.external(),'errors',b.logs=b.logs,b.dialogs);
+await b.close();

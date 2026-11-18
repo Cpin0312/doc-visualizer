@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs && node test/run.mjs"
+    "test": "node build.mjs && node test/run.mjs",
+    "test:only": "node test/run.mjs"
   },
   "dependencies": {
     "pptxgenjs": "4.0.1",

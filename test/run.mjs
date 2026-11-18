@@ -73,7 +73,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   ok('文字コード（node）：読めない文字は「分からない」と知らせる', !!g.warn, g.warn);
   for (const f of readdirSync(join(root, 'samples'))) {
     const c = P.check(readFileSync(join(root, 'samples', f), 'utf8'));
-    ok('server 用の check()：' + f, typeof c.title === 'string' && Array.isArray(c.diagrams), c.diagrams.map(d => d.type + ':' + d.items).join(' '));
+    ok('短いまとめ check()：' + f, typeof c.title === 'string' && Array.isArray(c.diagrams), c.diagrams.map(d => d.type + ':' + d.items).join(' '));
   }
 }
 

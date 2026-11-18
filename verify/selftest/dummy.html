@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>dummy</title>
+<style>@media print{.p{page-break-after:always}}</style>
+<input type="file" id="f"><div id="o">待機</div><div class="p">日本語ページ1</div><div class="p">ページ2</div>
+<script>
+const r=async f=>{const b=new Uint8Array(await f.arrayBuffer());document.getElementById('o').textContent='読込 '+f.name+' '+b.length+'B';};
+f.onchange=e=>r(e.target.files[0]);
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{e.preventDefault();r(e.dataTransfer.files[0]);});
+</script>
