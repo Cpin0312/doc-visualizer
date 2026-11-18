@@ -317,6 +317,7 @@
     if (ab && state.sel) {
       var act = ab.getAttribute('data-act'), sd = state.sel.d, si = state.sel.i, sit = state.doc.diagrams[sd].items[si], av = ab.getAttribute('data-v');
       if (act === 'rename') { startRename(sd, si); return; }
+      if (act === 'add-note') { editArea(ab.parentNode, '', '「' + sit.label + '」の説明', function (v) { if (v.trim()) editMd(function () { return P.addNote(state.text, state.doc, sit.label, v); }, '説明を書け', '「' + sit.label + '」の説明を書きました'); }); return; }
       if (act === 'del') { deleteItem(sd, si); return; }
       if (act === 'link') { startLink(sd, si); return; }
       if (act === 'mark' && editMd(function () { return P.toggleMark(state.text, state.doc, sd, si, av); }, '印を変えられ', '印を変えました')) {
@@ -383,16 +384,16 @@
       editMd(function () { return P.setCard(state.text, state.doc, key, v); }, CARD_NAME[key] + 'を直せ', v.trim() ? CARD_NAME[key] + 'を直しました' : CARD_NAME[key] + 'を消しました');
     });
   }
+  $('panelBody').addEventListener('dblclick', function (e) { var pp = e.target.closest && e.target.closest('p.para[data-l]'); if (pp) { e.preventDefault(); editPara(pp, '箱の説明'); } });
+  function editPara(pp, what) {
+    var r = pp.getAttribute('data-l').split('-').map(Number), lines = state.text.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).slice(r[0] - 1, r[1]);
+    editArea(pp, lines.join('\n'), what, function (v) { editMd(function () { return P.setLines(state.text, r[0], r[1], v); }, what + 'を直せ', v.trim() ? what + 'を直しました' : what + 'の段落を消しました'); });
+  }
   $('doc').addEventListener('dblclick', function (e) {
     var c = e.target.closest && e.target.closest('#cards .card[data-k]');
     if (c) { e.preventDefault(); editCard(c.getAttribute('data-k'), c); return; }
     var pp = e.target.closest && e.target.closest('#body p.para[data-l]');
-    if (pp) {
-      e.preventDefault();
-      var r = pp.getAttribute('data-l').split('-').map(Number), lines = state.text.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).slice(r[0] - 1, r[1]);
-      editArea(pp, lines.join('\n'), '本文の段落', function (v) { editMd(function () { return P.setLines(state.text, r[0], r[1], v); }, '本文を直せ', v.trim() ? '本文を直しました' : '段落を消しました'); });
-      return;
-    }
+    if (pp) { e.preventDefault(); editPara(pp, '本文の段落'); return; }
     if (e.target.closest && e.target.closest('#title')) {
       e.preventDefault();
       editInline($('title'), title(state.doc), '題名', function (v) { editMd(function () { return P.setTitle(state.text, state.doc, v); }, '題名を直せ', '題名を直しました'); });
@@ -670,7 +671,7 @@
       if (outs.length) extra.push('次：' + outs.join('・'));
     }
     if (extra.length) h += '<p>' + extra.join('<br>') + '</p>';
-    h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>';
+    h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>' + (n ? '' : '<p class="acts note-add"><button type="button" class="act" data-act="add-note">＋ 説明を書く</button></p>');
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
     if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + '</p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);

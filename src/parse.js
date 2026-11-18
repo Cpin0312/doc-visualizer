@@ -959,9 +959,19 @@
   };
   function addDiagram(text, doc, type) {
     if (!TEMPLATE[type]) throw new Error('知らない種類');
+    return insertBlock(text, doc, ['~~~' + type + ' 新しい' + TYPES[type].label].concat(TEMPLATE[type], ['~~~']));
+  }
+  // 箱の説明を足す：「## 名前」と説明の行を、本文の終わりに
+  function addNote(text, doc, label, body) {
+    var nn = safeName(label);
+    if (!nn) throw new Error('名前に使えない字がある');
+    var v = String(body || '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    if (!trim(v)) throw new Error('説明が空');
+    return insertBlock(text, doc, ['## ' + nn, ''].concat(v.split('\n')));
+  }
+  function insertBlock(text, doc, block) {
     var t = splitText(text), L = t.lines, at = doc.layoutAt ? doc.layoutAt.start - 1 : doc.wrapEnd ? doc.wrapEnd - 1 : L.length;
     while (at > 0 && L[at - 1] === '') at--;   // 区切り（layout・包みの閉じ・ファイルの終わり）の前の空行は、図の後ろに残す
-    var block = ['~~~' + type + ' 新しい' + TYPES[type].label].concat(TEMPLATE[type], ['~~~']);
     L.splice.apply(L, [at, 0].concat(at > 0 ? [''] : [], block));
     if (at + block.length + (at > 0 ? 1 : 0) >= L.length) L.push('');   // 終わりは改行で
     return joinText(t);
@@ -1091,6 +1101,6 @@
     };
   }
 
-  var api = { setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

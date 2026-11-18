@@ -1209,6 +1209,35 @@ async function savePptx(T, md, tag) {
   const ed = await B.evalJs(`[...document.querySelectorAll('#body p')].map(p => (p.getAttribute('data-l') || '-') + ':' + p.textContent.slice(0, 6)).join(' | ')`);
   ok('本文（画面）：出どころ（[元：…]）を外して出した段落と、出どころだけの行をはさむ段落は直せない（直すと出どころが消えるため）。ふつうの段落は直せる', !/^9-/.test(ed) && !/11-13/.test(ed) && /15-15:ふつう/.test(ed) && (await B.evalJs(`document.querySelectorAll('#body p.para').length`)) === 1, ed);
 }
+// R8d-7：箱の説明を、ポップアップで2回押して直す（出どころの行は守る）。説明がない箱は「＋ 説明を書く」
+{
+  const mn = ['# 説明', '', '~~~flow 流れ', '受付 -> 確認', '~~~', '', '## 受付', '電話で受ける。', '[元：手順書 2ページ]', '', '## 本文', 'ふつう', ''].join('\n');
+  const fn = join(out, 'r8d7_note.md'); writeFileSync(fn, mn);
+  await B.evalJs('window.confirm = () => true');
+  await pick(fn); await waitFor(`document.getElementById('status').textContent.includes('r8d7_note.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+  const dbl = async sel => { const r = await B.evalJs(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + 20, y: b.y + b.height / 2 }; })()`); for (const c of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', clickCount: c }); };
+  await clickAt('#dg0 .item[aria-label="受付"] .box'); await waitFor(`!document.getElementById('panel').hidden`, 2000);
+  const paras = await B.evalJs(`[...document.querySelectorAll('#panelBody p.para')].map(p => p.getAttribute('data-l')).join()`);
+  await dbl('#panelBody p.para[data-l="8-8"]'); await waitFor(`document.querySelector('textarea.rename')`, 2000);
+  await B.evalJs(`document.querySelector('textarea.rename').value = 'メールでも受ける。'`);
+  const mods = process.platform === 'darwin' ? 4 : 2;
+  for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: mods });
+  await sleep(400);
+  ok('箱の説明：ポップアップの説明を2回押して直すと、その行だけ変わり、出どころの行は残る', paras === '8-8' && (await T()) === mn.replace('電話で受ける。', 'メールでも受ける。'), paras);
+  await undo();
+  await clickAt('#dg0 .item[aria-label="確認"] .box'); await waitFor(`document.querySelector('#panelBody [data-act=add-note]')`, 2000);
+  await clickAt('#panelBody [data-act=add-note]'); await waitFor(`document.querySelector('textarea.rename')`, 2000);
+  await B.evalJs(`document.querySelector('textarea.rename').value = '中身を見る。'`);
+  for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: mods });
+  await sleep(400);
+  const tn = await T(), dn = P.parseDoc(tn);
+  ok('箱の説明：説明のない箱は「＋ 説明を書く」で「## 名前」の説明が足され、その箱の説明になる', tn === mn + '\n## 確認\n\n中身を見る。\n' && dn.notes.some(n => n.key === '確認' && n.lines.some(l => l.text === '中身を見る。')), JSON.stringify(tn.slice(-40)));
+  await undo(); ok('箱の説明：Ctrl+Z の1回で元どおり', (await T()) === mn);
+  if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R8d-6：md に壊れた所（閉じがない・layout が読めない）があれば、画面（右）からの書きかえを止め、帯を出す。左で直すと自動で戻る
 {
   const mu = ['# 止める', '', '~~~flow 流れ', '受付 -> 確認', '', '## 本文', '大事な文', ''].join('\n');
