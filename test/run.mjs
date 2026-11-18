@@ -1209,6 +1209,30 @@ async function savePptx(T, md, tag) {
   const ed = await B.evalJs(`[...document.querySelectorAll('#body p')].map(p => (p.getAttribute('data-l') || '-') + ':' + p.textContent.slice(0, 6)).join(' | ')`);
   ok('本文（画面）：出どころ（[元：…]）を外して出した段落と、出どころだけの行をはさむ段落は直せない（直すと出どころが消えるため）。ふつうの段落は直せる', !/^9-/.test(ed) && !/11-13/.test(ed) && /15-15:ふつう/.test(ed) && (await B.evalJs(`document.querySelectorAll('#body p.para').length`)) === 1, ed);
 }
+// R8e-1：付箋。`note 文 @色`・`note 箱 : 文 @色` を読み、2D に出す。「付箋を隠す」で外す
+{
+  const mt = ['# 付箋', '', '~~~flow 流れ', '受付 -> 承認', 'note 承認 : 期限を確かめる @ピンク', 'note 全体の\\nメモ @黄', 'note -> 次', 'note 色ちがい @紫', '~~~', '', '~~~chart 数', 'note 付箋だけ @緑', '~~~', ''].join('\n');
+  const dt = P.parseDoc(mt), f0 = dt.diagrams[0];
+  ok('付箋（読む）：色・付ける箱・改行を読み、「note -> 次」は箱のまま。知らない色は黄にして知らせる。付箋だけの図も図になる',
+    JSON.stringify(f0.stickies.map(n => [n.text, n.color, n.to])) === JSON.stringify([['期限を確かめる', 'pink', 1], ['全体の\nメモ', 'yellow', null], ['色ちがい', 'yellow', null]]) && f0.items.map(i => i.label).join() === '受付,承認,note,次' && dt.warnings.some(w => /紫/.test(w.msg)) && dt.diagrams.length === 2 && dt.diagrams[1].stickies.length === 1,
+    JSON.stringify(f0.stickies));
+  const ft = join(out, 'r8e1_notes.md'); writeFileSync(ft, mt);
+  await B.evalJs('window.confirm = () => true');
+  await pick(ft); await waitFor(`document.getElementById('status').textContent.includes('r8e1_notes.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const n1 = await B.evalJs(`(() => { const s = [...document.querySelectorAll('#diagrams .sticky')], a = document.querySelector('#dg0 .sticky[data-n="0"] .box').getBoundingClientRect(), b = document.querySelector('#dg0 .item[aria-label="承認"] .box').getBoundingClientRect(), svg = document.querySelector('#dg0 svg').getBoundingClientRect(); return { n: s.length, near: Math.abs(a.left - b.right) < 40 && a.bottom > b.top - 10 && a.top < b.top, inside: s.every(e => { const r = e.getBoundingClientRect(), v = e.ownerSVGElement.getBoundingClientRect(); return r.left >= v.left - 4 && r.right <= v.right + 4 && r.bottom <= v.bottom + 4; }) }; })()`);
+  await clickAt('#hideNotes'); await sleep(300);
+  const n2 = await B.evalJs(`document.querySelectorAll('#diagrams .sticky').length`);
+  await clickAt('#hideNotes'); await sleep(300);
+  const n3 = await B.evalJs(`document.querySelectorAll('#diagrams .sticky').length`);
+  ok('付箋（2D）：箱に付けた付箋は箱の右上、ほかは図の下に出て、図の枠に収まる。「付箋を隠す」で消え、もう一度で戻る', n1.n === 4 && n1.near && n1.inside && n2 === 0 && n3 === 4, JSON.stringify({ n1, n2, n3 }));
+  await clickAt('#mode'); await sleep(800);
+  const e3 = await B.evalJs('DocVisualizer.mode()');
+  if (e3 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  ok('付箋（3D）：付箋のある md・付箋だけの図でも 3D にでき、止まらない', e3 === '3d' || !!(await B.evalJs(`document.getElementById('glnote').textContent`)), e3);
+  if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R8d-7：箱の説明を、ポップアップで2回押して直す（出どころの行は守る）。説明がない箱は「＋ 説明を書く」
 {
   const mn = ['# 説明', '', '~~~flow 流れ', '受付 -> 確認', '~~~', '', '## 受付', '電話で受ける。', '[元：手順書 2ページ]', '', '## 本文', 'ふつう', ''].join('\n');

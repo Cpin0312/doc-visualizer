@@ -825,10 +825,52 @@
     return wrapSvg(W + 20, y + 14, body, 'compare');
   }
 
+  // ---- 付箋（R8e）：描いた図の svg に重ねる。箱に付けたものは箱の右上、ほかは図の下。layout に位置があればそこ ----
+  var NOTE_FILL = { yellow: '#fff3a6', pink: '#ffd6e3', blue: '#d4ecff', green: '#d8f5d0' }, NOTE_LINE = { yellow: '#d9c24a', pink: '#e39ab3', blue: '#8fbde6', green: '#93cc85' };
+  function noteSize(n, fs) {
+    var f = Math.round(fs * 0.9), per = 11, lines = [];
+    n.text.split('\n').forEach(function (t) { t = t || ' '; for (var k = 0; k < t.length; k += per) lines.push(t.slice(k, k + per)); });
+    var w = Math.max(90, Math.min(per, Math.max.apply(null, lines.map(function (l) { return l.length; }))) * f + 24);
+    return { f: f, lines: lines, w: w, h: lines.length * f * 1.35 + 20 };
+  }
+  // 箱の場所を svg の文字から読む（rect.box か circle）。なければ null
+  function boxOf(s, d, i) {
+    var at = s.indexOf('class="item" data-d="' + d + '" data-i="' + i + '"'); if (at < 0) return null;
+    var seg = s.slice(at, at + 600), r = /<rect class="box" x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)"/.exec(seg);
+    if (r) return { x: +r[1], y: +r[2], w: +r[3], h: +r[4] };
+    var c = /<circle cx="([\d.-]+)" cy="([\d.-]+)" r="([\d.]+)"/.exec(seg);
+    return c ? { x: +c[1] - +c[3], y: +c[2] - +c[3], w: 2 * +c[3], h: 2 * +c[3] } : null;
+  }
+  function addStickies(s, diag, d, opts) {
+    var list = diag.stickies || [];
+    if (!list.length || opts.hideNotes) return s;
+    var hm = /data-w="(\d+)" data-h="(\d+)"/.exec(s); if (!hm) return s;
+    var W = +hm[1], H = +hm[2], maxX = W, maxY = H, fx = 12, fy = H + 12, rowH = 0, out = '', lay = diag.layout || {};
+    list.forEach(function (n, k) {
+      var z = noteSize(n, opts.fs), b = n.to != null ? boxOf(s, d, n.to) : null, x, y, p = lay[n.pk];
+      if (p && isFinite(p.x) && isFinite(p.y)) { x = p.x; y = p.y; }
+      else if (b) { x = b.x + b.w - 14; y = Math.max(4, b.y - z.h + 10); }
+      else { if (fx + z.w > Math.max(W, 320) && fx > 12) { fx = 12; fy += rowH + 12; rowH = 0; } x = fx; y = fy; fx += z.w + 12; rowH = Math.max(rowH, z.h); }
+      maxX = Math.max(maxX, x + z.w + 10); maxY = Math.max(maxY, y + z.h + 10);
+      var cx = x + z.w / 2, cy = y + z.h / 2;
+      if (b) out += '<line class="note-link" x1="' + r(cx) + '" y1="' + r(cy) + '" x2="' + r(b.x + b.w / 2) + '" y2="' + r(b.y + b.h / 2) + '" stroke="#9aa3ad" stroke-width="1.2" stroke-dasharray="3 3"/>';
+      out += '<g class="sticky" data-d="' + d + '" data-n="' + k + '" data-pk="' + esc(n.pk) + '" tabindex="0" role="button" aria-label="付箋：' + esc(n.text.replace(/\n/g, ' ')) + '" transform="rotate(-2 ' + r(cx) + ' ' + r(cy) + ')">' +
+        '<rect x="' + r(x + 3) + '" y="' + r(y + 4) + '" width="' + r(z.w) + '" height="' + r(z.h) + '" fill="#000" opacity="0.12" rx="2"/>' +
+        '<rect class="box" x="' + r(x) + '" y="' + r(y) + '" width="' + r(z.w) + '" height="' + r(z.h) + '" rx="2" fill="' + NOTE_FILL[n.color] + '" stroke="' + NOTE_LINE[n.color] + '" stroke-width="1"/>' +
+        z.lines.map(function (l, j) { return '<text x="' + r(x + 12) + '" y="' + r(y + 10 + z.f * (1.05 + j * 1.35)) + '" font-size="' + z.f + '" fill="#3a3320">' + esc(l) + '</text>'; }).join('') + '</g>';
+    });
+    var nw = Math.ceil(maxX), nh = Math.ceil(maxY);
+    s = s.replace(/viewBox="0 0 \d+ \d+" width="\d+" height="\d+" data-w="\d+" data-h="\d+"/, 'viewBox="0 0 ' + nw + ' ' + nh + '" width="' + nw + '" height="' + nh + '" data-w="' + nw + '" data-h="' + nh + '"');
+    return s.replace(/<\/svg>$/, '<g class="stickies">' + out + '</g></svg>');
+  }
   function svg(diag, d, opts) {
     opts = opts || {};
     opts.fs = opts.fs || 15;
     ARW = 'arw-' + (++seq);
+    if (!diag.items.length) return addStickies(wrapSvg(360, 8, '', 'notes-only'), diag, d, opts);   // 付箋だけの図
+    return addStickies(typeSvg(diag, d, opts), diag, d, opts);
+  }
+  function typeSvg(diag, d, opts) {
     switch (diag.type) {
       case 'flow': return flow(diag, d, opts, false);
       case 'lanes': return flow(diag, d, opts, true);

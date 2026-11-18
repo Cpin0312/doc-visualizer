@@ -478,6 +478,22 @@
   }
 
   // ---- 文書全体 ----
+  // ---- 付箋（R8e）：`note 文 @色`、箱に付けるなら `note 箱 : 文 @色`。`note ` で始まり `@色` で終わる行だけ ----
+  var RE_NOTE = /^[ \t\u3000]*note[ \t\u3000]+(.+?)[ \t\u3000]*[@＠]([^\s@＠]+)[ \t\u3000]*$/i;
+  var NOTE_COLOR = { '黄': 'yellow', 'き': 'yellow', 'きいろ': 'yellow', '黄色': 'yellow', 'yellow': 'yellow', 'ピンク': 'pink', 'pink': 'pink', '桃': 'pink', '水色': 'blue', 'みずいろ': 'blue', '青': 'blue', 'blue': 'blue', '緑': 'green', 'みどり': 'green', 'green': 'green' };
+  var NOTE_WORD = { yellow: '黄', pink: 'ピンク', blue: '水色', green: '緑' };
+  function readStickies(diag, lines, warn) {
+    var used = {};
+    return lines.map(function (ln) {
+      var m = RE_NOTE.exec(ln.text), color = NOTE_COLOR[nk(m[2])] || NOTE_COLOR[m[2]];
+      if (!color) { warn(ln.no, '付箋の色「' + m[2] + '」は使えないので、黄にした（使える色：黄・ピンク・水色・緑）', 'fix'); color = 'yellow'; }
+      var text = trim(m[1]), to = null, am = /^(.+?)[ \t\u3000]*[:：][ \t\u3000]*([\s\S]+)$/.exec(text);
+      if (am) { var k = nk(am[1]), hit = diag.items.filter(function (it) { return it.key === k; })[0]; if (hit) { to = hit.id; text = trim(am[2]); } }
+      text = text.replace(/\\n/g, '\n');
+      var pk = '@' + nk(text).slice(0, 40); used[pk] = (used[pk] || 0) + 1; if (used[pk] > 1) pk += '#' + used[pk];
+      return { text: text, color: color, to: to, line: ln.no, pk: pk };
+    });
+  }
   function parseDoc(text) {
     var warnings = [];
     function warn(no, msg, kind) { warnings.push({ line: no, msg: msg, kind: kind || 'skip' }); }
@@ -505,6 +521,9 @@
         } else if (info.type) {
           var body = inner.filter(function (x) { return trim(x.text) && !/^[\s\u3000]*(\/\/|%%)/.test(x.text); });
           var diag = { type: info.type, name: info.name, line: ln.no, end: closed ? lines[j].no : null, items: [] };
+          // 付箋の行（R8e）は先に抜いて、種類ごとの読み手には渡さない
+          var noteLines = body.filter(function (x) { return RE_NOTE.test(x.text); });
+          body = body.filter(function (x) { return !RE_NOTE.test(x.text); });
           ({ flow: function () { parseGraph(diag, body, warn, false); },
              lanes: function () { parseGraph(diag, body, warn, true); },
              flowchart: function () { parseGraph(diag, body, warn, false, true); diag.items.forEach(function (it) { if (!it.style.shape) it.style.shape = 'process'; }); },
@@ -518,7 +537,8 @@
              stacked: function () { parseSeries(diag, body, warn); },
              kpi: function () { parseKpi(diag, body, warn); },
              compare: function () { parseCompare(diag, body, warn); } })[info.type]();
-          if (!diag.items.length) warn(ln.no, '図「' + (diag.name || TYPES[diag.type].label) + '」に読める行がないので出さなかった', 'skip');
+          diag.stickies = readStickies(diag, noteLines, warn);
+          if (!diag.items.length && !diag.stickies.length) warn(ln.no, '図「' + (diag.name || TYPES[diag.type].label) + '」に読める行がないので出さなかった', 'skip');
           else doc.diagrams.push(diag);
         } else {
           if (info.word && !/^(text|txt|plain|markdown|md)$/i.test(info.word)) warn(ln.no, '図の種類「' + info.word + '」は読めないので、そのまま文として出した（使える種類：' + Object.keys(TYPES).join('・') + '）', 'skip');
@@ -1101,6 +1121,6 @@
     };
   }
 
-  var api = { addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

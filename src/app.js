@@ -142,6 +142,12 @@
     if (state.doc) render();   // 図の場所の幅が変わるので、2D・3D とも今の幅で描き直す（3D の大きさは作るときに決まる）
   }
   $('editMd').addEventListener('click', function () { setSplit($('srcPane').hidden); });
+  // 付箋を隠す（R8e）：画面・PDF・PowerPoint・発表から外す。md は変えない
+  $('hideNotes').addEventListener('click', function () {
+    state.hideNotes = !state.hideNotes;
+    $('hideNotes').setAttribute('aria-pressed', String(state.hideNotes)); $('hideNotes').textContent = state.hideNotes ? '付箋を出す' : '付箋を隠す';
+    if (state.doc) render();
+  });
   $('src').addEventListener('input', function () { clearTimeout(srcTimer); srcTimer = setTimeout(applySrc, 500); });
   $('src').addEventListener('blur', applySrc);
   // 左で打った分がまだ右に入っていないうちに右を押したら、先に入れる（古い md に右から書かないように）
@@ -191,7 +197,7 @@
         (i > 0 ? '<button type="button" data-dg="up" data-d="' + i + '">上へ</button>' : '') + (i < doc.diagrams.length - 1 ? '<button type="button" data-dg="down" data-d="' + i + '">下へ</button>' : '') +
         '<button type="button" data-dg="name" data-d="' + i + '">名前</button><span class="dg-types" data-d="' + i + '"></span>' +
         '<button type="button" data-dg="dup" data-d="' + i + '">複製</button><button type="button" data-dg="del" data-d="' + i + '">消す</button></div></details></h2>' +
-        '<div class="svg-wrap' + (P.MOVABLE[d.type] ? ' movable' : '') + '">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
+        '<div class="svg-wrap' + (P.MOVABLE[d.type] ? ' movable' : '') + '">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn , hideNotes: state.hideNotes }) + '</div></section>';
     }).join('') + '<div class="add-dg"><select data-adddg aria-label="図を足す"><option value="">＋ 図を足す…</option>' +
       Object.keys(P.TEMPLATE).map(function (ty) { return '<option value="' + ty + '">' + esc(P.TYPES[ty].label) + '</option>'; }).join('') + '</select></div>';
     Array.prototype.forEach.call(document.querySelectorAll('.svg-wrap'), fitWide);
@@ -217,7 +223,7 @@
     if (cw > 0 && mf * cw / sw < MIN_PX) { w.classList.add('wide'); s.style.width = Math.ceil(sw * MIN_PX / mf) + 'px'; }
   }
   function hasLayout(d) { return !!(d.layout && Object.keys(d.layout).length); }
-  function svgOf(d, i) { return R.svg(d, i, { fs: state.fs, today: today(), hasNote: hasNoteFn(state.doc) }); }
+  function svgOf(d, i) { return R.svg(d, i, { fs: state.fs, today: today(), hasNote: hasNoteFn(state.doc) , hideNotes: state.hideNotes }); }
   // 1つの図だけを描き直す（2D と 3D）。動かしている間は 3D を作り直さない
   function redrawDiagram(i, no3d) {
     var box = $('dg' + i), d = state.doc.diagrams[i], w = box.querySelector('.svg-wrap');
@@ -1043,7 +1049,7 @@
     doc.diagrams.forEach(function (d, i) {
       var legend = legendItems(doc, [d]).join('\u3000');
       // 1ページに入れると文字が 11px より小さくなる図は、縮めすぎずにページを分ける（左から右・上から下）
-      var svg = R.svg(d, i, { fs: 15, today: td, hasNote: hn });
+      var svg = R.svg(d, i, { fs: 15, today: td, hasNote: hn , hideNotes: state.hideNotes });
       var w = +/data-w="(\d+)"/.exec(svg)[1], h = +/data-h="(\d+)"/.exec(svg)[1];
       var k = Math.min(1000 / w, 560 / h, 1.6), minK = MIN_PX / minFont(svg);
       if (k < minK) k = minK;
@@ -1166,7 +1172,7 @@
         diagrams: doc.diagrams.map(function (d, i) {
           tmp.innerHTML = legendItems(doc, [d]).join('\u3000');
           var sc = state.scenes[i];
-          return { name: d.name || P.TYPES[d.type].label, svg: R.svg(d, i, { fs: 15, today: td, hasNote: hn }), legend: tmp.textContent.replace('（押すと出る）', ''),
+          return { name: d.name || P.TYPES[d.type].label, svg: R.svg(d, i, { fs: 15, today: td, hasNote: hn , hideNotes: state.hideNotes }), legend: tmp.textContent.replace('（押すと出る）', ''),
             capture: sc ? sc.capture(1200, 675) : null, chart: chartData(d) };   // 3D は今の向きで撮りなおす（WebGL がないときは絵なし）
         }),
         notes: noteBlocks(doc),
