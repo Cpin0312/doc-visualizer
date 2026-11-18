@@ -178,7 +178,8 @@
   function rim(b, tx, ty, pad) {
     var cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = tx - cx, dy = ty - cy;
     if (!dx && !dy) return [cx, cy];
-    var k = Math.min(dx ? (b.w / 2 + pad) / Math.abs(dx) : Infinity, dy ? (b.h / 2 + pad) / Math.abs(dy) : Infinity);
+    var k = b.shape === 'decision' ? 1 / (Math.abs(dx) / (b.w / 2 + pad) + Math.abs(dy) / (b.h / 2 + pad))   // ひし形のふち
+      : Math.min(dx ? (b.w / 2 + pad) / Math.abs(dx) : Infinity, dy ? (b.h / 2 + pad) / Math.abs(dy) : Infinity);
     return [cx + dx * k, cy + dy * k];
   }
   // 動かした箱の線・曲げた線：箱のふちから箱のふちへ。曲げる点があれば、その点を通る曲線
@@ -191,8 +192,10 @@
     var ta = bend || [b.x + b.w / 2, b.y + b.h / 2], tb = bend || [a.x + a.w / 2, a.y + a.h / 2];
     var s0 = rim(a, ta[0], ta[1], 0), e0 = rim(b, tb[0], tb[1], 2);
     if (!bend) return { d: 'M' + r(s0[0]) + ' ' + r(s0[1]) + ' L' + r(e0[0]) + ' ' + r(e0[1]), mx: (s0[0] + e0[0]) / 2, my: (s0[1] + e0[1]) / 2 };
+    // 曲げる点を通る2次の曲線を、3次（C）で書く（PowerPoint の書き出しは M・L・C だけを読む）
     var c = [2 * bend[0] - (s0[0] + e0[0]) / 2, 2 * bend[1] - (s0[1] + e0[1]) / 2];
-    return { d: 'M' + r(s0[0]) + ' ' + r(s0[1]) + ' Q' + r(c[0]) + ' ' + r(c[1]) + ' ' + r(e0[0]) + ' ' + r(e0[1]), mx: bend[0], my: bend[1] };
+    var c1 = [s0[0] + (c[0] - s0[0]) * 2 / 3, s0[1] + (c[1] - s0[1]) * 2 / 3], c2 = [e0[0] + (c[0] - e0[0]) * 2 / 3, e0[1] + (c[1] - e0[1]) * 2 / 3];
+    return { d: 'M' + r(s0[0]) + ' ' + r(s0[1]) + ' C' + r(c1[0]) + ' ' + r(c1[1]) + ' ' + r(c2[0]) + ' ' + r(c2[1]) + ' ' + r(e0[0]) + ' ' + r(e0[1]), mx: bend[0], my: bend[1] };
   }
   function ekAttr(pk) { return pk ? ' data-ek="' + esc(pk) + '"' : ''; }
   function edgeLabel(t, x, y, fs, pk) {
@@ -594,7 +597,7 @@
       else if (sh === 'io') m.w += m.h * 0.7;
       else if (sh === 'subprocess') m.w += 18;
       else if (sh === 'terminal') m.w += m.h * 0.4;
-      return { w: m.w, h: m.h, lines: m.lines };
+      return { w: m.w, h: m.h, lines: m.lines, shape: sh };
     });
     var isBack = function (e) { return L.back[e.from + '>' + e.to] || e.from === e.to || L.layer[e.to] <= L.layer[e.from]; };
     // 判断から出る矢印：はい は左、いいえ は右（言葉がなければ、出た順に左・右）

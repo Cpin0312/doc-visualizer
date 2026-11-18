@@ -132,7 +132,9 @@
     if (pushUndo) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); state.redo = []; }
     state.text = text; state.doc = doc;
     if (doc.diagrams.length !== old.diagrams.length) { render(); return true; }
-    doc.diagrams.forEach(function (d, i) { if (JSON.stringify(d.layout || null) !== JSON.stringify(old.diagrams[i].layout || null)) redrawDiagram(i); });
+    var changed = false;
+    doc.diagrams.forEach(function (d, i) { if (JSON.stringify(d.layout || null) !== JSON.stringify(old.diagrams[i].layout || null)) { redrawDiagram(i); changed = true; } });
+    if (changed) buildPrint(doc);   // PDF（印刷）のページも、動かした形で作り直す
     renderWarnings(doc);
     return true;
   }

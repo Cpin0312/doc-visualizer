@@ -651,6 +651,14 @@ async function savePptx(T, md, tag) {
   const r1 = await rect('受付'), e1 = await edgeStart('受付>確認'), t2 = await B.evalJs('DocVisualizer.text()');
   const panelHidden = await B.evalJs(`document.getElementById('panel').hidden`);
   ok('2D：箱をドラッグすると、その場所に動き、線がついてくる。ポップアップは出ない。md の layout に書く', Math.abs(r1.y - r0.y - 50) <= 3 && Math.abs(r1.x - r0.x) <= 3 && (e1[0] !== e0[0] || e1[1] !== e0[1]) && panelHidden && /~~~layout\n[\s\S]*"受付":\{"x":\d+,"y":\d+\}/.test(t2) && t2.startsWith(md0), JSON.stringify({ dy: Math.round(r1.y - r0.y), e0, e1 }));
+  // PDF（印刷のページ）と発表にも、動かした位置が出る
+  const mvd = await B.evalJs(`(() => { const x = s => { const e = document.querySelector(s + ' .item[aria-label="受付"] .box'); return e ? Math.round(+e.getAttribute('y')) : null; }; return { main: x('#dg0 .svg-wrap'), print: x('#print') }; })()`);
+  await B.evalJs('document.activeElement && document.activeElement.blur()');
+  await keyPress('p', 'KeyP', 80); await keyPress('ArrowRight', 'ArrowRight', 39); await sleep(300);
+  const pst = await B.evalJs(`(() => { const e = document.querySelector('#pStage .item[aria-label="受付"] .box'); return e ? Math.round(+e.getAttribute('y')) : null; })()`);
+  await keyPress('Escape', 'Escape', 27); await sleep(200);
+  ok('PDF（印刷のページ）と発表にも、動かした位置が出る', mvd.main != null && mvd.print === mvd.main && pst === mvd.main, JSON.stringify({ ...mvd, present: pst }));
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(200);
   // 3px だけ動かして離す → 押したことになる（箱は動かない）
   const r2 = await rect('確認');
   await dragBy(r2.cx, r2.cy, 3, 0, 2);
@@ -666,7 +674,7 @@ async function savePptx(T, md, tag) {
   await dragBy(mid.x, mid.y, 0, -60);
   await shot('r8a_moved', false);
   const t4 = await B.evalJs('DocVisualizer.text()'), dQ = await B.evalJs(`document.querySelector('#dg0 path.edge[data-ek="受付>確認"]').getAttribute('d')`);
-  ok('2D：矢印の言葉を動かせる・線の途中をドラッグすると曲がる', /"確認>出荷":\{"label":\[0,-\d+\]\}/.test(t3) && /"受付>確認":\{"bend":\[\d+,\d+\]\}/.test(t4) && dQ.includes('Q'), dQ + ' | ' + t4.slice(md0.length).replace(/\n/g, ' '));
+  ok('2D：矢印の言葉を動かせる・線の途中をドラッグすると曲がる', /"確認>出荷":\{"label":\[0,-\d+\]\}/.test(t3) && /"受付>確認":\{"bend":\[\d+,\d+\]\}/.test(t4) && /^M[\d. ]+C/.test(dQ), dQ + ' | ' + t4.slice(md0.length).replace(/\n/g, ' '));
   // グラフの棒は動かない
   const bar = await B.evalJs(`(() => { const b = document.querySelector('#dg1 .item .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
   await B.evalJs(`document.getElementById('dg1').scrollIntoView({ block: 'center' })`); await sleep(200);
@@ -707,14 +715,44 @@ async function savePptx(T, md, tag) {
   if (mode0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
   // PowerPoint：動かした形がそのまま出る（箱どうしの位置の割合が 2D と同じ）
   const f9 = join(out, 'r8a_moved.md');
-  writeFileSync(f9, P.writeLayout(md0, d0, { v: 1, diagrams: [{ type: 'flow', name: '注文', parts: { '受付': { x: 9999, y: 9999 } } }] }));
+  writeFileSync(f9, P.writeLayout(md0, d0, { v: 1, diagrams: [{ type: 'flow', name: '注文', parts: { '受付': { x: 9999, y: 9999 }, '確認>出荷': { bend: [250, 10] } } }] }));
+  const { rd: rd0 } = await savePptx(B, f8, 'r8a_auto');
   const { rd } = await savePptx(B, f9, 'r8a');
+  const cnt = r => r ? r.slides.reduce((a, x) => [a[0] + x.arrows, a[1] + x.geo], [0, 0]) : null;
+  ok('PowerPoint：動かした・曲げた線も、矢印の線として出る（数が動かす前と同じ）', rd0 && rd && JSON.stringify(cnt(rd)) === JSON.stringify(cnt(rd0)) && cnt(rd)[0] >= 3, JSON.stringify({ auto: cnt(rd0), moved: cnt(rd) }));
   const pos = rd ? Object.assign({}, ...rd.slides.map(x => x.pos || {})) : {};
   const sv = await B.evalJs(`(() => { const c = n => { const b = document.querySelector('#dg0 .item[aria-label="' + n + '"] .box').getBBox(); return [b.x + b.width / 2, b.y + b.height / 2]; }; return [c('受付'), c('確認'), c('出荷')]; })()`);
   const rx2 = (sv[0][0] - sv[1][0]) / (sv[2][0] - sv[1][0]), ry2 = (sv[0][1] - sv[1][1]) / (sv[2][0] - sv[1][0]);
   const pp = ['受付', '確認', '出荷'].map(n => pos[n]);
   const rxp = pp.every(Boolean) ? (pp[0][0] - pp[1][0]) / (pp[2][0] - pp[1][0]) : NaN, ryp = pp.every(Boolean) ? (pp[0][1] - pp[1][1]) / (pp[2][0] - pp[1][0]) : NaN;
   ok('PowerPoint：動かした箱の位置が 2D と同じ割合（枠の外の値は枠の中におさめる）', Math.abs(rxp - rx2) < 0.03 && Math.abs(ryp - ry2) < 0.03 && rx2 > 1, JSON.stringify({ rx2: +rx2.toFixed(3), rxp: +rxp.toFixed(3), ry2: +ry2.toFixed(3), ryp: +ryp.toFixed(3) }));
+}
+// R8a：フローチャート（立てた板）。2D の斜めの線はひし形のふちから出る。3D は板の上を動く
+{
+  const fmd = readFileSync(join(root, 'samples', '12_flowchart.md'), 'utf8'), fd = P.parseDoc(fmd);
+  const ff = join(out, 'r8a_fc.md');
+  writeFileSync(ff, P.writeLayout(fmd, fd, { v: 1, diagrams: [{ type: 'flowchart', name: '注文の処理', parts: { '出荷する': { x: 0, y: 400 } } }] }));
+  await pick(ff); await waitFor(`document.getElementById('status').textContent.includes('r8a_fc.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const rimv = await B.evalJs(`(() => { const s = document.querySelector('#dg0 .svg-wrap svg'), b = s.querySelector('.item[aria-label="在庫ある?"] .box').getBBox(), p = s.querySelector('path.edge[data-ek="在庫ある?>出荷する"]').getPointAtLength(0);
+    return +(Math.abs(p.x - b.x - b.width / 2) / (b.width / 2) + Math.abs(p.y - b.y - b.height / 2) / (b.height / 2)).toFixed(3); })()`);
+  ok('2D：動かした箱への斜めの線は、ひし形のふちから出る（すき間なし）', Math.abs(rimv - 1) < 0.03, String(rimv));
+  if (await B.evalJs('!!window.DocScene && !document.getElementById("mode").disabled')) {
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
+    await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(400);
+    const id = fd.diagrams[0].items.findIndex(i => i.label === '発注する');
+    const q0 = await B.evalJs(`DocVisualizer.where3d(0, ${id})`);
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: q0.x, y: q0.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let k = 1; k <= 8; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: q0.x - k * 5, y: q0.y + k * 5, button: 'left', buttons: 1 });
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: q0.x - 40, y: q0.y + 40, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(400);
+    const q1 = await B.evalJs(`DocVisualizer.where3d(0, ${id})`), tt = await B.evalJs('DocVisualizer.text()');
+    ok('3D：フローチャートの箱は立てた板の上を動く（左下へ）', /"発注する":\{"x":\d+,"y":\d+\}/.test(tt) && q1.x < q0.x - 15 && q1.y > q0.y + 15, JSON.stringify({ dx: Math.round(q1.x - q0.x), dy: Math.round(q1.y - q0.y) }));
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  }
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  await shot('r8a_flowchart', false);
 }
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
