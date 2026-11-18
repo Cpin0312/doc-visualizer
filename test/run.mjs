@@ -1135,6 +1135,29 @@ async function savePptx(T, md, tag) {
   await B.evalJs('window.confirm = () => true; HTMLAnchorElement.prototype.click = window.__click; delete window.showSaveFilePicker');
   if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8d：題名とカード。値の所だけ書きかえ、空で消え、ないものは足す（```markdown の包みの中に）
+{
+  const md = ['# 受付の見直し', '', '> ひとことで：電話を減らす', '> **結論**：窓口を1つに', '', '~~~flow', 'A -> B', '~~~', ''].join('\n'), d = P.parseDoc(md);
+  const c1 = P.setCard(md, d, 'conclusion', '窓口を2つに'), c2 = P.setCard(md, d, 'todo', '来週決める'), c3 = P.setCard(md, d, 'summary', ''), c4 = P.setTitle(md, d, '新しい題');
+  const w = 'はい、どうぞ。\n```markdown\n~~~flow\nA -> B\n~~~\n```\n', dw = P.parseDoc(w), w1 = P.setTitle(w, dw, '題'), w2 = P.setCard(w, dw, 'secret', '関係者限り');
+  ok('題名・カードの関数：値の所だけ変わり（**結論** の太字も残る）、空で行が消え、ないものは足す。包みの外には足さない', c1.split('\n')[3] === '> **結論**：窓口を2つに' && c1.split('\n').length === 9 && c2.split('\n')[4] === '> すること：来週決める' && P.parseDoc(c2).todo === '来週決める' && !c3.includes('ひとことで') && P.parseDoc(c4).title === '新しい題' && w1.split('\n')[2] === '# 題' && P.parseDoc(w1).title === '題' && P.parseDoc(w2).secret === '関係者限り' && w2.split('\n')[0] === 'はい、どうぞ。', JSON.stringify([c1.split('\n')[3], w1.split('\n').slice(0, 3)]));
+}
+{
+  const mc = ['# カードの試し', '', '> 結論：まだ', '', '~~~flow', 'A -> B', '~~~', ''].join('\n'), fc = join(out, 'r8d_cards.md'); writeFileSync(fc, mc);
+  await pick(fc); await waitFor(`document.getElementById('status').textContent.includes('r8d_cards.md')`);
+  const dbl = async sel => { const c = await B.evalJs(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; })()`); for (const n of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: c.x, y: c.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: n }); };
+  const typeIn = async v => { const got = await waitFor(`document.querySelector('input.rename') && document.querySelector('input.rename').value || ' '`, 2000); await B.evalJs(`document.querySelector('input.rename').value = ${JSON.stringify(v)}`); await keyPress('Enter', 'Enter', 13); await sleep(400); return got; };
+  await dbl('#cards .card[data-k="conclusion"]'); const v0 = await typeIn('窓口を1つにする');
+  await clickAt('#cards button[data-add="todo"]'); await typeIn('来週決める');
+  await dbl('#title'); await typeIn('新しい題');
+  const t1 = await B.evalJs('DocVisualizer.text()'), shown = await B.evalJs(`[document.getElementById('title').textContent, ...Array.from(document.querySelectorAll('#cards .card p')).map(p => p.textContent)].join('|')`);
+  ok('題名・カード：2回押す・「＋」→ 入力欄 → Enter で md のその行だけが変わり、画面にも出る', v0 === 'まだ' && t1 === ['# 新しい題', '', '> 結論：窓口を1つにする', '> すること：来週決める', '', '~~~flow', 'A -> B', '~~~', ''].join('\n') && shown === '新しい題|窓口を1つにする|来週決める', JSON.stringify({ v0, shown }));
+  await dbl('#cards .card[data-k="todo"]'); await typeIn('');
+  const t2 = await B.evalJs('DocVisualizer.text()');
+  const mods = process.platform === 'darwin' ? 4 : 2, undo = async () => { for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(300); };
+  for (let k = 0; k < 4; k++) await undo();
+  ok('題名・カード：空にするとカードの行が消え、Ctrl+Z を4回で md が元どおり', !t2.includes('すること') && (await B.evalJs('DocVisualizer.text()')) === mc, JSON.stringify(t2.split('\n').slice(0, 4)));
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

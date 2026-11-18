@@ -484,7 +484,7 @@
     var all = String(text == null ? '' : text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)
       .map(function (t, i) { return { text: t, no: i + 1 }; });
     var lines = unwrap(all, warn);
-    var doc = { title: '', summary: '', conclusion: '', todo: '', secret: '', diagrams: [], notes: [], body: [], warnings: warnings, layout: null, layoutAt: null, wrapEnd: unwrapEnd(all) };
+    var doc = { title: '', summary: '', conclusion: '', todo: '', secret: '', diagrams: [], notes: [], body: [], warnings: warnings, layout: null, layoutAt: null, wrapEnd: unwrapEnd(all), wrapStart: unwrapStart(all) };
     var sections = [], cur = { heading: null, level: 0, line: 0, lines: [] }, seenStructure = false;
     sections.push(cur);
     for (var i = 0; i < lines.length; i++) {
@@ -531,7 +531,7 @@
       var hm = /^[ \t\u3000]{0,3}(#{1,6})[ \t\u3000]+(.*?)[ \t\u3000#]*$/.exec(t);
       if (hm) {
         var level = hm[1].length;
-        if (level === 1 && !doc.title) { doc.title = trim(hm[2]); continue; }
+        if (level === 1 && !doc.title) { doc.title = trim(hm[2]); doc.titleLine = ln.no; continue; }
         seenStructure = true;
         cur = { heading: trim(hm[2]), level: level, line: ln.no, lines: [] };
         sections.push(cur);
@@ -542,7 +542,9 @@
         var km = /^[ \t\u3000]*(?:>[ \t\u3000]*)*(?:[-*・][ \t\u3000]+)?(?:\*\*|__)?([^:：*_]{1,12}?)(?:\*\*|__)?[ \t\u3000]*(?:[:：][ \t\u3000]*([\s\S]*?))?[ \t\u3000]*(?:\*\*|__)?[ \t\u3000]*$/.exec(t);
         var key = km && headKey(km[1]);
         if (key && (km[2] || key === 'secret')) {
-          var val = trim((km[2] || '').replace(/\*\*|__/g, ''));
+          var val = trim((km[2] || '').replace(/\*\*|__/g, '')), cp = km[2] ? t.indexOf(km[2], t.search(/[:：]/) + 1) : -1;
+          // 直すときの場所（R8d）：値の始まりと終わり。値がなければ行ごと
+          (doc.cardLines = doc.cardLines || {})[key] = (doc.cardLines[key] || []).concat([cp >= 0 ? { line: ln.no, start: cp, end: cp + km[2].length } : { line: ln.no }]);
           if (key === 'secret') doc.secret = val || trim(km[1]);
           else if (val) doc[key] = doc[key] ? doc[key] + '\n' + val : val;
           continue;
@@ -640,6 +642,11 @@
       }
     });
     if (bad) warn(no, '配置（layout）に読めない値があったので、その所は使わなかった', 'fix');
+  }
+  // 外側の ```markdown の開きの行の番号（なければ 0）。先頭に行を足すときは、そのあとに入れる
+  function unwrapStart(all) {
+    var inner = unwrap(all, function () {});
+    return inner === all || !inner.length ? 0 : inner[0].no - 1;
   }
   function unwrapEnd(all) {
     var noop = function () {}, inner = unwrap(all, noop);
@@ -823,6 +830,38 @@
     for (var k = 0; k < out.length; k++) d.items.forEach(function (x) { if (x.parent === out[k] && out.indexOf(x.id) < 0) out.push(x.id); });
     return out;
   }
+  // ---- カードと題名（R8d）：値の所だけを書きかえる。空にすると行を消す。ないものは「> 結論：…」の行を足す ----
+  var CARD_LABEL = { summary: 'ひとことで', conclusion: '結論', todo: 'すること', secret: '社外秘' };
+  function oneLine(v) { return trim(String(v == null ? '' : v).replace(/[\r\n]+/g, ' ')); }
+  function setCard(text, doc, key, value) {
+    if (!CARD_LABEL[key]) throw new Error('カードの種類が分からない');
+    var v = oneLine(value), at = (doc.cardLines || {})[key] || [], t = splitText(text);
+    if (at.length) {
+      var first = at[0], rest = at.slice(1).map(function (x) { return x.line; });
+      if (!v || first.start == null) rest.unshift(first.line);
+      else replaceSpans(t, [{ line: first.line, start: first.start, end: first.end, text: v }]);
+      if (first.start == null && v) t.lines.splice(first.line - 1, 0, '> ' + CARD_LABEL[key] + '：' + v);
+      rest.sort(function (a, b) { return b - a; }).forEach(function (no) { t.lines.splice(no - 1 + (first.start == null && v ? 1 : 0), 1); });
+      return joinText(t);
+    }
+    if (!v) return String(text);
+    // 足す所：ほかのカードの最後の行のあと、なければ題名のあと、なければ先頭
+    var after = 0;
+    Object.keys(doc.cardLines || {}).forEach(function (k) { doc.cardLines[k].forEach(function (x) { after = Math.max(after, x.line); }); });
+    if (!after && doc.titleLine) after = doc.titleLine;
+    if (!after) after = doc.wrapStart || 0;
+    t.lines.splice(after, 0, '> ' + CARD_LABEL[key] + '：' + v);
+    return joinText(t);
+  }
+  function setTitle(text, doc, value) {
+    var v = oneLine(value), t = splitText(text);
+    if (!v) throw new Error('題名が空');
+    if (doc.titleLine) {
+      var L = t.lines[doc.titleLine - 1], m = /^([ \t\u3000]{0,3}#[ \t\u3000]+)(.*?)([ \t\u3000#]*)$/.exec(L);
+      t.lines[doc.titleLine - 1] = m ? m[1] + v + m[3] : '# ' + v;
+    } else t.lines.splice(doc.wrapStart || 0, 0, '# ' + v, '');
+    return joinText(t);
+  }
   // 箱を消す（その箱が出てくる行すべて）。shortcut: layout の古い置き場所は残る（害はない）。同じ名前で足し直すと前の場所に出る
   function removeItem(text, doc, di, id) {
     var d = doc.diagrams[di], it = d && d.items[id];
@@ -960,6 +999,6 @@
     };
   }
 
-  var api = { encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

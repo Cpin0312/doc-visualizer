@@ -137,7 +137,8 @@
     $('title').textContent = title(doc);
     document.title = title(doc) + ' － 資料を図にする';
     var sec = $('secret'); sec.hidden = !doc.secret; sec.textContent = doc.secret;
-    $('cards').innerHTML = cardsHtml(doc);
+    var missing = [['summary', 'ひとことで'], ['conclusion', '結論'], ['todo', 'すること'], ['secret', '社外秘']].filter(function (x) { return !doc[x[0]]; });
+    $('cards').innerHTML = cardsHtml(doc) + (missing.length ? '<div class="card-add">' + missing.map(function (x) { return '<button type="button" class="act" data-add="' + x[0] + '">＋ ' + x[1] + '</button>'; }).join('') + '</div>' : '');
     var hn = hasNoteFn(doc), td = today();
     $('diagrams').innerHTML = doc.diagrams.map(function (d, i) {
       return '<section class="diagram-box" id="dg' + i + '"><h2>' + esc(d.name || P.TYPES[d.type].label) + '<span class="kind">' + esc(P.TYPES[d.type].label) + '・' + d.items.length + '</span>' +
@@ -293,6 +294,37 @@
     if (ed) { e.preventDefault(); openEdge(i, ed.getAttribute('data-ek'), anchor); }
   });
 
+  // ---- 題名・カードを直す（R8d）：2回押すか「＋」→ 入力欄。Enter で決める、Esc でやめる。空にするとカードを消す ----
+  var CARD_NAME = { summary: 'ひとことで', conclusion: '結論', todo: 'すること', secret: '社外秘' };
+  function editInline(el, cur, label, commit) {
+    var b = el.getBoundingClientRect(), inp = document.createElement('input');
+    inp.className = 'rename'; inp.value = cur; inp.setAttribute('aria-label', label);
+    inp.style.left = Math.round(b.left) + 'px'; inp.style.top = Math.round(b.top + Math.min(b.height, 60) / 2 - 18) + 'px'; inp.style.width = Math.round(Math.max(Math.min(b.width, 640), 240)) + 'px';
+    document.body.appendChild(inp); inp.focus(); inp.select();
+    var done = false;
+    function end(ok) { if (done) return; done = true; var v = inp.value; inp.remove(); if (ok && v !== cur) commit(v); }
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
+    inp.addEventListener('blur', function () { end(false); });
+  }
+  function editCard(key, el) {
+    editInline(el, state.doc[key] || '', CARD_NAME[key] + 'の文', function (v) {
+      editMd(function () { return P.setCard(state.text, state.doc, key, v); }, CARD_NAME[key] + 'を直せ', v.trim() ? CARD_NAME[key] + 'を直しました' : CARD_NAME[key] + 'を消しました');
+    });
+  }
+  $('doc').addEventListener('dblclick', function (e) {
+    var c = e.target.closest && e.target.closest('#cards .card[data-k]');
+    if (c) { e.preventDefault(); editCard(c.getAttribute('data-k'), c); return; }
+    if (e.target.closest && e.target.closest('#title')) {
+      e.preventDefault();
+      editInline($('title'), title(state.doc), '題名', function (v) { editMd(function () { return P.setTitle(state.text, state.doc, v); }, '題名を直せ', '題名を直しました'); });
+    }
+  });
+  $('secret').addEventListener('dblclick', function () { if (state.doc) editCard('secret', $('secret')); });
+  $('cards').addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-add]');
+    if (b) editCard(b.getAttribute('data-add'), b);
+  });
+
   // ---- 名前を直す（R8b-3）：箱を2回押すか、ポップアップの「名前を直す」。Enter で決める、Esc でやめる ----
   // fresh：「＋ 箱」で足したばかり。名前を決めると足したのと1つの「戻す」にまとめ、やめると箱を足す前に戻す
   function startRename(d, i, fresh) {
@@ -446,7 +478,7 @@
   function cardsHtml(doc) {
     var c = [['summary', 'ひとことで', ''], ['conclusion', '結論', 'conclusion'], ['todo', 'すること', 'todo']];
     return c.filter(function (x) { return doc[x[0]]; }).map(function (x) {
-      return '<div class="card ' + x[2] + '"><h3>' + x[1] + '</h3><p>' + esc(doc[x[0]]) + '</p></div>';
+      return '<div class="card ' + x[2] + '" data-k="' + x[0] + '" title="2回押すと直せます"><h3>' + x[1] + '</h3><p>' + esc(doc[x[0]]) + '</p></div>';
     }).join('');
   }
 
