@@ -82,7 +82,11 @@
 
   // 数字を読む：1,200 / １２０ / 1.2万 / ▲5 / 約30 → { value }（読めなければ null）
   function parseNumber(s) {
-    var t = nfkc(s).replace(/[,，\s]/g, '').replace(/^(約|およそ|~|〜)/, '');
+    var t = nfkc(s).replace(/\s/g, '').replace(/^(約|およそ|~|〜)/, '');
+    // 桁区切りのコンマは「1,200」「1,300,900」の形だけ（3桁ずつ）。「1,2」などは読めない数として知らせる
+    var gm = /^([▲△+\-−–—ー]?)(\d{1,3}(?:,\d{3})+)(?!\d|,)/.exec(t);
+    if (gm) t = gm[1] + gm[2].replace(/,/g, '') + t.slice(gm[0].length);
+    else if (/^[▲△+\-−–—ー]?\d*,/.test(t)) return null;
     var neg = false;
     if (/^[▲△]/.test(t)) { neg = true; t = t.slice(1); }
     t = t.replace(/^[−–—ー]/, '-');
@@ -343,7 +347,12 @@
     var um = /^([\s\S]*?)[\s\u3000]*[（(]([^()（）]+)[)）][\s\u3000]*$/.exec(diag.name);
     if (um && trim(um[2])) { diag.unit = trim(um[2]); diag.name = trim(um[1]); } else diag.unit = '';
     var reg = Registry(diag, warn), names = null, n = 0;
-    var split = function (t) { return t.split(/[,，、]/).map(trim); };
+    // 値の区切り：「, 」（コンマとスペース）・全角のコンマ・「、」。スペースのないコンマは、うしろがちょうど3桁なら桁区切り
+    var bare = false;
+    var split = function (t) {
+      bare = /,(?![\s\u3000]|\d{3}(?!\d))/.test(t);
+      return t.split(/[\s\u3000]*(?:[，、]|,[\s\u3000]+|,(?!\d{3}(?!\d)))[\s\u3000]*/).map(trim);
+    };
     lines.forEach(function (ln, li) {
       var src = [];
       var s = trim(takeSources(ln.text.replace(/^[\s\u3000]*[-*・][\s\u3000]+/, ''), src));
@@ -353,16 +362,20 @@
       var tm = takeMarks(parts[0]);
       if (!tm.label) { warn(ln.no, '名前がないので飛ばした', 'skip'); return; }
       var vals = split(parts[1]), out = [], texts = [], bad = null;
+      var vmarks = [];
       vals.forEach(function (t) {
+        var tv = takeMarks(t); vmarks = vmarks.concat(tv.marks); t = tv.label;   // 値の後ろの印（!期限 など）は箱の印にする
         if (/^[-－ー―—]?$/.test(nfkc(t)) && !/\d/.test(t)) { out.push(null); texts.push(''); return; }
         var v = parseNumber(t);
         if (v === null) bad = t; out.push(v); texts.push(t);
       });
       if (bad !== null) { warn(ln.no, '数字（' + bad + '）が読めないので飛ばした', 'skip'); return; }
+      if (bare) warn(ln.no, 'コンマのあとにスペースがないので、値の区切りとして読んだ（区切りは「, 」、桁区切りは「1,200」）', 'fix');
+      if (diag.type === 'stacked') out.forEach(function (v, k) { if (v < 0) { warn(ln.no, '積み上げは 0 より小さい数（' + texts[k] + '）を描けないので、0 として扱った', 'fix'); out[k] = 0; texts[k] = '0'; } });
       if (!out.some(function (v) { return v !== null; })) { warn(ln.no, '数字がないので飛ばした', 'skip'); return; }
       var it = reg.get(tm.label, ln.no, false);
       if (!it) return;
-      addMarks(it, tm.marks, src);
+      addMarks(it, tm.marks.concat(vmarks), src);
       it.values = out; it.valueTexts = texts;
       it.value = out.reduce(function (a, v) { return a + (v || 0); }, 0);
       it.valueText = out.length > 1 ? texts.filter(Boolean).join(' / ') : texts[0];

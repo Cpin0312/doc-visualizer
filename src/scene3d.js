@@ -238,7 +238,9 @@
         group.add(sh);
         it.top = Math.max(it.top, d);
       });
-      it.center = P(br.x + br.w / 2, br.y + br.h / 2, it.top / 2);
+      // 扇の囲みの真ん中や点の平均は、扇の外（ドーナツの穴など）に出ることがある。2D が書いた扇の真ん中の角の点を使う
+      var mid = box.getAttribute('data-cx') ? [+box.getAttribute('data-cx'), +box.getAttribute('data-cy')] : poly && poly.length ? poly.reduce(function (a, p) { return [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length]; }, [0, 0]) : [br.x + br.w / 2, br.y + br.h / 2];
+      it.center = P(mid[0], mid[1], it.top / 2);
       it.box = br;
       // 印：板の上に浮かぶ札（いつもこちらを向く）
       Array.prototype.forEach.call(g.querySelectorAll('.mark'), function (m, k) {

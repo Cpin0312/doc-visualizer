@@ -231,18 +231,30 @@
     $('panel').hidden = false;
     placePanel();
   }
-  // 窓は押した所の近くに出す。下 → 上 → 右 → 左の順に、画面に入る所を選ぶ（横にならぶ箱を隠しにくい。画面の端で切れない）
+  // 窓は押した所の近くに出す。下 → 上 → 右 → 左の順に、入る所を選ぶ。押した所と上の帯には重ねない。
+  // どこにも入らないときは、いちばん広い側に合わせて窓を小さくし、中を縦にスクロールさせる
   function placePanel() {
     var el = $('panel'), a = state.anchor, M = 12, G = 10, vw = document.documentElement.clientWidth, vh = window.innerHeight;
-    el.style.maxHeight = Math.max(160, vh - M * 2) + 'px';
+    var bar = document.querySelector('header.bar'), top = Math.max(M, bar ? bar.getBoundingClientRect().bottom + 6 : M);
+    el.style.maxHeight = Math.max(120, vh - top - M) + 'px';
     var w = el.offsetWidth, h = el.offsetHeight, x, y;
-    if (!a) { x = vw - w - M; y = M; }
-    else if (a.y + a.h + G + h <= vh - M) { x = a.x + a.w / 2 - w / 2; y = a.y + a.h + G; }
-    else if (a.y - G - h >= M) { x = a.x + a.w / 2 - w / 2; y = a.y - G - h; }
-    else if (a.x + a.w + G + w <= vw - M) { x = a.x + a.w + G; y = a.y + a.h / 2 - h / 2; }
-    else { x = a.x - G - w; y = a.y + a.h / 2 - h / 2; }
+    if (!a) { x = vw - w - M; y = top; }
+    else {
+      var room = { below: vh - M - (a.y + a.h + G), above: a.y - G - top, right: vw - M - (a.x + a.w + G), left: a.x - G - M };
+      var cxw = a.x + a.w / 2 - w / 2, cyh = a.y + a.h / 2 - h / 2;
+      if (room.below >= h) { x = cxw; y = a.y + a.h + G; }
+      else if (room.above >= h) { x = cxw; y = a.y - G - h; }
+      else if (room.right >= w) { x = a.x + a.w + G; y = cyh; }
+      else if (room.left >= w) { x = a.x - G - w; y = cyh; }
+      else {
+        var down = room.below >= room.above, r0 = Math.max(down ? room.below : room.above, 0);
+        el.style.maxHeight = Math.max(r0, 80) + 'px'; h = el.offsetHeight;
+        x = cxw; y = down ? a.y + a.h + G : a.y - G - h;
+        if (r0 < 80) y = (a.y + a.h / 2 > (top + vh) / 2) ? top : vh - M - h;   // 狭すぎるときは、押した所の反対側の端へ
+      }
+    }
     el.style.left = Math.round(Math.max(M, Math.min(x, vw - w - M))) + 'px';
-    el.style.top = Math.round(Math.max(M, Math.min(y, vh - h - M))) + 'px';
+    el.style.top = Math.round(Math.max(top, Math.min(y, vh - h - M))) + 'px';
   }
   // 押したことの判定は、ここ1か所（2D のクリック・キーボード・3D）。あとで「動かす」と区別するのもここ
   function press(d, i, anchor, byKey) {

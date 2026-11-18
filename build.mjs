@@ -37,6 +37,11 @@ let pptxgen = rd('node_modules/pptxgenjs/dist/pptxgen.bundle.js').replace(/\n?\/
 // グラフの欠けた数字（null）は、空の <c:v></c:v> ではなく点ごと書かない（空の値は読めない道具がある。PowerPoint では線が切れる）
 let blanks = 0;
 pptxgen = pptxgen.replace(/<c:pt idx="\$\{t\}"><c:v>\$\{([\w.\[\]]+)\|\|0===\1\?\1:""\}<\/c:v><\/c:pt>/g, (m, v) => { blanks++; return '${' + v + '||0===' + v + '?`<c:pt idx="${t}"><c:v>${' + v + '}</c:v></c:pt>`:""}'; });
+// 円グラフの値の文字は、既定が Arial 18pt に決め打ちされている。渡した字体と大きさを使う
+let pies = 0;
+pptxgen = pptxgen.replace(/(<a:defRPr )sz="1800"( b="\$\{o\.dataLabelFontBold[^`]*`\+'\s*<a:solidFill><a:srgbClr val="000000"\/><\/a:solidFill><a:latin typeface=)"Arial"(\/>')/g,
+  (m, a, b, c) => { pies++; return a + 'sz="${Math.round((o.dataLabelFontSize||18)*100)}"' + b + '"\'+(o.dataLabelFontFace||"Arial")+\'"' + c; });
+if (pies !== 1) throw new Error('pptxgen.bundle.js の円グラフの文字の書き方が思っていたものと違う（' + pies + '）');
 if (blanks < 5) throw new Error('pptxgen.bundle.js のグラフの値の書き方が思っていたものと違う（' + blanks + '）');
 if (/<script/i.test(pptxgen)) throw new Error('pptxgen.bundle.js に <script が残っている');
 if (!/var PptxGenJS\s*=/.test(pptxgen) || /sourceMappingURL/.test(pptxgen)) throw new Error('pptxgen.bundle.js の形が思っていたものと違う');

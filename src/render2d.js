@@ -437,7 +437,7 @@
       var dd = 'M' + pts.map(function (p) { return r(p[0]) + ' ' + r(p[1]); }).join(' L') + ' Z';
       var mid = (a0 + a1) / 2, lr = inner ? (R0 + inner) / 2 : R0 * 0.62, ly = fs * 2.4 + i * rowH + f;
       body += itemOpen(d, it) +
-        '<path class="box" d="' + dd + '" fill="' + pal(i) + '" stroke="#fff" stroke-width="2"' + (k ? ' stroke-dasharray="0"' : '') + '/>' +
+        '<path class="box" d="' + dd + '" data-cx="' + r(cx + Math.cos(mid) * lr) + '" data-cy="' + r(cy + Math.sin(mid) * lr) + '" fill="' + pal(i) + '" stroke="#fff" stroke-width="2"/>' +
         (a1 - a0 > 0.35 ? textEl([pctText(v, total)], cx + Math.cos(mid) * lr, cy + Math.sin(mid) * lr, f, { bold: true, fill: '#fff' }) : '') +
         '<rect x="' + r(lx) + '" y="' + r(ly - f * 0.45) + '" width="' + r(f * 0.9) + '" height="' + r(f * 0.9) + '" rx="2" fill="' + pal(i) + '"/>' +
         textEl([rows[i]], lx + f * 1.4, ly, f, { anchor: 'start', fill: k ? MARK_COLOR[k] : C.text, bold: !!k }) +
@@ -485,7 +485,9 @@
     if (top === bot) top = bot + step;
     var plotH = fs * 18, padTop = fs * 3.2, axisW = Math.max(tw(fmt(top), Math.max(11, fs * 0.8)), tw(fmt(bot), Math.max(11, fs * 0.8))) + 24;
     var cats = items.map(function (it) { return wrap(it.label, f, fs * 6, 2); });
-    var colW = Math.max.apply(null, cats.map(function (l) { return textW(l, f); }).concat([fs * 3.4])) + fs * 1.4;
+    // 積み上げの段の数字は、段の横に出す（3D では棒の中の字が隠れるため）
+    var vw = stacked ? Math.max.apply(null, items.map(function (it) { return Math.max.apply(null, it.valueTexts.map(function (t) { return tw(t, f, true); }).concat([0])); })) + 8 : 0;
+    var colW = Math.max(Math.max.apply(null, cats.map(function (l) { return textW(l, f); }).concat([fs * 3.4])) + fs * 1.4, fs * 2.6 + vw * 2);
     var Y = function (v) { return padTop + (top - v) / (top - bot) * plotH; };
     var plotRight = axisW + items.length * colW, lx = plotRight + fs * 1.6;
     var legW = Math.max.apply(null, diag.series.map(function (n) { return tw(n, f); }).concat([0])) + f * 1.4 + 20;
@@ -506,18 +508,19 @@
       }
     }
     items.forEach(function (it, i) {
-      var cx = cxOf(i), mk = strongest(it), g = itemOpen(d, it), first = true, acc = 0, bw = colW * 0.56;
+      var cx = cxOf(i), mk = strongest(it), g = itemOpen(d, it), first = true, acc = 0, bw = stacked ? fs * 2.4 : colW * 0.56;
       it.values.forEach(function (y, k) {
         if (y == null) return;
         if (stacked) {
           var yv = Math.max(0, y), y1 = Y(acc + yv), y2 = Y(acc);
           g += '<rect class="seg' + (first ? ' box' : '') + '" x="' + r(cx - bw / 2) + '" y="' + r(y1) + '" width="' + r(bw) + '" height="' + r(Math.max(y2 - y1, 1)) + '" fill="' + pal(k) + '"/>';
-          if (y2 - y1 > f * 1.3) g += textEl([it.valueTexts[k]], cx, (y1 + y2) / 2, f, { fill: '#fff', bold: true });
+          if (y2 - y1 >= f * 0.9) g += textEl([it.valueTexts[k]], cx + bw / 2 + 4, (y1 + y2) / 2, f, { anchor: 'start', fill: pal(k), bold: true });
           acc += yv;
         } else {
           var s = f * 0.8;
           g += '<rect class="' + (first ? 'box ' : '') + 'pt" x="' + r(cx - s / 2) + '" y="' + r(Y(y) - s / 2) + '" width="' + r(s) + '" height="' + r(s) + '" rx="' + r(s / 2) + '" fill="#fff" stroke="' + pal(k) + '" stroke-width="2.5"/>';
-          if (ns === 1) g += textEl([it.valueTexts[k]], cx, Y(y) - f * 1.1, f, { bold: true });
+          // 系列が2本以上なら、上下に分けて色で出す（重なりにくくする）
+          g += textEl([it.valueTexts[k]], cx, Y(y) + (ns > 1 && k % 2 ? f * 1.1 : -f * 1.1), f, { bold: true, fill: ns > 1 ? pal(k) : C.text });
         }
         first = false;
       });

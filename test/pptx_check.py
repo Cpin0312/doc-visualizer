@@ -23,6 +23,6 @@ for s in p.slides:
         'auto': [kind(sh) for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE],
         'charts': [{'type': str(sh.chart.chart_type).split(' ')[0], 'cats': [str(c) for c in sh.chart.plots[0].categories],
                     'series': [[se.name, list(se.values)] for se in sh.chart.plots[0].series],
-                    'font': 'Yu Gothic UI' in sh.chart.part.blob.decode('utf8', 'ignore')} for sh in s.shapes if sh.has_chart],
+                    'font': 'Yu Gothic UI' in sh.chart.part.blob.decode('utf8', 'ignore'), 'arial': 'typeface="Arial"' in sh.chart.part.blob.decode('utf8', 'ignore')} for sh in s.shapes if sh.has_chart],
     })
 print(json.dumps(out, ensure_ascii=False))
