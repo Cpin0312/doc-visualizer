@@ -233,6 +233,7 @@
         for (var k = 0; k < nodes.length && !nodes[k].lane; k++) nodes[k].lane = fill;
       }
       if (withLanes) for (var q = 1; q < nodes.length; q++) if (!nodes[q].lane) nodes[q].lane = nodes[q - 1].lane;
+      if (withLanes) nodes.forEach(function (n) { n.span.lane = n.lane; if (n.laneSpan) n.laneSpan.seg = n.span.seg; });   // 帯をまたぐ（setLane）ときに使う
       var its = nodes.map(function (n) {
         var it = reg.get(n.label, ln.no);
         if (!it) return null;
@@ -501,7 +502,7 @@
           else { doc.layoutAt = { start: ln.no, end: closed ? lines[j].no : null }; doc.layoutSrc = inner.map(function (x) { return x.text; }).join('\n'); }
         } else if (info.type) {
           var body = inner.filter(function (x) { return trim(x.text) && !/^[\s\u3000]*(\/\/|%%)/.test(x.text); });
-          var diag = { type: info.type, name: info.name, line: ln.no, items: [] };
+          var diag = { type: info.type, name: info.name, line: ln.no, end: closed ? lines[j].no : null, items: [] };
           ({ flow: function () { parseGraph(diag, body, warn, false); },
              lanes: function () { parseGraph(diag, body, warn, true); },
              flowchart: function () { parseGraph(diag, body, warn, false, true); diag.items.forEach(function (it) { if (!it.style.shape) it.style.shape = 'process'; }); },
@@ -701,6 +702,127 @@
     return out;
   }
 
+  // 行を切る：plan = { 行番号: { drop: [消す箱の番号], brk: [この番号の箱の後ろの矢印を消す] } }
+  // 残りは「続いている所ごと」の行に分ける（つながりを勝手に作らない）
+  function cutLines(text, d, plan) {
+    var t = splitText(text);
+    Object.keys(plan).map(Number).sort(function (a, b) { return b - a; }).forEach(function (no) {
+      var L = t.lines[no - 1], reA = new RegExp(RE_ARROW.source, 'g'), am, cuts = [];
+      while ((am = reA.exec(L))) { if (!am[0].length) { reA.lastIndex++; continue; } cuts.push([am.index, am.index + am[0].length]); }
+      var segs = [], n = cuts.length + 1, drop = plan[no].drop || [], brk = plan[no].brk || [];
+      for (var k = 0; k < n; k++) segs.push(L.slice(k ? cuts[k - 1][1] : 0, k < cuts.length ? cuts[k][0] : L.length));
+      var indent = /^[ \t\u3000]*/.exec(L)[0], runs = [], cur = [], lane = null, lanes = [], out = [];
+      for (var q = 0; q < n; q++) {
+        var lm = RE_LANE.exec(trim(segs[q])); if (lm) lane = lm[1]; lanes.push(lane);
+        if (drop.indexOf(q) >= 0) { if (cur.length) runs.push(cur); cur = []; continue; }
+        cur.push(q);
+        if (brk.indexOf(q) >= 0) { runs.push(cur); cur = []; }
+      }
+      if (cur.length) runs.push(cur);
+      runs.forEach(function (run) {
+        var parts = run.map(function (q) { return segs[q]; });
+        // 線の言葉は行の最後の矢印のもの。その矢印が消える（最後の1つだけ残る）ときは外す
+        if (run[run.length - 1] === n - 1 && run.length === 1 && n > 1) parts[0] = splitColon(parts[0], 2)[0];
+        var first = trim(parts[0]);
+        if (d.type === 'lanes' && !RE_LANE.test(first) && lanes[run[0]]) first = '[' + lanes[run[0]] + '] ' + first;
+        var line = indent + first;
+        for (var r2 = 1; r2 < run.length; r2++) line += L.slice(cuts[run[r2] - 1][0], cuts[run[r2] - 1][1]) + parts[r2];
+        out.push(line.replace(/[ \t\u3000]+$/, ''));
+      });
+      t.lines.splice.apply(t.lines, [no - 1, 1].concat(out));
+    });
+    return joinText(t);
+  }
+  // 印のつけ外し：その色の印があれば、箱が出てくる所すべてから外す。なければ最初の名前のすぐ後ろに「 !注意」などを足す
+  function toggleMark(text, doc, di, id, kind, label) {
+    var d = doc.diagrams[di], it = d && d.items[id], sym = { red: '!', yellow: '?', green: '+' }[kind];
+    if (!it || !sym) throw new Error('箱か印の種類が見つからない');
+    if (!it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
+    var t = splitText(text), has = it.marks.some(function (m) { return m.kind === kind; });
+    if (!has) {
+      var mt = trim(label || '') || MARK_DEFAULT[kind], bad = badInName(mt).concat(/[\s\u3000]/.test(mt) ? ['空白'] : []);
+      if (bad.length) throw new Error('印の言葉に ' + bad.join(' ') + ' は使えません');
+      var sp0 = it.spans[0];
+      replaceSpans(t, [{ line: sp0.line, start: sp0.end, end: sp0.end, text: ' ' + sym + mt }]);
+      return joinText(t);
+    }
+    it.spans.slice().sort(function (a, b) { return b.line - a.line || b.start - a.start; }).forEach(function (sp) {
+      var L = t.lines[sp.line - 1], reA = new RegExp(RE_ARROW.source, 'g'), am, end = L.length;
+      reA.lastIndex = sp.end;
+      while ((am = reA.exec(L))) { if (am[0].length) { end = am.index; break; } reA.lastIndex++; }
+      var seg = L.slice(sp.end, end).replace(new RegExp(RE_MARK.source, 'g'), function (all, pre, s2, txt) {
+        if (MARK_KIND[s2] !== kind || !txt || (kind === 'green' && /^[0-9０-９]/.test(txt))) return all;
+        return '';
+      });
+      t.lines[sp.line - 1] = L.slice(0, sp.end) + seg + L.slice(end);
+    });
+    return joinText(t);
+  }
+  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
+  // 図の閉じの行のすぐ前に1行足す
+  function appendLine(text, d, line) {
+    var t = splitText(text);
+    if (d.end) t.lines.splice(d.end - 1, 0, line); else t.lines.push(line);
+    return joinText(t);
+  }
+  // 箱を足す：「新しい箱」（あれば 2, 3…）。lanes は最初の担当に入れる。{ text, name } を返す
+  function addBox(text, doc, di) {
+    var d = doc.diagrams[di];
+    if (!d || !EDITABLE[d.type]) throw new Error('この図には箱を足せない');
+    var used = {}, name = '新しい箱', n = 1;
+    d.items.forEach(function (it) { used[it.key] = 1; });
+    while (used[nk(name)]) name = '新しい箱' + (++n);
+    return { text: appendLine(text, d, (d.type === 'lanes' && d.lanes && d.lanes[0] ? '[' + d.lanes[0] + '] ' : '') + name), name: name };
+  }
+  // 線を引く：「A -> B」の行を足す（lanes は両方の担当も書く）
+  function addEdge(text, doc, di, from, to) {
+    var d = doc.diagrams[di], a = d && d.items[from], b = d && d.items[to];
+    if (!a || !b || !EDITABLE[d.type]) throw new Error('この図には線を引けない');
+    if (from === to) throw new Error('同じ箱には線を引けない');
+    var ln = function (it) { return (d.type === 'lanes' && it.lane ? '[' + it.lane + '] ' : '') + it.label; };
+    return appendLine(text, d, ln(a) + ' -> ' + ln(b));
+  }
+  // 担当を変える（帯をまたぐ）：箱が最初に出てくる所に [新しい担当] を書く。ほかの箱の担当は変えないよう、
+  // すぐ後ろの所と（前に担当がなければ）行の先頭にも、いまの担当を書き足す
+  function setLane(text, doc, di, id, lane) {
+    var d = doc.diagrams[di], it = d && d.items[id];
+    if (!it || d.type !== 'lanes') throw new Error('担当のある図ではない');
+    if ((d.lanes || []).indexOf(lane) < 0) throw new Error('その担当はない');
+    var sp = it.spans && it.spans[0];
+    if (!sp || sp.bad || sp.lane == null) throw new Error('この箱の場所が md の中で分からない');
+    if (it.lane === lane) return String(text);
+    var at = {}, tags = {};
+    d.items.forEach(function (x) {
+      (x.spans || []).forEach(function (y) { if (y.line === sp.line && !y.bad) at[y.seg] = y; });
+      (x.laneSpans || []).forEach(function (y) { if (y.line === sp.line) tags[y.seg] = y; });
+    });
+    var q = sp.seg, edits = [];
+    if (tags[q]) edits.push({ line: sp.line, start: tags[q].start, end: tags[q].end, text: lane });
+    else edits.push({ line: sp.line, start: sp.start, end: sp.start, text: '[' + lane + '] ' });
+    if (at[q + 1] && !tags[q + 1]) edits.push({ line: sp.line, start: at[q + 1].start, end: at[q + 1].start, text: '[' + at[q + 1].lane + '] ' });
+    var before = false;
+    for (var k = 0; k < q; k++) if (tags[k]) before = true;
+    if (q > 0 && !before && at[0]) edits.push({ line: sp.line, start: at[0].start, end: at[0].start, text: '[' + at[0].lane + '] ' });
+    var t = splitText(text);
+    replaceSpans(t, edits);
+    return joinText(t);
+  }
+  // 箱を消す（その箱が出てくる行すべて）。shortcut: layout の古い置き場所は残る（害はない）。同じ名前で足し直すと前の場所に出る
+  function removeItem(text, doc, di, id) {
+    var d = doc.diagrams[di], it = d && d.items[id];
+    if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
+    var plan = {};
+    it.spans.forEach(function (sp) { (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); });
+    return cutLines(text, d, plan);
+  }
+  // 線を消す（その線が書かれた所すべて）
+  function removeEdge(text, doc, di, eid) {
+    var d = doc.diagrams[di], e = d && d.edges.filter(function (x) { return x.id === eid; })[0];
+    if (!e || !e.occ || !e.occ.length) throw new Error('この線の場所が md の中で分からない');
+    var plan = {};
+    e.occ.forEach(function (o) { (plan[o.line] = plan[o.line] || { brk: [] }).brk.push(o.seg); });
+    return cutLines(text, d, plan);
+  }
   // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
   function writeLayout(text, doc, obj) {
     text = String(text);
@@ -758,6 +880,6 @@
     };
   }
 
-  var api = { writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

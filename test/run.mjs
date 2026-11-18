@@ -917,6 +917,28 @@ async function savePptx(T, md, tag) {
   ok('名前を直す：Ctrl+Z で md が1文字も違わず元に戻る', (await B.evalJs('DocVisualizer.text()')) === mdr && (await B.evalJs(`!!document.querySelector('#dg0 .item[aria-label="受付"]')`)));
   if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8b-3：md を書きかえる関数（印・足す・線・消す・担当）。変えた行のほかは1文字も変わらない
+{
+  const md = ['# x', '~~~lanes 帯', '[営業] 受付 !急ぎ -> 確認 -> [経理] 出荷 : 発送', '確認', '受付 -> 確認 : 差し戻し', '~~~', '', '## 確認', 'メモ', ''].join('\n');
+  const D = () => P.parseDoc(md), id = (d, l) => d.diagrams[0].items.find(i => i.label === l).id;
+  const lanes = t => P.parseDoc(t).diagrams[0].items.map(i => i.label + '/' + i.lane).join(' ');
+  const edges = t => { const d = P.parseDoc(t).diagrams[0]; return d.edges.map(e => d.items[e.from].label + '>' + d.items[e.to].label + (e.label ? ':' + e.label : '')).join(' '); };
+  let d = D();
+  const del = P.removeItem(md, d, 0, id(d, '確認'));
+  ok('消す：箱を消すと、その箱の所で行が分かれ（つながりを作らない）、消えた線の言葉も消える。説明（## 確認）は残る', del === ['# x', '~~~lanes 帯', '[営業] 受付 !急ぎ', '[経理] 出荷', '受付', '~~~', '', '## 確認', 'メモ', ''].join('\n') && edges(del) === '', JSON.stringify(del));
+  const e1 = d.diagrams[0].edges.find(e => d.diagrams[0].items[e.from].label === '確認').id;
+  const de = P.removeEdge(md, d, 0, e1);
+  ok('消す：線を消すと、その矢印の所で行が分かれ、担当は書き足して変わらない', edges(de) === '受付>確認:差し戻し' && lanes(de) === lanes(md) && de.split('\n')[2] === '[営業] 受付 !急ぎ -> 確認' && de.split('\n')[3] === '[経理] 出荷', JSON.stringify(de.split('\n').slice(2, 5)));
+  const m1 = P.toggleMark(md, d, 0, id(d, '受付'), 'red'), m2 = P.toggleMark(md, d, 0, id(d, '確認'), 'green');
+  ok('印：あれば外し、なければ名前の後ろに足す。もう一度押すと元の md に戻る', !P.parseDoc(m1).diagrams[0].items[0].marks.length && m1.split('\n')[2] === '[営業] 受付 -> 確認 -> [経理] 出荷 : 発送' && m2.split('\n')[2].includes('確認 +完了 ->') && P.toggleMark(m2, P.parseDoc(m2), 0, id(d, '確認'), 'green') === md, JSON.stringify([m1.split('\n')[2], m2.split('\n')[2]]));
+  const ab = P.addBox(md, d, 0), ab2 = P.addBox(ab.text, P.parseDoc(ab.text), 0);
+  const ae = P.addEdge(md, d, 0, id(d, '出荷'), id(d, '受付'));
+  ok('足す：箱は図の閉じの前に1行（最初の担当に入る。同じ名前は 2, 3…）。線は「A -> B」の1行', ab.text.split('\n')[5] === '[営業] 新しい箱' && ab2.name === '新しい箱2' && ae.split('\n')[5] === '[経理] 出荷 -> [営業] 受付' && edges(ae).includes('出荷>受付') && lanes(ae) === lanes(md) && ae.split('\n').length === md.split('\n').length + 1, JSON.stringify([ab.text.split('\n')[5], ae.split('\n')[5]]));
+  const sl = P.setLane(md, d, 0, id(d, '確認'), '経理'), sl2 = P.setLane('~~~lanes\n受付 -> 確認 -> [経理] 出荷\n[営業] 見積\n~~~\n', P.parseDoc('~~~lanes\n受付 -> 確認 -> [経理] 出荷\n[営業] 見積\n~~~\n'), 0, 1, '営業');
+  ok('担当を変える：その箱だけが別の帯に移り、同じ行のほかの箱の担当は変わらない', lanes(sl) === '受付/営業 確認/経理 出荷/経理' && edges(sl) === edges(md) && lanes(sl2) === '受付/経理 確認/営業 出荷/経理 見積/営業', lanes(sl) + ' | ' + lanes(sl2));
+  const crlf = '\uFEFF~~~flow\r\nA -> B -> C\r\n~~~\r\n', dc = P.parseDoc(crlf);
+  ok('消す：BOM と CRLF をそのまま残す', P.removeItem(crlf, dc, 0, 1) === '\uFEFF~~~flow\r\nA\r\nC\r\n~~~\r\n');
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));
