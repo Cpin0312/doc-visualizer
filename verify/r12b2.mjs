@@ -1,0 +1,10 @@
+import {start} from './r12lib.mjs'; import fs from 'node:fs';
+const t=await start({}); const {b}=t;
+await b.send('Page.addScriptToEvaluateOnNewDocument',{source:`window.addEventListener('drop',e=>{const it=e.dataTransfer.items[0];window.__h=it.getAsFileSystemHandle().then(async h=>{window.__hinfo={kind:h&&h.kind,name:h&&h.name,q:await h.queryPermission({mode:'readwrite'})};return h})},true)`});
+await b.goto('dist/DocVisualizer.html');
+fs.copyFileSync('verify/md/25_move.md','verify/out/drop_target.md');
+await t.dropFile('verify/out/drop_target.md');
+console.log(await b.ev('JSON.stringify(window.__hinfo)'));
+console.log(await b.ev(`(async()=>{const h=await window.__h;const r=await Promise.race([h.requestPermission({mode:'readwrite'}),new Promise(r=>setTimeout(()=>r('PENDING(窓が出て待っている)'),4000))]);return r})()`));
+console.log(await b.ev(`(async()=>{const h=await window.__h;try{const w=await Promise.race([h.createWritable(),new Promise(r=>setTimeout(()=>r('PENDING'),4000))]);if(w==='PENDING')return w;await w.write('x');await w.close();return 'wrote'}catch(e){return 'err '+e.name+e.message}})()`));
+await b.close();

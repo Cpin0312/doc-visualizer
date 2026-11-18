@@ -21,7 +21,7 @@ export async function openBrowser({nogl=false,offline=false,reduced=false,w=1400
     if(m.method==='Runtime.consoleAPICalled'&&['error','warning'].includes(m.params.type))B.logs.push(m.params.type+': '+m.params.args.map(x=>x.value??x.description).join(' '));
     if(m.method==='Runtime.exceptionThrown')B.logs.push('exception: '+(m.params.exceptionDetails.exception?.description||m.params.exceptionDetails.text));
     if(m.method==='Log.entryAdded'&&m.params.entry.level==='error')B.logs.push('log: '+m.params.entry.text);
-    if(m.method==='Page.javascriptDialogOpening'){B.dialogs.push(m.params.message);send('Page.handleJavaScriptDialog',{accept:true});}};
+    if(m.method==='Page.javascriptDialogOpening'){B.dialogs.push(m.params.message);(B.dtypes=B.dtypes||[]).push(m.params.type);send('Page.handleJavaScriptDialog',{accept:B.accept!==false});}};
   const send=(method,params={})=>new Promise((res,rej)=>{const i=++id;pend.set(i,m=>m.error?rej(new Error(method+': '+m.error.message)):res(m.result));ws.send(JSON.stringify({id:i,method,params}));});
   B.send=send;
   B.ev=async x=>{const r=await send('Runtime.evaluate',{expression:x,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error('eval: '+(r.exceptionDetails.exception?.description||r.exceptionDetails.text));return r.result.value;};

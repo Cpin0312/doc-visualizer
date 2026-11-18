@@ -1,0 +1,10 @@
+import {start} from './r12lib.mjs';
+const t=await start({}); const {b}=t; const sleep=t.sleep;
+const selAll=async()=>{await b.send('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'a',modifiers:2,windowsVirtualKeyCode:65,code:'KeyA'});await b.send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',modifiers:2,code:'KeyA'});};
+await t.load('verify/md/25_move.md'); const i=await t.idxOf(0,'確認'); await t.click(0,i); await t.act('rename'); await selAll();
+await b.ev(`(()=>{const e=document.querySelector('input.rename');window.__ev=[];for(const n of ['keydown','keyup','compositionstart','compositionupdate','compositionend','blur','input','beforeinput'])e.addEventListener(n,x=>window.__ev.push(n+(x.key?':'+x.key:'')+(x.keyCode!==undefined?'/'+x.keyCode:'')+(x.isComposing?'/comp':'')+(x.data?'/'+x.data:'')),true);})()`);
+await b.send('Input.imeSetComposition',{text:'にほん',selectionStart:3,selectionEnd:3}); await sleep(200);
+console.log('after set',await b.ev('JSON.stringify(window.__ev)'), 'focus', await b.ev(`document.activeElement&&document.activeElement.className`));
+await b.send('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:229,nativeVirtualKeyCode:13}); await b.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}); await sleep(300);
+console.log('after enter',await b.ev('JSON.stringify(window.__ev)'),'input exists',await b.ev(`!!document.querySelector('input.rename')`),'focus', await b.ev(`document.activeElement&&document.activeElement.tagName+'.'+document.activeElement.className`));
+await b.close();
