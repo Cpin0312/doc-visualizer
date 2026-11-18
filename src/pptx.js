@@ -171,6 +171,27 @@
   function minFont(svg) { var v = Infinity; Array.prototype.forEach.call(svg.querySelectorAll('text'), function (t) { v = Math.min(v, num(t, 'font-size', 15)); }); return isFinite(v) ? v : 15; }
 
   // 全体：data = { title, secret, cards:[{head,text}], list:[名前], diagrams:[{name, svg（文字列）, legend, capture}], notes:[{title,text,src}] }
+  // グラフは PowerPoint のグラフにする（あとで数字を直せる）。d.chart = { type, unit, labels, series: [{ name, values }] }
+  var CHART_KIND = { pie: 'pie', donut: 'doughnut', line: 'line', hbar: 'bar', stacked: 'bar' };
+  function chartSlide(pptx, sl, d) {
+    var c = d.chart, pal = c.colors.map(function (x) { return x.replace('#', '').toUpperCase(); });
+    sl.addText(d.name + (c.unit ? '（' + c.unit + '）' : ''), { x: AX, y: 0.3, w: 9.6, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, color: '1F2A37', margin: 0 });
+    var round = c.type === 'pie' || c.type === 'donut';
+    var o = {
+      x: AX, y: AY, w: AW, h: AH, chartColors: pal,
+      showLegend: round || c.series.length > 1, legendPos: round ? 'r' : 'b', legendFontFace: FONT, legendFontSize: 14,
+      showValue: !round, showPercent: round, dataLabelFontFace: FONT, dataLabelFontSize: 12,
+      catAxisLabelFontFace: FONT, catAxisLabelFontSize: 13, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 12,
+      showTitle: false
+    };
+    if (c.type === 'hbar') { o.barDir = 'bar'; o.catAxisOrientation = 'maxMin'; }
+    if (c.type === 'stacked') { o.barDir = 'col'; o.barGrouping = 'stacked'; }
+    if (c.type === 'donut') o.holeSize = 55;
+    if (c.type === 'line') { o.lineSize = 3; o.lineDataSymbolSize = 8; }
+    sl.addChart(pptx.ChartType[CHART_KIND[c.type]], c.series.map(function (sr) { return { name: sr.name, labels: c.labels, values: sr.values.map(function (v) { return v == null ? null : v; }) }; }), o);
+    if (d.legend) sl.addText(d.legend, { x: AX, y: 6.62, w: AW, h: 0.36, fontFace: FONT, fontSize: 12, color: '5B6675', margin: 0 });
+  }
+
   function build(data) {
     var pptx = new root.PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
@@ -193,7 +214,17 @@
         });
         if (data.list.length) sl.addText('図：' + data.list.join('　／　'), { x: 0.6, y: Math.min(y + 0.1, 6.4), w: SW - 1.2, h: 0.5, fontFace: FONT, fontSize: 13, color: '5B6675', margin: 0 });
       });
+      function capSlide(d) {
+        return function (sl) {
+          sl.addText(d.name + '（3D）', { x: AX, y: 0.3, w: 9.6, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, color: '1F2A37', margin: 0 });
+          var h = AH, w = h * 16 / 9;
+          stats.pics++;
+          sl.addImage({ data: d.capture, x: (SW - w) / 2, y: AY, w: w, h: h, altText: d.name + ' の 3D の絵' });
+        };
+      }
       data.diagrams.forEach(function (d) {
+        if (d.chart) { plans.push(function (sl) { chartSlide(pptx, sl, d); stats.shapes++; }); }
+        if (d.chart) { if (d.capture) plans.push(capSlide(d)); return; }
         host.innerHTML = d.svg;
         var svg = host.querySelector('svg'), W = num(svg, 'data-w'), H = num(svg, 'data-h');
         var s = Math.min(AW / W, AH / H, MAX_S), sMin = MIN_PT / 72 / minFont(svg);
@@ -211,12 +242,7 @@
             if (d.legend) sl.addText(d.legend, { x: AX, y: 6.62, w: AW, h: 0.36, fontFace: FONT, fontSize: 12, color: '5B6675', margin: 0 });
           });
         })({ x: tx * tw, y: ty * th, w: tw, h: th }, ty * nx + tx + 1);
-        if (d.capture) plans.push(function (sl) {
-          sl.addText(d.name + '（3D）', { x: AX, y: 0.3, w: 9.6, h: 0.6, fontFace: FONT, fontSize: 24, bold: true, color: '1F2A37', margin: 0 });
-          var h = AH, w = h * 16 / 9;
-          stats.pics++;
-          sl.addImage({ data: d.capture, x: (SW - w) / 2, y: AY, w: w, h: h, altText: d.name + ' の 3D の絵' });
-        });
+        if (d.capture) plans.push(capSlide(d));
       });
       // 箱の説明：1つずつ。長いものは字数でスライドを分ける
       data.notes.forEach(function (nt) {

@@ -48,7 +48,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 18px 16px 80px; }
 .body-text td, .body-text th, .panel td, .panel th { border: 1px solid var(--line); padding: 3px 8px; }
 pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
 .guide pre { white-space: pre-wrap; }
-.panel { position: fixed; right: 14px; top: 70px; bottom: 14px; width: min(380px, calc(100vw - 28px)); overflow-y: auto; z-index: 30; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(31, 42, 55, .18); padding: 16px 18px; }
+.panel { position: fixed; left: 12px; top: 12px; width: min(360px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; z-index: 30; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(31, 42, 55, .18); padding: 16px 18px; }
 .panel h2 { margin: 0 36px 8px 0; font-size: 1.25rem; }
 .panel .close { position: absolute; right: 10px; top: 10px; min-height: 30px; padding: 0 10px; }
 .panel .src { margin-top: 12px; padding: 8px 10px; background: #f2f6fd; border-radius: 8px; font-size: 0.88rem; }

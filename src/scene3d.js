@@ -139,6 +139,18 @@
   }
 
   var DEPTH = { flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14 };
+  var CHARTS = { chart: 1, pie: 1, donut: 1, line: 1, hbar: 1, stacked: 1 };
+  // 円グラフの扇は「M x y L x y … Z」の多角形。中心からの点に直す
+  function polyOf(el) {
+    var n = (el.getAttribute('d') || '').match(/-?\d+(?:\.\d+)?/g) || [], pts = [];
+    for (var k = 0; k + 1 < n.length; k += 2) pts.push([+n[k], +n[k + 1]]);
+    return pts;
+  }
+  function boundsOf(pts) {
+    var xs = pts.map(function (p) { return p[0]; }), ys = pts.map(function (p) { return p[1]; });
+    var x = Math.min.apply(null, xs), y = Math.min.apply(null, ys);
+    return { x: x, y: y, w: Math.max.apply(null, xs) - x, h: Math.max.apply(null, ys) - y, rx: 0 };
+  }
   var RATE_DEPTH = { '#cdeedb': 46, '#e3f5ea': 32, '#fff4d6': 20, '#fde4e4': 10 };
 
   function create(diag, svg, opts) {
@@ -166,15 +178,24 @@
     Array.prototype.forEach.call(svg.querySelectorAll('.item'), function (g) {
       var box = g.querySelector('.box'), i = +g.getAttribute('data-i');
       if (!box) return;
-      var br = rectOf(box), regions;
+      var isPath = box.tagName.toLowerCase() === 'path', poly = isPath ? polyOf(box) : null;
+      var br = isPath ? boundsOf(poly) : rectOf(box), regions;
       var mine = Array.prototype.filter.call(g.querySelectorAll('rect,line,path,circle,text'), function (el) { return !el.closest('.mark'); });
       if (diag.type === 'compare') {
         var cells = mine.filter(function (el) { return el.tagName.toLowerCase() === 'rect' && el !== box; });
         var firstX = cells.length ? Math.min.apply(null, cells.map(function (c) { return num(c, 'x'); })) - 3 : br.x + br.w;
         regions = [{ r: { x: br.x, y: br.y, w: firstX - br.x, h: br.h, rx: 4 }, depth: 14, fill: '#ffffff', side: '#9fb3d1' }];
         cells.forEach(function (c) { var f = c.getAttribute('fill'); regions.push({ r: rectOf(c), depth: RATE_DEPTH[f] || 14, fill: f, side: '#b9c6da', cell: c }); });
-      } else if (diag.type === 'chart') {
-        regions = [{ r: br, depth: Math.max(br.w * 0.8, 6), fill: box.getAttribute('fill'), side: box.getAttribute('fill'), solid: true }];
+      } else if (CHARTS[diag.type]) {
+        // 数字の形（棒・扇・点）は、中まで同じ色の塊にする。積み上げは段ごと
+        var segs = Array.prototype.slice.call(g.querySelectorAll('.seg, .pt'));
+        if (!segs.length) segs = [box];
+        regions = segs.map(function (el) {
+          var pp = el.tagName.toLowerCase() === 'path' ? polyOf(el) : null, rr = pp ? boundsOf(pp) : rectOf(el);
+          var f = el.getAttribute('fill'); if (!f || f === '#fff') f = el.getAttribute('stroke') || '#3b6fd8';
+          return { r: rr, poly: pp, depth: pp ? 18 : Math.max(Math.min(rr.w, rr.h) * 0.8, 6), fill: f, side: f, solid: true, el: el };
+        });
+        segs.forEach(function (el) { used.add(el); });
       } else {
         regions = [{ r: br, depth: DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
       }
@@ -185,7 +206,12 @@
         var face = R.solid ? [] : mine.filter(function (el) { return el !== box && inside(anchorPoint(el), r); });
         face.forEach(function (el) { used.add(el); });
         if (R.cell) face = [R.cell].concat(face.filter(function (el) { return el !== R.cell; }));
-        var geo = keep(new T.ExtrudeGeometry(slabShape(r.w * S, r.h * S, Math.max(r.rx || 0, 2) * S), { depth: d * S, bevelEnabled: true, bevelThickness: 1.2 * S, bevelSize: 1.2 * S, bevelSegments: 2, curveSegments: 6 }));
+        var shape = R.poly ? (function () {
+          var sh2 = new T.Shape(), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+          R.poly.forEach(function (p, k) { sh2[k ? 'lineTo' : 'moveTo']((p[0] - cx) * S, (cy - p[1]) * S); });
+          return sh2;
+        })() : slabShape(r.w * S, r.h * S, Math.max(r.rx || 0, 2) * S);
+        var geo = keep(new T.ExtrudeGeometry(shape, { depth: d * S, bevelEnabled: true, bevelThickness: 1.2 * S, bevelSize: 1.2 * S, bevelSegments: 2, curveSegments: 6 }));
         var capMat = keep(new T.MeshStandardMaterial({ color: new T.Color(R.fill || '#ffffff'), roughness: 0.55, metalness: 0.05 }));
         var sideMat = keep(new T.MeshStandardMaterial({ color: new T.Color(R.side || '#5b7db1'), roughness: 0.5, metalness: 0.08 }));
         var mesh = new T.Mesh(geo, [capMat, sideMat]);
@@ -366,7 +392,7 @@
       });
       el.addEventListener('pointerup', function (e) {
         var d = drag; drag = null;
-        if (d && !d.moved && opts.onPick) { var i = pick(e, el); if (i != null) opts.onPick(i); }
+        if (d && !d.moved && opts.onPick) opts.onPick(pick(e, el), e);   // 何もない所なら null（窓の外を押した）
       });
       el.addEventListener('dblclick', function () { view.dAz = 0; view.dEl = 0; if (redraw) redraw(); });
     }

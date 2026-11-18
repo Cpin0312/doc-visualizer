@@ -16,7 +16,12 @@
     lanes: { label: '担当ごとの流れ', names: ['lanes', 'lane', 'swimlane', '担当', '担当ごとの流れ', '担当別', 'スイムレーン'] },
     timeline: { label: '日程', names: ['timeline', '日程', 'スケジュール', '予定', '年表'] },
     tree: { label: '木', names: ['tree', '木', 'ツリー', '構成', '階層', '組織'] },
-    chart: { label: '数字', names: ['chart', '数字', 'グラフ', '棒グラフ', 'bar'] },
+    chart: { label: '数字', names: ['chart', '数字', 'グラフ', '棒グラフ', 'bar', '縦棒'] },
+    pie: { label: '円グラフ', names: ['pie', '円グラフ', '円', 'パイ'] },
+    donut: { label: 'ドーナツ', names: ['donut', 'doughnut', 'ドーナツ', 'ドーナツグラフ'] },
+    line: { label: '折れ線', names: ['line', '折れ線', '折れ線グラフ', '線グラフ'] },
+    hbar: { label: '横棒', names: ['hbar', '横棒', '横棒グラフ'] },
+    stacked: { label: '積み上げ', names: ['stacked', '積み上げ', '積み上げ棒', '積み上げグラフ'] },
     kpi: { label: '大事な数字', names: ['kpi', '大事な数字', '指標', '数値'] },
     compare: { label: '比べる', names: ['compare', '比べる', '比較', '表'] }
   };
@@ -138,11 +143,13 @@
           else if (!overKeys[key]) { overKeys[key] = true; over++; }
           return null;
         }
-        var it = { id: diag.items.length, label: label, key: key, marks: [], sources: [], line: no };
+        // 部品は、どの種類でも同じ形で持つ（kind・style。style の形・色・大きさ・位置は、あとで編集が入れる）
+        var it = { id: diag.items.length, kind: 'box', label: label, key: key, marks: [], sources: [], line: no, style: {} };
         diag.items.push(it);
         if (merge !== false) byKey[key] = it;
         return it;
       },
+      count: function () { return diag.items.length; },
       finish: function (no) { if (over) warn(no, '図「' + (diag.name || TYPES[diag.type].label) + '」は箱が ' + MAX_ITEMS + ' を超えたので、先頭の ' + MAX_ITEMS + ' だけ出した（' + over + ' 個を省いた）', 'skip'); }
     };
   }
@@ -215,7 +222,7 @@
         var key = its[e - 1].id + '>' + its[e].id;
         var lab = e === its.length - 1 ? edgeLabel : '';
         if (edgeKey[key]) { if (lab && !edgeKey[key].label) edgeKey[key].label = lab; continue; }
-        edgeKey[key] = { from: its[e - 1].id, to: its[e].id, label: lab, line: ln.no };
+        edgeKey[key] = { id: 'e' + diag.edges.length, kind: 'line', from: its[e - 1].id, to: its[e].id, label: lab, line: ln.no, style: {} };
         diag.edges.push(edgeKey[key]);
       }
     });
@@ -321,6 +328,48 @@
     reg.finish(lines.length ? lines[lines.length - 1].no : 0);
   }
 
+  // 折れ線・積み上げ：1行目に「系列 : 売上, 費用」（なくてもよい）、そのあと「4月 : 120, 80」。欠けは「-」
+  function parseSeries(diag, lines, warn) {
+    var um = /^([\s\S]*?)[\s\u3000]*[（(]([^()（）]+)[)）][\s\u3000]*$/.exec(diag.name);
+    if (um && trim(um[2])) { diag.unit = trim(um[2]); diag.name = trim(um[1]); } else diag.unit = '';
+    var reg = Registry(diag, warn), names = null, n = 0;
+    var split = function (t) { return t.split(/[,，、]/).map(trim); };
+    lines.forEach(function (ln, li) {
+      var src = [];
+      var s = trim(takeSources(ln.text.replace(/^[\s\u3000]*[-*・][\s\u3000]+/, ''), src));
+      var parts = splitColon(s, 2);
+      if (parts.length < 2) { warn(ln.no, '「名前 : 数字, 数字」の形でないので飛ばした', 'skip'); return; }
+      if (!names && !reg.count() && /^(系列|series|凡例)$/i.test(nk(parts[0]))) { names = split(parts[1]).filter(Boolean); return; }
+      var tm = takeMarks(parts[0]);
+      if (!tm.label) { warn(ln.no, '名前がないので飛ばした', 'skip'); return; }
+      var vals = split(parts[1]), out = [], texts = [], bad = null;
+      vals.forEach(function (t) {
+        if (/^[-－ー―—]?$/.test(nfkc(t)) && !/\d/.test(t)) { out.push(null); texts.push(''); return; }
+        var v = parseNumber(t);
+        if (v === null) bad = t; out.push(v); texts.push(t);
+      });
+      if (bad !== null) { warn(ln.no, '数字（' + bad + '）が読めないので飛ばした', 'skip'); return; }
+      if (!out.some(function (v) { return v !== null; })) { warn(ln.no, '数字がないので飛ばした', 'skip'); return; }
+      var it = reg.get(tm.label, ln.no, false);
+      if (!it) return;
+      addMarks(it, tm.marks, src);
+      it.values = out; it.valueTexts = texts;
+      it.value = out.reduce(function (a, v) { return a + (v || 0); }, 0);
+      it.valueText = out.length > 1 ? texts.filter(Boolean).join(' / ') : texts[0];
+      n = Math.max(n, out.length);
+    });
+    diag.items.forEach(function (it) { while (it.values.length < n) { it.values.push(null); it.valueTexts.push(''); } });
+    if (names && names.length !== n && diag.items.length) warn(diag.line, '系列の名前が ' + names.length + ' つ、数字が ' + n + ' つで数が合わないので、足りない名前は「系列 n」にした', 'fix');
+    diag.series = [];
+    for (var k = 0; k < n; k++) diag.series.push(names && names[k] ? names[k] : (n === 1 ? (diag.name || '値') : '系列 ' + (k + 1)));
+    reg.finish(lines.length ? lines[lines.length - 1].no : 0);
+  }
+
+  // 円グラフは 0 より小さい数を描けない（扇の大きさは 0 にして、知らせる）
+  function noNeg(diag, warn) {
+    diag.items.forEach(function (it) { if (it.value < 0) { warn(it.line, '円グラフは 0 より小さい数（' + it.valueText + '）を描けないので、0 として扱った', 'fix'); it.value = 0; } });
+  }
+
   function parseKpi(diag, lines, warn) {
     var reg = Registry(diag, warn);
     lines.forEach(function (ln) {
@@ -419,6 +468,11 @@
              timeline: function () { parseTimeline(diag, body, warn); },
              tree: function () { parseTree(diag, body, warn); },
              chart: function () { parseChart(diag, body, warn); },
+             pie: function () { parseChart(diag, body, warn); noNeg(diag, warn); },
+             donut: function () { parseChart(diag, body, warn); noNeg(diag, warn); },
+             hbar: function () { parseChart(diag, body, warn); },
+             line: function () { parseSeries(diag, body, warn); },
+             stacked: function () { parseSeries(diag, body, warn); },
              kpi: function () { parseKpi(diag, body, warn); },
              compare: function () { parseCompare(diag, body, warn); } })[info.type]();
           if (!diag.items.length) warn(ln.no, '図「' + (diag.name || TYPES[diag.type].label) + '」に読める行がないので出さなかった', 'skip');

@@ -71,6 +71,16 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   }
   const g = P.decodeBytes(new Uint8Array(readFileSync(join(root, 'test', 'fixtures', 'garbled.md'))));
   ok('文字コード（node）：読めない文字は「分からない」と知らせる', !!g.warn, g.warn);
+  // R6：グラフ5種類（円・ドーナツ・折れ線・横棒・積み上げ）
+  {
+    const g = P.parseDoc('# t\n```pie 入口（件）\n電話 : 45\n窓口 : -5\n```\n```donut 内訳\nA : 1\n```\n```line 月（件）\n系列 : 受付, 完了\n4月 : 120, 80\n5月 : 90, -\n6月 : x, 1\n```\n```横棒 長い\nとても長い部署の名前 : 10\n```\n```積み上げ 積み\n4月 : 1, 2, 3\n5月 : 2, 2\n```\n');
+    const [pie, donut, line, hbar, st] = g.diagrams;
+    ok('読みとり：グラフ5種類の名前（pie・donut・line・横棒・積み上げ）', g.diagrams.map(d => d.type).join() === 'pie,donut,line,hbar,stacked', g.diagrams.map(d => d.type).join());
+    ok('読みとり：円グラフの 0 より小さい数は 0 にして知らせる', pie.items[1].value === 0 && g.warnings.some(w => w.msg.includes('0 より小さい')), JSON.stringify(g.warnings.map(w => w.msg)));
+    ok('読みとり：折れ線の系列・欠け（-）・読めない数字の行は飛ばす', line.unit === '件' && line.series.join() === '受付,完了' && JSON.stringify(line.items.map(i => i.values)) === '[[120,80],[90,null]]' && g.warnings.some(w => w.line === 13), JSON.stringify(line.items.map(i => i.values)));
+    ok('読みとり：積み上げの系列の名前がなければ「系列 n」、足りない数字は欠け', st.series.join() === '系列 1,系列 2,系列 3' && JSON.stringify(st.items[1].values) === '[2,2,null]', st.series.join());
+    ok('部品は同じ形で持つ（箱も線も kind・style・行の番号）', [pie.items[0], line.items[0]].every(x => x.kind === 'box' && x.style && x.line > 0) && P.parseDoc('```flow\nA -> B\n```').diagrams[0].edges.every(e => e.kind === 'line' && e.id === 'e0' && e.style && e.line === 2));
+  }
   for (const f of readdirSync(join(root, 'samples'))) {
     const c = P.check(readFileSync(join(root, 'samples', f), 'utf8'));
     ok('短いまとめ check()：' + f, typeof c.title === 'string' && Array.isArray(c.diagrams), c.diagrams.map(d => d.type + ':' + d.items).join(' '));
@@ -110,6 +120,10 @@ await B.send('Page.navigate', { url });
 for (let i = 0; i < 50; i++) { if (await B.evalJs('document.readyState === "complete" && !!window.DocVisualizer').catch(() => false)) break; await sleep(100); }
 ok('file:// で開ける（' + url.slice(0, 60) + '…）', await B.evalJs('!!window.DocVisualizer && !!window.DocParse && !!window.DocRender'));
 
+async function keyPress(k, code, vk) {
+  await B.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk });
+  await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
+}
 async function pick(path) {
   const { root: doc } = await B.send('DOM.getDocument', { depth: 1 });
   const { nodeId } = await B.send('DOM.querySelector', { nodeId: doc.nodeId, selector: '#file' });
@@ -203,6 +217,29 @@ async function clickAt(sel) {
   await clickAt('#dg0 .item[aria-label="受付"] .box');
   const t2 = await waitFor(`document.getElementById('panel').hidden && document.querySelectorAll('#dg0 .item.sel').length === 0`);
   ok('同じ箱をもう1回押すと説明を閉じる（選びもはずす）', t1 && t2);
+  // R6：ポップアップ。押した箱の近く・画面の中・押した箱を隠さない。窓の外を押すと閉じる。キーボードでも開け閉めできる
+  await clickAt('#dg0 .item[aria-label="受付"] .box');
+  await waitFor(`!document.getElementById('panel').hidden`);
+  const pos = await B.evalJs(`(() => { const p = document.getElementById('panel').getBoundingClientRect(), b = document.querySelector('#dg0 .item[aria-label="受付"] .box').getBoundingClientRect();
+    const hit = !(p.right <= b.left || p.left >= b.right || p.bottom <= b.top || p.top >= b.bottom), dist = Math.max(0, p.top - b.bottom, b.top - p.bottom, p.left - b.right, b.left - p.right);
+    return { inView: p.left >= 0 && p.top >= 0 && p.right <= innerWidth && p.bottom <= innerHeight, hit, dist: Math.round(dist) }; })()`);
+  ok('ポップアップ：押した箱の近く（40px 以内）・画面の中・押した箱を隠さない', pos.inView && !pos.hit && pos.dist <= 40, JSON.stringify(pos));
+  for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: 20, y: 880, button: 'left', clickCount: 1 });
+  ok('ポップアップ：窓の外を押すと閉じる', await waitFor(`document.getElementById('panel').hidden`));
+  await B.evalJs(`document.querySelector('#dg0 .item[aria-label="確認"]').focus()`);
+  await keyPress('Enter', 'Enter', 13);
+  const kb = await waitFor(`!document.getElementById('panel').hidden && document.activeElement && document.activeElement.id`);
+  await keyPress('Escape', 'Escape', 27);
+  const back = await waitFor(`document.getElementById('panel').hidden && document.activeElement && document.activeElement.getAttribute('aria-label')`);
+  ok('ポップアップ：キーボード（Enter）で開き、×に動く。Esc で閉じて箱に戻る', kb === 'panelClose' && back === '確認', kb + ' → ' + back);
+  // 画面の右下の端の箱でも、窓は画面の中に入る
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 700, height: 520, deviceScaleFactor: DSF, mobile: false }); await sleep(300);
+  await B.evalJs(`document.querySelector('#dg0 .item[aria-label="発送"]').scrollIntoView({ block: 'end', inline: 'end' })`); await sleep(200);
+  await clickAt('#dg0 .item[aria-label="発送"] .box');
+  const edge = await waitFor(`!document.getElementById('panel').hidden && (() => { const p = document.getElementById('panel').getBoundingClientRect(); return { l: Math.round(p.left), t: Math.round(p.top), r: Math.round(innerWidth - p.right), b: Math.round(innerHeight - p.bottom) }; })()`);
+  ok('ポップアップ：小さい窓の端の箱でも、画面の中に出る', edge && edge.l >= 0 && edge.t >= 0 && edge.r >= 0 && edge.b >= 0, JSON.stringify(edge));
+  await keyPress('Escape', 'Escape', 27);
+  await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: DSF, mobile: false }); await sleep(300);
 
   // 文字の大きさ
   const before = await B.evalJs(`document.querySelector('#dg0 .item text').getAttribute('font-size')`);
@@ -533,6 +570,32 @@ async function savePptx(T, md, tag) {
   const { rd } = await savePptx(B, join(root, 'test', 'fixtures', 'flow15.md'), 'flow15');
   const S = rd ? rd.slides : [];
   ok('PowerPoint：大きな図（15 段の流れ）はスライドを分け、文字は 11pt 以上', S.filter(x => /（[12]\/2）$/.test(x.texts[0] || '')).length === 2 && S.every(x => x.minPt >= 11), S.map(x => (x.texts[0] || '') + ' ' + x.minPt).join(' | '));
+}
+// R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
+{
+  await pick(join(root, 'samples', '11_graphs.md'));
+  await waitFor(`document.getElementById('status').textContent.includes('11_graphs')`);
+  const mode0 = await B.evalJs('DocVisualizer.mode()');
+  if (mode0 !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  const gs = [];
+  for (let i = 0; i < 5; i++) { await B.evalJs(`document.getElementById('dg${i}').scrollIntoView()`); await sleep(400); gs.push(await B.evalJs(pixelCheck(`document.querySelector('#dg${i} .view3d canvas')`)).catch(e => ({ err: e.message }))); }
+  ok('3D：グラフ5種類を 3D で描く（真っ黒でない）', gs.every(notBlack), gs.map(p => p.err ? p.err : `暗${(p.darkRatio * 100).toFixed(0)}%・色${(p.colored * 100).toFixed(0)}%`).join(' / '));
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  await clickAt('#dg0 .item[aria-label="電話"] .box');
+  const pp = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
+  ok('グラフの扇を押すと、値と割合が出る', pp && pp.includes('420') && pp.includes('割合：38.9%'), (pp || '').replace(/\n/g, ' ').slice(0, 80));
+  await keyPress('Escape', 'Escape', 27);
+  await clickAt('#dg2 .item[aria-label="7月"] .box');
+  const lp = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
+  ok('折れ線の点を押すと、系列ごとの値が出る（欠けは －）', lp && lp.includes('受付：140件') && lp.includes('完了：－'), (lp || '').replace(/\n/g, ' ').slice(0, 80));
+  await keyPress('Escape', 'Escape', 27);
+  const fsz = await B.evalJs(`Math.min(...Array.from(document.querySelectorAll('#diagrams svg text')).map(t => +t.getAttribute('font-size')))`);
+  ok('文字 11px：グラフ5種類の 2D の文字', fsz >= 11, String(fsz));
+  if (mode0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  const { rd } = await savePptx(B, join(root, 'samples', '11_graphs.md'), '11_graphs');
+  const CH = rd ? rd.slides.flatMap(x => x.charts || []) : [];
+  ok('PowerPoint：グラフ5種類は PowerPoint のグラフ（円・ドーナツ・折れ線・横棒・積み上げ）', CH.map(c => c.type).join() === 'PIE,DOUGHNUT,LINE_MARKERS,BAR_CLUSTERED,COLUMN_STACKED', CH.map(c => c.type).join());
+  ok('PowerPoint：グラフの数字と名前が md のとおり（欠けは空）・字体は Yu Gothic UI', CH.length === 5 && CH[0].cats.join() === '電話,メール,Web フォーム,窓口' && JSON.stringify(CH[2].series) === '[["受付",[120,135,160,140,110]],["完了",[95,120,130,null,125]]]' && CH.every(c => c.font), CH.length === 5 ? JSON.stringify(CH[2].series) : '');
 }
 {
   const fn = await B.evalJs(`[DocPptx.fileName('a/b:c*?"<>|d'), DocPptx.fileName('CON'), DocPptx.fileName('  '), DocPptx.fileName('題名. ')]`);

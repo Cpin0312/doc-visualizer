@@ -31,9 +31,13 @@ const threePkg = JSON.parse(rd('node_modules/three/package.json'));
 const pptxPkg = JSON.parse(rd('node_modules/pptxgenjs/package.json'));
 const jszipPkg = JSON.parse(rd('node_modules/jszip/package.json'));
 // PptxGenJS（MIT。中に JSZip（MIT）が入った版）。最後の sourceMappingURL は外を指すので外す
-const pptxgen = rd('node_modules/pptxgenjs/dist/pptxgen.bundle.js').replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n')
+let pptxgen = rd('node_modules/pptxgenjs/dist/pptxgen.bundle.js').replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n')
 // 中の文字列 "<script>…" は HTML の <script> とまちがわれるので、文字列のまま <\x73cript と書きかえる（意味は同じ）
   .split('e.write("<script>').join('e.write("<\\x73cript>');
+// グラフの欠けた数字（null）は、空の <c:v></c:v> ではなく点ごと書かない（空の値は読めない道具がある。PowerPoint では線が切れる）
+let blanks = 0;
+pptxgen = pptxgen.replace(/<c:pt idx="\$\{t\}"><c:v>\$\{([\w.\[\]]+)\|\|0===\1\?\1:""\}<\/c:v><\/c:pt>/g, (m, v) => { blanks++; return '${' + v + '||0===' + v + '?`<c:pt idx="${t}"><c:v>${' + v + '}</c:v></c:pt>`:""}'; });
+if (blanks < 5) throw new Error('pptxgen.bundle.js のグラフの値の書き方が思っていたものと違う（' + blanks + '）');
 if (/<script/i.test(pptxgen)) throw new Error('pptxgen.bundle.js に <script が残っている');
 if (!/var PptxGenJS\s*=/.test(pptxgen) || /sourceMappingURL/.test(pptxgen)) throw new Error('pptxgen.bundle.js の形が思っていたものと違う');
 const licenses = `/*! 入っている部品のライセンス

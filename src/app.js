@@ -208,7 +208,12 @@
     h += it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('');
     var extra = [];
     if (it.dateText) extra.push('日付：' + esc(it.dateText) + (it.end ? '（' + esc(it.end) + ' まで）' : ''));
-    if (it.valueText) extra.push('数字：' + esc(it.valueText) + (diag.unit ? '（' + esc(diag.unit) + '）' : '') + (it.note ? '\u3000' + esc(it.note) : ''));
+    if (it.values && diag.series) extra.push(diag.series.map(function (n, k) { return esc(n) + '：' + (it.values[k] == null ? '－' : esc(it.valueTexts[k]) + esc(diag.unit || '')); }).join('<br>'));
+    else if (it.valueText) extra.push('数字：' + esc(it.valueText) + (diag.unit ? '（' + esc(diag.unit) + '）' : '') + (it.note ? '\u3000' + esc(it.note) : ''));
+    if (diag.type === 'pie' || diag.type === 'donut') {
+      var tot = diag.items.reduce(function (a, x) { return a + Math.max(0, x.value); }, 0);
+      extra.push('割合：' + (tot > 0 ? Math.round(Math.max(0, it.value) / tot * 1000) / 10 : 0) + '%（合計 ' + esc(String(tot)) + esc(diag.unit || '') + '）');
+    }
     if (it.lane) extra.push('担当：' + esc(it.lane));
     if (it.cells) extra.push(diag.options.map(function (o, j) { return esc(o) + '：' + esc(it.cells[j].text || '－'); }).join('<br>'));
     if (diag.edges) {
@@ -223,13 +228,36 @@
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
+    placePanel();
   }
+  // 窓は押した所の近くに出す。下 → 上 → 右 → 左の順に、画面に入る所を選ぶ（横にならぶ箱を隠しにくい。画面の端で切れない）
+  function placePanel() {
+    var el = $('panel'), a = state.anchor, M = 12, G = 10, vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    el.style.maxHeight = Math.max(160, vh - M * 2) + 'px';
+    var w = el.offsetWidth, h = el.offsetHeight, x, y;
+    if (!a) { x = vw - w - M; y = M; }
+    else if (a.y + a.h + G + h <= vh - M) { x = a.x + a.w / 2 - w / 2; y = a.y + a.h + G; }
+    else if (a.y - G - h >= M) { x = a.x + a.w / 2 - w / 2; y = a.y - G - h; }
+    else if (a.x + a.w + G + w <= vw - M) { x = a.x + a.w + G; y = a.y + a.h / 2 - h / 2; }
+    else { x = a.x - G - w; y = a.y + a.h / 2 - h / 2; }
+    el.style.left = Math.round(Math.max(M, Math.min(x, vw - w - M))) + 'px';
+    el.style.top = Math.round(Math.max(M, Math.min(y, vh - h - M))) + 'px';
+  }
+  // 押したことの判定は、ここ1か所（2D のクリック・キーボード・3D）。あとで「動かす」と区別するのもここ
+  function press(d, i, anchor, byKey) {
+    state.anchor = anchor; state.byKey = byKey;
+    toggleItem(d, i);
+    if (byKey && !$('panel').hidden) $('panelClose').focus();
+  }
+  function anchorOf(g) { var b = (g.querySelector('.box') || g).getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; }
   // 押した箱が、いま開いている箱なら閉じる（もう1回押すと閉じる）。ほかの箱なら開く
   function toggleItem(d, i) {
     if (state.sel && state.sel.d === d && state.sel.i === i && !$('panel').hidden) closePanel(); else openItem(d, i);
   }
   function closePanel() {
+    var was = state.sel, wasOpen = !$('panel').hidden;
     $('panel').hidden = true;
+    if (wasOpen && was && state.byKey) { var g0 = document.querySelector('#dg' + was.d + ' .item[data-i="' + was.i + '"]'); if (g0) g0.focus(); }
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(null); redraw(k); } });
     Array.prototype.forEach.call(document.querySelectorAll('.item.sel'), function (e) { e.classList.remove('sel'); });
     state.sel = null;
@@ -254,7 +282,7 @@
     try {
       doc.diagrams.forEach(function (d, i) {
         var box = $('dg' + i), svg = box.querySelector('.svg-wrap svg');
-        var sc = D3.create(d, svg, { onPick: function (it) { toggleItem(i, it); } });
+        var sc = D3.create(d, svg, { onPick: function (it, e) { if (it == null) closePanel(); else press(i, it, { x: e.clientX, y: e.clientY, w: 0, h: 0 }, false); } });
         var wrap = document.createElement('div'), scroll = document.createElement('div');
         wrap.className = 'view3d'; scroll.className = 'v3scroll';
         // 画面の形は、3D で見たときの図の形に合わせる（高さ 280〜620px）。文字が 11px を下まわるなら、形を保って大きくし、横へ動かして見る
@@ -403,6 +431,16 @@
   // ---- 印刷（PDF）用のページ。いつも作っておく（Ctrl+P でも同じものが出る） ----
   // 箱の説明と出どころ（PDF と PowerPoint で同じもの）
   function noteText(l) { return l.code ? l.code.join('\n') : l.text; }
+  // PowerPoint のグラフに渡す数字（縦棒の chart は、今までどおり図形で描く）
+  function chartData(d) {
+    if (!/^(pie|donut|line|hbar|stacked)$/.test(d.type)) return null;
+    var many = d.type === 'line' || d.type === 'stacked';
+    return { type: d.type, unit: d.unit || '', labels: d.items.map(function (it) { return it.label; }),
+      colors: d.type === 'hbar' ? [R.COLORS.accent] : R.PAL,
+      series: many ? d.series.map(function (n, k) { return { name: n, values: d.items.map(function (it) { return it.values[k]; }) }; })
+        : [{ name: d.name || P.TYPES[d.type].label, values: d.items.map(function (it) { return Math.max(d.type === 'hbar' ? -Infinity : 0, it.value); }) }] };
+  }
+
   function noteBlocks(doc) {
     var notes = [], seen = {};
     doc.diagrams.forEach(function (d) {
@@ -548,7 +586,7 @@
           tmp.innerHTML = legendItems(doc, [d]).join('\u3000');
           var sc = state.scenes[i];
           return { name: d.name || P.TYPES[d.type].label, svg: R.svg(d, i, { fs: 15, today: td, hasNote: hn }), legend: tmp.textContent.replace('（押すと出る）', ''),
-            capture: sc ? sc.capture(1200, 675) : null };   // 3D は今の向きで撮りなおす（WebGL がないときは絵なし）
+            capture: sc ? sc.capture(1200, 675) : null, chart: chartData(d) };   // 3D は今の向きで撮りなおす（WebGL がないときは絵なし）
         }),
         notes: noteBlocks(doc),
         body: bodyBlocks(doc)
@@ -569,11 +607,19 @@
   });
   $('diagrams').addEventListener('click', function (e) {
     var g = e.target.closest && e.target.closest('.item');
-    if (g) toggleItem(+g.getAttribute('data-d'), +g.getAttribute('data-i'));
+    if (g) press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), false);
   });
+  // 窓の外を押したら閉じる（箱・3D の絵を押したときは、それぞれの判定にまかせる）
+  document.addEventListener('pointerdown', function (e) {
+    if ($('panel').hidden || present.on) return;
+    var t = e.target;
+    if ($('panel').contains(t) || (t.closest && (t.closest('.item') || t.closest('.view3d')))) return;
+    closePanel();
+  }, true);
+  window.addEventListener('resize', function () { if (!$('panel').hidden) placePanel(); });
   $('diagrams').addEventListener('keydown', function (e) {
     var g = e.target.closest && e.target.closest('.item');
-    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleItem(+g.getAttribute('data-d'), +g.getAttribute('data-i')); }
+    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), true); }
   });
   $('panelClose').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) {

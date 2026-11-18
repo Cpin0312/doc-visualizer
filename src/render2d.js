@@ -404,6 +404,131 @@
     return wrapSvg(width, height, body, 'chart');
   }
 
+  // ---- グラフ（円・ドーナツ・折れ線・横棒・積み上げ） ----
+  // となり同士がまぎれない色の並び（色の見分けにくい人にも分かるよう、明るさも変える）
+  var PAL = ['#3b6fd8', '#e08a2e', '#2f9e5b', '#d64545', '#8e5cc4', '#1b9aaa', '#c98f00', '#7a8699'];
+  function pal(k) { return PAL[k % PAL.length]; }
+  function unitText(diag, fs) { return diag.unit ? '<text x="8" y="' + r(fs * 1.2) + '" font-size="' + r(Math.max(11, fs * 0.85)) + '" fill="' + C.sub + '">（' + esc(diag.unit) + '）</text>' : ''; }
+  function legendRows(names, x, y, fs) {
+    var f = Math.max(11, Math.round(fs * 0.85)), out = '';
+    names.forEach(function (n, k) {
+      out += '<rect x="' + r(x) + '" y="' + r(y + k * f * 1.7 - f * 0.45) + '" width="' + r(f * 0.9) + '" height="' + r(f * 0.9) + '" rx="2" fill="' + pal(k) + '"/>' +
+        textEl([n], x + f * 1.4, y + k * f * 1.7, f, { anchor: 'start' });
+    });
+    return out;
+  }
+  function pctText(v, total) { return total > 0 ? (Math.round(v / total * 1000) / 10) + '%' : '0%'; }
+
+  function pie(diag, d, opts, donut) {
+    var fs = opts.fs, items = diag.items, R0 = fs * 9, inner = donut ? R0 * 0.56 : 0;
+    var total = items.reduce(function (a, it) { return a + Math.max(0, it.value); }, 0);
+    var f = Math.max(11, Math.round(fs * 0.9)), cx = 24 + R0, cy = fs * 2.4 + R0;
+    var rows = items.map(function (it) { return wrap(it.label, f, fs * 9, 1)[0] + '　' + it.valueText + (diag.unit || '') + '（' + pctText(Math.max(0, it.value), total) + '）'; });
+    var lx = cx + R0 + fs * 2.4, rowH = f * 1.9;
+    var width = lx + Math.max.apply(null, rows.map(function (t) { return tw(t, f); }).concat([0])) + f * 2 + 20;
+    var height = Math.max(cy + R0 + fs * 1.6, fs * 2.4 + items.length * rowH + fs);
+    var body = unitText(diag, fs), a0 = -Math.PI / 2;
+    items.forEach(function (it, i) {
+      var v = Math.max(0, it.value), a1 = a0 + (total > 0 ? v / total : 0) * Math.PI * 2, k = strongest(it);
+      var n = Math.max(2, Math.ceil((a1 - a0) / (Math.PI / 45))), pts = [], j;
+      for (j = 0; j <= n; j++) { var a = a0 + (a1 - a0) * j / n; pts.push([cx + Math.cos(a) * R0, cy + Math.sin(a) * R0]); }
+      if (inner) for (j = n; j >= 0; j--) { var b = a0 + (a1 - a0) * j / n; pts.push([cx + Math.cos(b) * inner, cy + Math.sin(b) * inner]); }
+      else pts.push([cx, cy]);
+      var dd = 'M' + pts.map(function (p) { return r(p[0]) + ' ' + r(p[1]); }).join(' L') + ' Z';
+      var mid = (a0 + a1) / 2, lr = inner ? (R0 + inner) / 2 : R0 * 0.62, ly = fs * 2.4 + i * rowH + f;
+      body += itemOpen(d, it) +
+        '<path class="box" d="' + dd + '" fill="' + pal(i) + '" stroke="#fff" stroke-width="2"' + (k ? ' stroke-dasharray="0"' : '') + '/>' +
+        (a1 - a0 > 0.35 ? textEl([pctText(v, total)], cx + Math.cos(mid) * lr, cy + Math.sin(mid) * lr, f, { bold: true, fill: '#fff' }) : '') +
+        '<rect x="' + r(lx) + '" y="' + r(ly - f * 0.45) + '" width="' + r(f * 0.9) + '" height="' + r(f * 0.9) + '" rx="2" fill="' + pal(i) + '"/>' +
+        textEl([rows[i]], lx + f * 1.4, ly, f, { anchor: 'start', fill: k ? MARK_COLOR[k] : C.text, bold: !!k }) +
+        (info(it, opts) ? cornerDot(lx + f * 1.4 + tw(rows[i], f) + 14, ly - f * 0.6) : '') + '</g>';
+      a0 = a1;
+    });
+    if (donut) body += textEl(['合計', fmt(total) + (diag.unit || '')], cx, cy, Math.max(11, Math.round(fs * 1.1)), { bold: true });
+    return wrapSvg(width, height, body, donut ? 'donut' : 'pie');
+  }
+
+  function hbar(diag, d, opts) {
+    var fs = opts.fs, items = diag.items, f = Math.max(11, Math.round(fs * 0.9));
+    var vmax = Math.max.apply(null, items.map(function (i) { return i.value; }).concat([0]));
+    var vmin = Math.min.apply(null, items.map(function (i) { return i.value; }).concat([0]));
+    var step = niceStep(vmax - vmin || 1), top = Math.ceil(vmax / step) * step, bot = Math.floor(vmin / step) * step;
+    if (top === bot) top = bot + step;
+    var labs = items.map(function (it) { return wrap(it.label, f, fs * 14, 2); });
+    var labW = Math.max.apply(null, labs.map(function (l) { return textW(l, f); }).concat([fs * 3])) + 20;
+    var plotW = fs * 30, valW = Math.max.apply(null, items.map(function (it) { return tw(it.valueText, f, true); }).concat([0])) + 16;
+    var rowH = fs * 2.6, padTop = fs * 2.6, X = function (v) { return labW + (v - bot) / (top - bot) * plotW; };
+    var width = labW + plotW + valW + 20, height = padTop + items.length * rowH + fs * 2.4, body = unitText(diag, fs);
+    for (var v = bot; v <= top + step / 2; v += step) {
+      body += '<line x1="' + r(X(v)) + '" x2="' + r(X(v)) + '" y1="' + r(padTop - 6) + '" y2="' + r(padTop + items.length * rowH) + '" stroke="' + (v === 0 ? C.line : C.grid) + '"/>' +
+        '<text x="' + r(X(v)) + '" y="' + r(padTop + items.length * rowH + fs) + '" font-size="' + r(Math.max(11, fs * 0.8)) + '" text-anchor="middle" dominant-baseline="central" fill="' + C.sub + '">' + esc(fmt(v)) + '</text>';
+    }
+    items.forEach(function (it, i) {
+      var k = strongest(it), y = padTop + i * rowH + rowH * 0.18, h = rowH * 0.64;
+      var x1 = X(Math.min(it.value, 0)), x2 = X(Math.max(it.value, 0)), w = Math.max(x2 - x1, 1.5);
+      body += itemOpen(d, it) +
+        '<rect class="box" x="' + r(x1) + '" y="' + r(y) + '" width="' + r(w) + '" height="' + r(h) + '" rx="4" fill="' + (k ? MARK_COLOR[k] : C.accent) + '" opacity="0.9"/>' +
+        (info(it, opts) ? cornerDot(x1 + w, y) : '') +
+        textEl(labs[i], labW - 10, y + h / 2, f, { anchor: 'end' }) +
+        textEl([it.valueText], (it.value >= 0 ? x2 + 8 : x1 - 8), y + h / 2, f, { anchor: it.value >= 0 ? 'start' : 'end', bold: true }) + '</g>';
+    });
+    return wrapSvg(width, height, body, 'hbar');
+  }
+
+  // 折れ線と積み上げ：横は項目、縦は数字。系列ごとに色
+  function series(diag, d, opts, stacked) {
+    var fs = opts.fs, items = diag.items, f = Math.max(11, Math.round(fs * 0.9)), ns = diag.series.length;
+    var tops = items.map(function (it) { return stacked ? it.values.reduce(function (a, v) { return a + Math.max(0, v || 0); }, 0) : Math.max.apply(null, it.values.map(function (v) { return v == null ? -Infinity : v; })); });
+    var lows = items.map(function (it) { return stacked ? 0 : Math.min.apply(null, it.values.map(function (v) { return v == null ? Infinity : v; })); });
+    var vmax = Math.max.apply(null, tops.concat([0])), vmin = Math.min.apply(null, lows.concat([0]));
+    var step = niceStep(vmax - vmin || 1), top = Math.ceil(vmax / step) * step, bot = Math.floor(vmin / step) * step;
+    if (top === bot) top = bot + step;
+    var plotH = fs * 18, padTop = fs * 3.2, axisW = Math.max(tw(fmt(top), Math.max(11, fs * 0.8)), tw(fmt(bot), Math.max(11, fs * 0.8))) + 24;
+    var cats = items.map(function (it) { return wrap(it.label, f, fs * 6, 2); });
+    var colW = Math.max.apply(null, cats.map(function (l) { return textW(l, f); }).concat([fs * 3.4])) + fs * 1.4;
+    var Y = function (v) { return padTop + (top - v) / (top - bot) * plotH; };
+    var plotRight = axisW + items.length * colW, lx = plotRight + fs * 1.6;
+    var legW = Math.max.apply(null, diag.series.map(function (n) { return tw(n, f); }).concat([0])) + f * 1.4 + 20;
+    var width = lx + (ns > 1 ? legW : 0) + 10, height = Math.max(padTop + plotH + fs * 4.2, padTop + ns * f * 1.7 + fs);
+    var body = unitText(diag, fs);
+    for (var v = bot; v <= top + step / 2; v += step) {
+      body += '<line x1="' + r(axisW) + '" x2="' + r(plotRight) + '" y1="' + r(Y(v)) + '" y2="' + r(Y(v)) + '" stroke="' + (v === 0 ? C.line : C.grid) + '"' + (v === 0 ? ' stroke-width="1.5"' : '') + '/>' +
+        '<text x="' + r(axisW - 8) + '" y="' + r(Y(v)) + '" font-size="' + r(Math.max(11, fs * 0.8)) + '" text-anchor="end" dominant-baseline="central" fill="' + C.sub + '">' + esc(fmt(v)) + '</text>';
+    }
+    if (ns > 1) body += legendRows(diag.series, lx, padTop + f * 0.5, fs);
+    var cxOf = function (i) { return axisW + i * colW + colW / 2; };
+    if (!stacked) {
+      // 線は系列ごとに1本。欠け（-）のところで切る
+      for (var k = 0; k < ns; k++) {
+        var dd = '', pen = false;
+        items.forEach(function (it, i) { var y = it.values[k]; if (y == null) { pen = false; return; } dd += (pen ? ' L' : ' M') + r(cxOf(i)) + ' ' + r(Y(y)); pen = true; });
+        if (dd) body += '<path class="sline" d="' + dd.trim() + '" fill="none" stroke="' + pal(k) + '" stroke-width="3" stroke-linejoin="round"/>';
+      }
+    }
+    items.forEach(function (it, i) {
+      var cx = cxOf(i), mk = strongest(it), g = itemOpen(d, it), first = true, acc = 0, bw = colW * 0.56;
+      it.values.forEach(function (y, k) {
+        if (y == null) return;
+        if (stacked) {
+          var yv = Math.max(0, y), y1 = Y(acc + yv), y2 = Y(acc);
+          g += '<rect class="seg' + (first ? ' box' : '') + '" x="' + r(cx - bw / 2) + '" y="' + r(y1) + '" width="' + r(bw) + '" height="' + r(Math.max(y2 - y1, 1)) + '" fill="' + pal(k) + '"/>';
+          if (y2 - y1 > f * 1.3) g += textEl([it.valueTexts[k]], cx, (y1 + y2) / 2, f, { fill: '#fff', bold: true });
+          acc += yv;
+        } else {
+          var s = f * 0.8;
+          g += '<rect class="' + (first ? 'box ' : '') + 'pt" x="' + r(cx - s / 2) + '" y="' + r(Y(y) - s / 2) + '" width="' + r(s) + '" height="' + r(s) + '" rx="' + r(s / 2) + '" fill="#fff" stroke="' + pal(k) + '" stroke-width="2.5"/>';
+          if (ns === 1) g += textEl([it.valueTexts[k]], cx, Y(y) - f * 1.1, f, { bold: true });
+        }
+        first = false;
+      });
+      if (stacked) g += textEl([fmt(acc)], cx, Y(acc) - f * 0.9, f, { bold: true });
+      g += textEl(cats[i], cx, padTop + plotH + fs * 1.6 + (cats[i].length - 1) * fs * 0.58, f, { fill: mk ? MARK_COLOR[mk] : C.text, bold: !!mk });
+      if (info(it, opts)) g += cornerDot(cx + bw / 2, padTop + plotH + fs * 0.6);
+      body += g + '</g>';
+    });
+    return wrapSvg(width, height, body, stacked ? 'stacked' : 'line');
+  }
+
   // ---- 大事な数字（カード） ----
   function kpi(diag, d, opts) {
     var fs = opts.fs, items = diag.items, per = Math.min(items.length, items.length > 4 ? (items.length === 6 ? 3 : 4) : items.length);
@@ -479,11 +604,16 @@
       case 'timeline': return timeline(diag, d, opts);
       case 'tree': return tree(diag, d, opts);
       case 'chart': return chart(diag, d, opts);
+      case 'pie': return pie(diag, d, opts, false);
+      case 'donut': return pie(diag, d, opts, true);
+      case 'hbar': return hbar(diag, d, opts);
+      case 'line': return series(diag, d, opts, false);
+      case 'stacked': return series(diag, d, opts, true);
       case 'kpi': return kpi(diag, d, opts);
       case 'compare': return compare(diag, d, opts);
     }
     return '';
   }
 
-  root.DocRender = { svg: svg, uniq: uniq, esc: esc, FONT: FONT, COLORS: C };
+  root.DocRender = { svg: svg, uniq: uniq, esc: esc, FONT: FONT, COLORS: C, PAL: PAL };
 })(typeof window !== 'undefined' ? window : this);

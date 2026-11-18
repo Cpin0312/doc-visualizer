@@ -17,5 +17,8 @@ for s in p.slides:
         'cust': sum('custGeom' in x for x in xml), 'arrows': sum('tailEnd' in x for x in xml),
         'pics': sum(1 for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE),
         'secret': any(sh.name == 'secret' for sh in s.shapes),
+        'charts': [{'type': str(sh.chart.chart_type).split(' ')[0], 'cats': [str(c) for c in sh.chart.plots[0].categories],
+                    'series': [[se.name, list(se.values)] for se in sh.chart.plots[0].series],
+                    'font': 'Yu Gothic UI' in sh.chart.part.blob.decode('utf8', 'ignore')} for sh in s.shapes if sh.has_chart],
     })
 print(json.dumps(out, ensure_ascii=False))
