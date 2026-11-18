@@ -881,6 +881,46 @@
     return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').map(function (x) { return nk(x); }).join('>') === e.pk; });
   }
   // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
+  // ---- 図ごとの操作（R8d-2）：コードブロックの全体（開きから閉じまで）を、まとめて動かす・複製する・消す ----
+  // layout は「種類＋名前」が同じ図の中では順番でつながるので、新しい図の順に並べ直す。seq は新しい順の（元の）図
+  function relayout(text, doc, seq) {
+    if (!doc.layout) return text;
+    var src = doc.layout.diagrams, used = {}, out = [];
+    doc.diagrams.forEach(function (d) { if (d.layoutIndex != null) used[d.layoutIndex] = 1; });
+    seq.forEach(function (d) { if (d.layoutIndex != null && src[d.layoutIndex]) out.push(JSON.parse(JSON.stringify(src[d.layoutIndex]))); });
+    src.forEach(function (L, k) { if (!used[k]) out.push(L); });   // どの図にもつながらない分は、そのまま後ろに残す
+    var obj = JSON.parse(JSON.stringify(doc.layout)); obj.diagrams = out;
+    return writeLayout(text, parseDoc(text), obj);
+  }
+  function blockOf(doc, di) {
+    var d = doc.diagrams[di];
+    if (!d) throw new Error('その図がない');
+    if (!d.end) throw new Error('図の終わり（~~~）がないので、まとめて動かせない');
+    return d;
+  }
+  function moveDiagram(text, doc, di, dir) {
+    var dj = di + (dir < 0 ? -1 : 1), a = blockOf(doc, Math.min(di, dj)), b = doc.diagrams[Math.max(di, dj)];
+    if (dj < 0 || !b) throw new Error(dir < 0 ? 'いちばん上の図です' : 'いちばん下の図です');
+    blockOf(doc, Math.max(di, dj));
+    var t = splitText(text), L = t.lines;
+    var A = L.slice(a.line - 1, a.end), mid = L.slice(a.end, b.line - 1), B = L.slice(b.line - 1, b.end);
+    t.lines = L.slice(0, a.line - 1).concat(B, mid, A, L.slice(b.end));
+    var seq = doc.diagrams.slice(), lo = Math.min(di, dj); seq.splice(lo, 2, seq[lo + 1], seq[lo]);
+    return relayout(joinText(t), doc, seq);
+  }
+  function duplicateDiagram(text, doc, di) {
+    var d = blockOf(doc, di), t = splitText(text);
+    t.lines.splice.apply(t.lines, [d.end, 0, ''].concat(t.lines.slice(d.line - 1, d.end)));
+    var seq = doc.diagrams.slice(); seq.splice(di + 1, 0, d);
+    return relayout(joinText(t), doc, seq);
+  }
+  function removeDiagram(text, doc, di) {
+    var d = blockOf(doc, di), t = splitText(text), s0 = d.line - 1, n = d.end - s0;
+    if (s0 > 0 && t.lines[s0 - 1] === '' && t.lines[d.end] === '') n++;   // 前後の空行が2つ続かないように、後ろの1つも消す
+    t.lines.splice(s0, n);
+    var seq = doc.diagrams.slice(); seq.splice(di, 1);
+    return relayout(joinText(t), doc, seq);
+  }
   function writeLayout(text, doc, obj) {
     text = String(text);
     var bom = text.charCodeAt(0) === 0xFEFF ? '\uFEFF' : '', body = bom ? text.slice(1) : text;
@@ -999,6 +1039,6 @@
     };
   }
 
-  var api = { setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

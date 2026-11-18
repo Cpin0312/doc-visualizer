@@ -126,6 +126,12 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 /* R8b-3：名前を直す入力欄（箱の上に重ねる） */
 input.rename { position: fixed; z-index: 80; font: inherit; font-size: 1rem; padding: 6px 8px; border: 2px solid #3b6fd8; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
 button.act { font: inherit; font-size: 0.8rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+details.dg-menu { display: inline-block; position: relative; margin-left: 8px; font-size: 0.75rem; font-weight: normal; }
+details.dg-menu > summary { list-style: none; cursor: pointer; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+details.dg-menu > summary::-webkit-details-marker { display: none; }
+.dg-acts { position: absolute; z-index: 5; left: 0; top: calc(100% + 4px); display: flex; gap: 4px; padding: 6px; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.12); white-space: nowrap; }
+.dg-acts button { font: inherit; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+@media print { details.dg-menu { display: none; } }
 button.add-box { font: inherit; font-size: 0.75rem; margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
 p.acts { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 button.act[aria-pressed="true"] { background: #e8f0fe; border-color: #3b6fd8; font-weight: 600; }

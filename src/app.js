@@ -143,7 +143,10 @@
     $('diagrams').innerHTML = doc.diagrams.map(function (d, i) {
       return '<section class="diagram-box" id="dg' + i + '"><h2>' + esc(d.name || P.TYPES[d.type].label) + '<span class="kind">' + esc(P.TYPES[d.type].label) + '・' + d.items.length + '</span>' +
         (P.EDITABLE[d.type] ? '<button type="button" class="add-box" data-d="' + i + '">＋ 箱</button>' : '') +
-        (P.MOVABLE[d.type] ? '<button type="button" class="reset-layout" data-d="' + i + '"' + (hasLayout(d) ? '' : ' hidden') + '>元の配置に戻す</button>' : '') + '</h2>' +
+        (P.MOVABLE[d.type] ? '<button type="button" class="reset-layout" data-d="' + i + '"' + (hasLayout(d) ? '' : ' hidden') + '>元の配置に戻す</button>' : '') +
+        '<details class="dg-menu"><summary aria-label="図「' + esc(d.name || P.TYPES[d.type].label) + '」の操作">…</summary><div class="dg-acts">' +
+        (i > 0 ? '<button type="button" data-dg="up" data-d="' + i + '">上へ</button>' : '') + (i < doc.diagrams.length - 1 ? '<button type="button" data-dg="down" data-d="' + i + '">下へ</button>' : '') +
+        '<button type="button" data-dg="dup" data-d="' + i + '">複製</button><button type="button" data-dg="del" data-d="' + i + '">消す</button></div></details></h2>' +
         '<div class="svg-wrap' + (P.MOVABLE[d.type] ? ' movable' : '') + '">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
     }).join('');
     Array.prototype.forEach.call(document.querySelectorAll('.svg-wrap'), fitWide);
@@ -1104,11 +1107,30 @@
       else showError('コピーできませんでした。copilot-prompt.md を開いて、中身をコピーしてください。');
     });
   });
+  // 図ごとの操作（R8d-2）。どれも Ctrl+Z の1回で元どおり
+  function closeMenus(keep) { Array.prototype.forEach.call(document.querySelectorAll('details.dg-menu[open]'), function (m) { if (m !== keep) m.open = false; }); }
+  document.addEventListener('pointerdown', function (e) { closeMenus(e.target.closest && e.target.closest('details.dg-menu')); }, true);
+  document.addEventListener('keydown', function (e) { var m = e.key === 'Escape' && document.querySelector('details.dg-menu[open]'); if (m) { m.open = false; var sm = m.querySelector('summary'); if (sm) sm.focus(); } }, true);
+  function diagramAct(di, act) {
+    var d = state.doc.diagrams[di], nm = d && (d.name || P.TYPES[d.type].label), text;
+    if (!d) return;
+    if (act === 'del' && !window.confirm('図「' + nm + '」（' + d.items.length + ' こ）を、md から中身ごと消しますか？（Ctrl+Z で戻せます）')) return;
+    try {
+      text = act === 'up' ? P.moveDiagram(state.text, state.doc, di, -1) : act === 'down' ? P.moveDiagram(state.text, state.doc, di, 1) :
+        act === 'dup' ? P.duplicateDiagram(state.text, state.doc, di) : P.removeDiagram(state.text, state.doc, di);
+    } catch (er) { showError('図を' + { up: '上へ動かせ', down: '下へ動かせ', dup: '複製でき', del: '消せ' }[act] + 'ませんでした：' + er.message + '。md は前のままです。'); return; }
+    applyText(text, true);
+    var to = act === 'up' ? di - 1 : act === 'down' ? di + 1 : act === 'dup' ? di + 1 : Math.min(di, state.doc.diagrams.length - 1), box = $('dg' + to);
+    if (box) { box.scrollIntoView({ block: 'nearest' }); var sm = box.querySelector('.dg-menu summary'); if (sm) sm.focus(); }
+    toast({ up: '図を上へ動かしました', down: '図を下へ動かしました', dup: '図を複製しました', del: '図「' + nm + '」を消しました' }[act] + '（Ctrl+Z で戻せます）', 2500);
+  }
   $('diagrams').addEventListener('pointerdown', startDrag2);
   $('diagrams').addEventListener('click', function (e) {
     if (swallowClick) { swallowClick = false; return; }
     var rb = e.target.closest && e.target.closest('.reset-layout');
     if (rb) { setLayout(+rb.getAttribute('data-d'), null, null); toast('元の配置に戻しました（Ctrl+Z で取り消せます）', 2500); return; }
+    var mb = e.target.closest && e.target.closest('[data-dg]');
+    if (mb) { diagramAct(+mb.getAttribute('data-d'), mb.getAttribute('data-dg')); return; }
     var nb = e.target.closest && e.target.closest('.add-box');
     if (nb) {
       var nd = +nb.getAttribute('data-d'), r;

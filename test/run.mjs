@@ -977,6 +977,34 @@ async function savePptx(T, md, tag) {
   const crlf = '\uFEFF~~~flow\r\nA -> B -> C\r\n~~~\r\n', dc = P.parseDoc(crlf);
   ok('消す：BOM と CRLF をそのまま残す', P.removeItem(crlf, dc, 0, 1) === '\uFEFF~~~flow\r\nA\r\nC\r\n~~~\r\n');
 }
+// R8d-2：図ごとの操作（上へ・下へ・複製・消す）。コードブロックの全体を動かし、ほかの行は同じ。layout も図についていく。Ctrl+Z の1回で元どおり
+{
+  let mg = '# 図の操作\n\n~~~flow 一\nx -> y\n~~~\n\n本文の行\n\n~~~flow 二\np -> q\n~~~\n';
+  mg = P.writeLayout(mg, P.parseDoc(mg), { v: 1, diagrams: [{ type: 'flow', name: '一', parts: { x: { x: 11, y: 11 } } }, { type: 'flow', name: '二', parts: { p: { x: 22, y: 22 } } }] });
+  const G = P.parseDoc(mg), sum = t => P.parseDoc(t).diagrams.map(d => d.name + ':' + d.items[0].label + ':' + JSON.stringify(d.layout)).join(' | ');
+  const up = P.moveDiagram(mg, G, 1, -1), du = P.duplicateDiagram(mg, G, 0), rm = P.removeDiagram(mg, G, 0);
+  ok('図の操作（関数）：上へで2つのブロックが入れかわり、間の本文はそのまま。往復で元の md に1文字も違わず戻る', sum(up) === '二:p:{"p":{"x":22,"y":22}} | 一:x:{"x":{"x":11,"y":11}}' && up.includes('~~~\n\n本文の行\n\n~~~flow 一') && P.moveDiagram(up, P.parseDoc(up), 0, 1) === mg, sum(up));
+  ok('図の操作（関数）：複製は同じ中身と置き場所で、すぐ後ろに。消すと layout からもその図の分が消え、空行が2つ続かない', sum(du) === '一:x:{"x":{"x":11,"y":11}} | 一:x:{"x":{"x":11,"y":11}} | 二:p:{"p":{"x":22,"y":22}}' && sum(rm) === '二:p:{"p":{"x":22,"y":22}}' && rm.startsWith('# 図の操作\n\n本文の行\n\n~~~flow 二') && (() => { try { P.moveDiagram(mg, G, 0, -1); return false; } catch (e) { return true; } })(), JSON.stringify(rm.slice(0, 40)));
+  const fg = join(out, 'r8d2_dg.md'); writeFileSync(fg, mg);
+  await pick(fg); await waitFor(`document.getElementById('status').textContent.includes('r8d2_dg.md')`);
+  if (await B.evalJs('DocVisualizer.mode()') === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  await B.evalJs('window.confirm = () => true');
+  const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+  await clickAt('#dg1 .dg-menu summary'); await sleep(200);
+  const shown = await B.evalJs(`!!document.querySelector('#dg1 .dg-menu[open] [data-dg=up]') && !document.querySelector('#dg1 [data-dg=down]')`);
+  await clickAt('#dg1 [data-dg=up]'); await sleep(400);
+  const h0 = await B.evalJs(`document.querySelector('#dg0 h2').firstChild.textContent`), t1 = await T();
+  ok('図の操作（画面）：「…」→「上へ」で図が上に動き、md もその順になる（いちばん下の図に「下へ」は出ない）', shown && h0 === '二' && t1 === P.moveDiagram(mg, G, 1, -1), JSON.stringify({ shown, h0 }));
+  await undo(); ok('図の操作（画面）：上へは Ctrl+Z の1回で元どおり', (await T()) === mg);
+  await clickAt('#dg0 .dg-menu summary'); await sleep(200); const op1 = await B.evalJs(`document.querySelector('#dg0 .dg-menu').open`);
+  await keyPress('Escape', 'Escape', 27); await sleep(200); const op2 = await B.evalJs(`document.querySelector('#dg0 .dg-menu').open`);
+  await clickAt('#dg0 .dg-menu summary'); await sleep(200); await clickAt('#dg1 .svg-wrap'); await sleep(200); const op3 = await B.evalJs(`document.querySelector('#dg0 .dg-menu').open`);
+  ok('図の操作（画面）：「…」は Esc でも、外を押しても閉じる', op1 === true && op2 === false && op3 === false, JSON.stringify([op1, op2, op3]));
+  await clickAt('#dg0 .dg-menu summary'); await sleep(200); await clickAt('#dg0 [data-dg=del]'); await sleep(400);
+  const t2 = await T(), n2 = await B.evalJs(`document.querySelectorAll('.diagram-box').length`);
+  ok('図の操作（画面）：「消す」で図が中身ごと消える（確かめのあと）', t2 === rm && n2 === 1, String(n2));
+  await undo(); ok('図の操作（画面）：消すのも Ctrl+Z の1回で元どおり', (await T()) === mg);
+}
 // R8b-3：画面から md を書きかえる（＋ 箱・印・線を引く・消す・担当・帯をまたぐドラッグ）。どれも Ctrl+Z の1回で元に戻る
 {
   const mdl = ['# R8b-3 画面', '', '~~~lanes 帯', '[営業] 受付 -> 確認', '[経理] 請求 -> 入金', '~~~', ''].join('\n');
