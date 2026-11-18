@@ -892,6 +892,31 @@ async function savePptx(T, md, tag) {
   ok('PowerPoint：形を変えた箱は PowerPoint の形（六角形）、両方の矢印は先と元の両方に矢じり', AU.includes('HEXAGON') && heads >= 1, AU.join(' ') + ' heads=' + heads);
   if (m0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
 }
+// R8b-3：名前を直す（2回押す → 入力欄 → Enter）。全部の出どころと ## 見出しが変わり、ほかの行は変わらない。Ctrl+Z で戻る
+{
+  const mdr = ['# R8b-3', '', '~~~flow 流れ', '受付 -> 確認 -> 受付', '受付 -> 出荷 : 発送', '~~~', '', '## 受付', '電話で受ける。', ''].join('\n');
+  const fr = join(out, 'r8b3.md'); writeFileSync(fr, mdr);
+  await pick(fr); await waitFor(`document.getElementById('status').textContent.includes('r8b3.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const c = await B.evalJs(`(() => { const b = document.querySelector('#dg0 .item[aria-label="受付"] .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  for (const n of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: c.x, y: c.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: n });
+  const inp = await waitFor(`document.querySelector('input.rename') && document.activeElement === document.querySelector('input.rename') && document.querySelector('input.rename').value`, 2000);
+  await B.evalJs(`document.querySelector('input.rename').value = '窓口の受付'`);
+  await keyPress('Enter', 'Enter', 13); await sleep(400);
+  const tr = await B.evalJs('DocVisualizer.text()'), L0 = mdr.split('\n'), L1 = tr.split('\n');
+  const changed = L1.map((l, k) => l !== L0[k] ? k + 1 : 0).filter(Boolean);
+  const boxes = await B.evalJs(`Array.from(document.querySelectorAll('#dg0 .item')).map(g => g.getAttribute('aria-label')).join()`);
+  ok('名前を直す：2回押すと入力欄。Enter で、3つの出どころと見出しが変わり、ほかの行は1文字も変わらない', inp === '受付' && L1[3] === '窓口の受付 -> 確認 -> 窓口の受付' && L1[4] === '窓口の受付 -> 出荷 : 発送' && L1[7] === '## 窓口の受付' && changed.join() === '4,5,8' && L1.length === L0.length && boxes === '窓口の受付,確認,出荷', JSON.stringify({ inp, changed, boxes }));
+  let refused = '';
+  try { P.renameItem(tr, P.parseDoc(tr), 0, 0, 'A： B'); } catch (e) { refused = e.message; }
+  ok('名前を直す：図の書き方の記号（全角の ：！ も）は受け付けず、理由を出す', /：|:/.test(refused) && /使えません/.test(refused) && P.badInName('A！B').length === 1 && P.badInName('A -> B').length === 1 && !P.badInName('窓口の受付（本店）').length, refused);
+  const mods = process.platform === 'darwin' ? 4 : 2;
+  for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods });
+  await sleep(400);
+  ok('名前を直す：Ctrl+Z で md が1文字も違わず元に戻る', (await B.evalJs('DocVisualizer.text()')) === mdr && (await B.evalJs(`!!document.querySelector('#dg0 .item[aria-label="受付"]')`)));
+  if (m0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

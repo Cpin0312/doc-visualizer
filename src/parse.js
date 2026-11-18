@@ -651,12 +651,13 @@
     return { bom: bom, eol: /\r\n/.test(body) ? '\r\n' : /\r/.test(body) ? '\r' : '\n', lines: body.split(/\r\n|\r|\n/) };
   }
   function joinText(t) { return t.bom + t.lines.join(t.eol); }
-  // 図の書き方とまちがわれる記号は全角に直す
-  function safeName(name) {
-    var t = trim(String(name || '').replace(/[\r\n]+/g, ' '));
-    t = t.replace(/->/g, '－＞').replace(/=>/g, '＝＞').replace(/[:!?+\[\]|@]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); });
-    t = t.replace(/^[(<\/]/, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); }).replace(/[)>\/]$/, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0xFEE0); });
-    return t;
+  // 名前は1行に。図の書き方とまちがわれる記号は使えない（全角も同じに読むので、全角に直しても逃げられない）
+  function safeName(name) { return trim(String(name || '').replace(/[\r\n]+/g, ' ')); }
+  function badInName(name) {
+    var n = String(name).normalize('NFKC'), bad = [];
+    if (RE_ARROW.test(n)) bad.push('矢印（->）');
+    (n.match(/[:!?+\[\]|@#]/g) || []).forEach(function (c) { if (bad.indexOf(c) < 0) bad.push(c); });
+    return bad;
   }
   // 1行の中の [start, end) を、右から順に置きかえる
   function replaceSpans(t, spans) {
@@ -684,6 +685,8 @@
     var d = doc.diagrams[di], it = d && d.items[id], nn = safeName(name);
     if (!it) throw new Error('箱が見つからない');
     if (!nn) throw new Error('名前が空');
+    var bad = badInName(nn);
+    if (bad.length) throw new Error('名前に ' + bad.join(' ') + ' は使えません（図の書き方とまちがわれるため）');
     if (!it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の名前の場所が md の中で分からない');
     var t = splitText(text);
     replaceSpans(t, it.spans.map(function (sp) { return { line: sp.line, start: sp.start, end: sp.end, text: nn }; }));
@@ -755,6 +758,6 @@
     };
   }
 
-  var api = { writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -133,8 +133,11 @@
     var old = state.doc;
     if (pushUndo && !(merge && state.undo.length)) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); }
     if (pushUndo) state.redo = [];
+    var oldText = state.text;
     state.text = text; state.doc = doc;
-    if (doc.diagrams.length !== old.diagrams.length) { render(); return true; }
+    // layout の区画のほかが変わった（名前・印・行を直した）ときは、全部を描き直す
+    var bare = function (t, dc) { try { return P.writeLayout(t, dc, null); } catch (e) { return t; } };
+    if (doc.diagrams.length !== old.diagrams.length || bare(text, doc) !== bare(oldText, old)) { closePanel(); render(); return true; }
     var changed = false;
     doc.diagrams.forEach(function (d, i) { if (JSON.stringify(d.layout || null) !== JSON.stringify(old.diagrams[i].layout || null)) { redrawDiagram(i); changed = true; } });
     if (changed) buildPrint(doc);   // PDF（印刷）のページも、動かした形で作り直す
@@ -194,6 +197,8 @@
     placePanel();
   }
   $('panel').addEventListener('click', function (e) {
+    var ab = e.target.closest && e.target.closest('button.act');
+    if (ab && state.sel && ab.getAttribute('data-act') === 'rename') { startRename(state.sel.d, state.sel.i); return; }
     var b = e.target.closest && e.target.closest('.styl button');
     if (!b) return;
     var box = b.closest('.styl'), d = +box.getAttribute('data-d'), pk = box.getAttribute('data-pk'), k = b.getAttribute('data-k'), v = JSON.parse(b.getAttribute('data-v')), patch = {};
@@ -218,6 +223,37 @@
     if (g) { e.preventDefault(); state.selEdge = null; state.anchor = e.clientX || e.clientY ? anchor : anchorOf(g); state.byKey = !(e.clientX || e.clientY); openItem(i, +g.getAttribute('data-i')); return; }
     var lb = e.target.closest('.edge-label[data-ek]'), ed = lb || edgeUnder(svg, e.clientX, e.clientY);
     if (ed) { e.preventDefault(); openEdge(i, ed.getAttribute('data-ek'), anchor); }
+  });
+
+  // ---- 名前を直す（R8b-3）：箱を2回押すか、ポップアップの「名前を直す」。Enter で決める、Esc でやめる ----
+  function startRename(d, i) {
+    var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]'), it = state.doc.diagrams[d].items[i];
+    if (!g || !it) return;
+    closePanel();
+    var b = g.querySelector('.box').getBoundingClientRect(), inp = document.createElement('input');
+    inp.className = 'rename'; inp.value = it.label; inp.setAttribute('aria-label', '「' + it.label + '」の新しい名前');
+    inp.style.left = Math.round(b.left) + 'px'; inp.style.top = Math.round(b.top + b.height / 2 - 18) + 'px'; inp.style.width = Math.round(Math.max(b.width, 180)) + 'px';
+    document.body.appendChild(inp); inp.focus(); inp.select();
+    var done = false;
+    function end(ok) {
+      if (done) return; done = true;
+      var v = inp.value; inp.remove();
+      if (!ok || !P.safeName(v) || v === it.label) { g.focus && g.focus(); return; }
+      var nn = P.safeName(v), same = state.doc.diagrams[d].items.filter(function (x) { return x.id !== i && x.key === nn.normalize('NFKC').replace(/\s+/g, '').toLowerCase(); })[0];
+      if (same && !window.confirm('「' + same.label + '」と同じ名前なので、2つの箱が1つにまとまります。よいですか？')) return;
+      var text;
+      try { text = P.renameItem(state.text, state.doc, d, i, v); } catch (e) { showError('名前を直せませんでした：' + e.message + '。md は前のままです。'); return; }
+      applyText(text, true);
+      toast('名前を「' + nn + '」に直しました（Ctrl+Z で戻せます）', 2500);
+    }
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } });
+    inp.addEventListener('blur', function () { end(false); });
+  }
+  $('diagrams').addEventListener('dblclick', function (e) {
+    var g = e.target.closest && e.target.closest('.svg-wrap .item'), box = g && g.closest('.diagram-box');
+    if (!g || !STYLABLE[state.doc.diagrams[+box.id.slice(2)].type]) return;
+    e.preventDefault();
+    startRename(+g.getAttribute('data-d'), +g.getAttribute('data-i'));
   });
 
   // 矢印キーで箱を動かす（8、Shift で 1）。続けて押した同じ箱の動きは、戻す1回にまとめる
@@ -428,7 +464,7 @@
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>';
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
-    if (STYLABLE[diag.type]) h += styleHtml(d, it.pk, partNow(diag, it.pk), false);
+    if (STYLABLE[diag.type]) h += '<p><button type="button" class="act" data-act="rename">名前を直す</button></p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();
