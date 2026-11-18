@@ -215,6 +215,7 @@
       extra.push('割合：' + (tot > 0 ? Math.round(Math.max(0, it.value) / tot * 1000) / 10 : 0) + '%（合計 ' + esc(String(tot)) + esc(diag.unit || '') + '）');
     }
     if (it.lane) extra.push('担当：' + esc(it.lane));
+    if (diag.type === 'flowchart') extra.push('形：' + ({ terminal: '端（はじめ・終わり）', decision: '判断', subprocess: '別の手順', io: '入力・出力', process: '処理' })[it.style.shape]);
     if (it.cells) extra.push(diag.options.map(function (o, j) { return esc(o) + '：' + esc(it.cells[j].text || '－'); }).join('<br>'));
     if (diag.edges) {
       var outs = diag.edges.filter(function (e) { return e.from === it.id; }).map(function (e) { return esc(diag.items[e.to].label) + (e.label ? '（' + esc(e.label) + '）' : ''); });

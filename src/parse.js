@@ -12,7 +12,8 @@
   var MAX_ITEMS = 200;
 
   var TYPES = {
-    flow: { label: '流れ', names: ['flow', '流れ', 'フロー', '流れ図', 'フローチャート', '手順', 'process'] },
+    flow: { label: '流れ', names: ['flow', '流れ', 'フロー', '流れ図', '手順', 'process'] },
+    flowchart: { label: 'フローチャート', names: ['flowchart', 'フローチャート', 'chartflow'] },
     lanes: { label: '担当ごとの流れ', names: ['lanes', 'lane', 'swimlane', '担当', '担当ごとの流れ', '担当別', 'スイムレーン'] },
     timeline: { label: '日程', names: ['timeline', '日程', 'スケジュール', '予定', '年表'] },
     tree: { label: '木', names: ['tree', '木', 'ツリー', '構成', '階層', '組織'] },
@@ -165,7 +166,13 @@
     return /[\s\u3000、。，．,？?！!…「」『』]/.test(label) || Array.from(label).length > 24;
   }
 
-  function parseGraph(diag, lines, warn, withLanes) {
+  // フローチャートの形：(開始) 端・<在庫ある?> 判断・[[発注]] 別の手順・/入力/ 入出力・ふつうは処理
+  var SHAPES = [[/^[(（]([\s\S]+)[)）]$/, 'terminal'], [/^[<＜]([\s\S]+)[>＞]$/, 'decision'], [/^(?:\[\[|［［)([\s\S]+)(?:\]\]|］］)$/, 'subprocess'], [/^[\/／]([\s\S]+)[\/／]$/, 'io']];
+  function shapeOf(s) {
+    for (var k = 0; k < SHAPES.length; k++) { var m = SHAPES[k][0].exec(s); if (m && trim(m[1])) return { shape: SHAPES[k][1], text: trim(m[1]) }; }
+    return null;
+  }
+  function parseGraph(diag, lines, warn, withLanes, shapes) {
     var reg = Registry(diag, warn), edgeKey = {};
     diag.edges = [];
     if (withLanes) diag.lanes = [];
@@ -190,17 +197,19 @@
           var lm = RE_LANE.exec(s);
           if (lm) { lane = laneOf(trim(lm[1])); s = trim(lm[2]); }
         }
+        var sh = shapes ? shapeOf(s) : null;
+        if (sh) s = sh.text;
         var tm = takeMarks(s);
         if (!tm.label) {
           warn(ln.no, segs.length > 1 ? '矢印の前か後ろに箱の名前がないので、この行を飛ばした' : '箱の名前がないので飛ばした', 'skip');
           return;
         }
         // 矢印のない行は「箱を1つ置く」だけ（名前と印）。文のような行は図にしない
-        if (segs.length === 1 && isSentence(tm.label)) {
+        if (segs.length === 1 && !sh && isSentence(tm.label)) {
           warn(ln.no, '矢印のない文の行なので飛ばした（箱を1つ置くなら「承認 !期限」のように名前だけ。説明は図の外の「## 箱の名前」の下へ）', 'skip');
           return;
         }
-        nodes.push({ label: tm.label, marks: tm.marks, sources: src, lane: lane });
+        nodes.push({ label: tm.label, marks: tm.marks, sources: src, lane: lane, shape: sh && sh.shape });
       }
       if (withLanes && nodes.length && !nodes[0].lane) {
         // 行の先頭に担当がなければ、あとに出た担当か、最初の担当を使う
@@ -215,6 +224,7 @@
         if (!it) return null;
         addMarks(it, n.marks, n.sources);
         if (withLanes && !it.lane) it.lane = n.lane;
+        if (n.shape && !it.style.shape) it.style.shape = n.shape;
         return it;
       });
       for (var e = 1; e < its.length; e++) {
@@ -465,6 +475,7 @@
           var diag = { type: info.type, name: info.name, line: ln.no, items: [] };
           ({ flow: function () { parseGraph(diag, body, warn, false); },
              lanes: function () { parseGraph(diag, body, warn, true); },
+             flowchart: function () { parseGraph(diag, body, warn, false, true); diag.items.forEach(function (it) { if (!it.style.shape) it.style.shape = 'process'; }); },
              timeline: function () { parseTimeline(diag, body, warn); },
              tree: function () { parseTree(diag, body, warn); },
              chart: function () { parseChart(diag, body, warn); },

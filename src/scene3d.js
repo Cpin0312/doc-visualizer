@@ -138,7 +138,7 @@
     return s;
   }
 
-  var DEPTH = { flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14 };
+  var DEPTH = { flowchart: 20, flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14 };
   var CHARTS = { chart: 1, pie: 1, donut: 1, line: 1, hbar: 1, stacked: 1 };
   // 円グラフの扇は「M x y L x y … Z」の多角形。中心からの点に直す
   function polyOf(el) {
@@ -197,7 +197,7 @@
         });
         segs.forEach(function (el) { used.add(el); });
       } else {
-        regions = [{ r: br, depth: DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
+        regions = [{ r: br, poly: poly, depth: DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
       }
       used.add(box);
       var group = new T.Group(), it = { i: i, group: group, center: null, top: 0, meshes: [], mats: [] };
@@ -222,7 +222,7 @@
         group.add(mesh);
         it.meshes.push(mesh); it.mats.push(capMat, sideMat);
         if (!R.solid) {
-          var tex = keep(texture(r, face, R.fill || '#ffffff'));
+          var tex = keep(texture(r, face, R.poly ? null : (R.fill || '#ffffff')));   // ひし形などは、形の外を透かす
           var fm = keep(new T.MeshBasicMaterial({ map: tex, transparent: true }));
           var plane = new T.Mesh(keep(new T.PlaneGeometry(r.w * S, r.h * S)), fm);
           plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, d + 1.3));

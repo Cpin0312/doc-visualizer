@@ -81,6 +81,12 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     ok('読みとり：積み上げの系列の名前がなければ「系列 n」、足りない数字は欠け', st.series.join() === '系列 1,系列 2,系列 3' && JSON.stringify(st.items[1].values) === '[2,2,null]', st.series.join());
     ok('部品は同じ形で持つ（箱も線も kind・style・行の番号）', [pie.items[0], line.items[0]].every(x => x.kind === 'box' && x.style && x.line > 0) && P.parseDoc('```flow\nA -> B\n```').diagrams[0].edges.every(e => e.kind === 'line' && e.id === 'e0' && e.style && e.line === 2));
   }
+  // R7：フローチャート。形は style.shape に持つ
+  {
+    const g = P.parseDoc('# t\n```フローチャート 発注\n(開始) -> /注文を受ける/ -> <在庫ある?>\n<在庫ある?> -> 出荷 : はい\n在庫ある? -> [[発注する]] : いいえ\n発注する -> 在庫ある?\n出荷 -> （終わり）\n<確認する?>\n```\n').diagrams[0];
+    ok('読みとり：フローチャートの形（端・入出力・判断・処理・別の手順）と、形のない書き方でも同じ箱', g.type === 'flowchart' && g.items.map(i => i.label + ':' + i.style.shape).join() === '開始:terminal,注文を受ける:io,在庫ある?:decision,出荷:process,発注する:subprocess,終わり:terminal,確認する?:decision', g.items.map(i => i.label + ':' + i.style.shape).join());
+    ok('読みとり：フローチャートの矢印の言葉（はい・いいえ）と戻る矢印', g.edges.map(e => e.from + '>' + e.to + (e.label ? ':' + e.label : '')).join() === '0>1,1>2,2>3:はい,2>4:いいえ,4>2,3>5', g.edges.map(e => e.from + '>' + e.to).join());
+  }
   for (const f of readdirSync(join(root, 'samples'))) {
     const c = P.check(readFileSync(join(root, 'samples', f), 'utf8'));
     ok('短いまとめ check()：' + f, typeof c.title === 'string' && Array.isArray(c.diagrams), c.diagrams.map(d => d.type + ':' + d.items).join(' '));
@@ -570,6 +576,34 @@ async function savePptx(T, md, tag) {
   const { rd } = await savePptx(B, join(root, 'test', 'fixtures', 'flow15.md'), 'flow15');
   const S = rd ? rd.slides : [];
   ok('PowerPoint：大きな図（15 段の流れ）はスライドを分け、文字は 11pt 以上', S.filter(x => /（[12]\/2）$/.test(x.texts[0] || '')).length === 2 && S.every(x => x.minPt >= 11), S.map(x => (x.texts[0] || '') + ' ' + x.minPt).join(' | '));
+}
+// R7：フローチャート。上から下・はい は左・いいえ は右・戻る矢印は右を回る。3D・ポップアップ・PowerPoint の形
+{
+  await pick(join(root, 'samples', '12_flowchart.md'));
+  await waitFor(`document.getElementById('status').textContent.includes('12_flowchart')`);
+  const mode0 = await B.evalJs('DocVisualizer.mode()');
+  if (mode0 !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView()`); await sleep(400);
+  const g3 = await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`)).catch(e => ({ err: e.message }));
+  ok('3D：フローチャートを 3D で描く（真っ黒でない）', notBlack(g3), g3.err || `暗${(g3.darkRatio * 100).toFixed(0)}%`);
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  const lay = await B.evalJs(`(() => { const s = document.querySelector('#dg0 svg'), bb = n => s.querySelector('.item[aria-label="' + n + '"] .box').getBBox();
+    const st = bb('開始'), q = bb('在庫ある?'), y = bb('出荷する'), n = bb('発注する'), w = bb('入荷を待つ');
+    const right = Math.max(...Array.from(s.querySelectorAll('.item .box')).map(e => { const b = e.getBBox(); return b.x + b.width; }));
+    const back = Array.from(s.querySelectorAll('path.edge')).map(p => p.getBBox()).some(b => b.x + b.width > right + 5);
+    const minF = Math.min(...Array.from(s.querySelectorAll('text')).map(t => +t.getAttribute('font-size')));
+    const shapes = Array.from(s.querySelectorAll('.item .box')).map(e => e.getAttribute('data-shape')).join();
+    return { down: st.y < q.y && q.y < y.y && y.y < w.y, yesLeft: y.x + y.width / 2 < q.x + q.width / 2, noRight: n.x + n.width / 2 > q.x + q.width / 2, back, minF, shapes }; })()`);
+  ok('2D：フローチャートは上から下・はい は左・いいえ は右・戻る矢印は箱の右を回る・文字 11px 以上', lay.down && lay.yesLeft && lay.noRight && lay.back && lay.minF >= 11, JSON.stringify(lay));
+  await clickAt('#dg0 .item[aria-label="在庫ある?"] .box');
+  const fp = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
+  ok('フローチャートの箱を押すと、形と前・次が出る', fp && fp.includes('形：判断') && fp.includes('次：出荷する（はい）・発注する（いいえ）'), (fp || '').replace(/\n/g, ' ').slice(0, 90));
+  await keyPress('Escape', 'Escape', 27);
+  if (mode0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  const { rd } = await savePptx(B, join(root, 'samples', '12_flowchart.md'), '12_flowchart');
+  const AU = rd ? rd.slides.flatMap(x => x.auto || []) : [];
+  const want = ['FLOWCHART_TERMINATOR', 'FLOWCHART_DATA', 'FLOWCHART_DECISION', 'FLOWCHART_PROCESS', 'FLOWCHART_PREDEFINED_PROCESS'];
+  ok('PowerPoint：フローチャートは直せる形（端・入出力・ひし形・処理・二重線の四角）・文字 11pt 以上', want.every(w => AU.includes(w)) && AU.filter(a => a.startsWith('FLOWCHART')).length === 7 && rd.slides.every(x => x.minPt >= 11), AU.filter(a => a.startsWith('FLOWCHART')).join(' '));
 }
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {

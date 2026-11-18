@@ -3,6 +3,9 @@ import json, sys
 sys.stdout.reconfigure(encoding='utf-8')  # Windows は既定が cp1252 なので、日本語を出すと落ちる
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+def kind(sh):
+    try: return str(sh.auto_shape_type).split(' ')[0]
+    except Exception: return 'CUSTOM'   # 自由な形（custGeom）は名前がない
 p = Presentation(sys.argv[1])
 out = {'w': round(p.slide_width / 914400, 3), 'h': round(p.slide_height / 914400, 3), 'slides': []}
 for s in p.slides:
@@ -17,6 +20,7 @@ for s in p.slides:
         'cust': sum('custGeom' in x for x in xml), 'arrows': sum('tailEnd' in x for x in xml),
         'pics': sum(1 for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE),
         'secret': any(sh.name == 'secret' for sh in s.shapes),
+        'auto': [kind(sh) for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE],
         'charts': [{'type': str(sh.chart.chart_type).split(' ')[0], 'cats': [str(c) for c in sh.chart.plots[0].categories],
                     'series': [[se.name, list(se.values)] for se in sh.chart.plots[0].series],
                     'font': 'Yu Gothic UI' in sh.chart.part.blob.decode('utf8', 'ignore')} for sh in s.shapes if sh.has_chart],

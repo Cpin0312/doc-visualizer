@@ -529,6 +529,91 @@
     return wrapSvg(width, height, body, stacked ? 'stacked' : 'line');
   }
 
+  // ---- フローチャート（上から下へ。判断の分かれは左右、戻る矢印は右を回る） ----
+  // 形は it.style.shape（terminal 端・decision 判断・subprocess 別の手順・io 入出力・process 処理）
+  var FC_PPT = { terminal: 'flowChartTerminator', decision: 'flowChartDecision', subprocess: 'flowChartPredefinedProcess', io: 'flowChartInputOutput', process: 'flowChartProcess' };
+  function fcShape(d, it, b, opts) {
+    var k = strongest(it), stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
+    var sh = it.style.shape || 'process', st = ' fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.6) + '" data-shape="' + FC_PPT[sh] + '"', g = itemOpen(d, it), x = b.x, y = b.y, w = b.w, h = b.h;
+    var P = function (pts) { return '<path class="box" d="M' + pts.map(function (p) { return r(p[0]) + ' ' + r(p[1]); }).join(' L') + ' Z"' + st + '/>'; };
+    if (sh === 'decision') g += P([[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]]);
+    else if (sh === 'io') { var sk = h * 0.35; g += P([[x + sk, y], [x + w, y], [x + w - sk, y + h], [x, y + h]]); }
+    else {
+      g += '<rect class="box" x="' + r(x) + '" y="' + r(y) + '" width="' + r(w) + '" height="' + r(h) + '" rx="' + r(sh === 'terminal' ? h / 2 : 4) + '"' + st + '/>';
+      if (sh === 'subprocess') g += '<line class="deco" x1="' + r(x + 9) + '" x2="' + r(x + 9) + '" y1="' + r(y) + '" y2="' + r(y + h) + '" stroke="' + stroke + '" stroke-width="1.4"/><line class="deco" x1="' + r(x + w - 9) + '" x2="' + r(x + w - 9) + '" y1="' + r(y) + '" y2="' + r(y + h) + '" stroke="' + stroke + '" stroke-width="1.4"/>';
+    }
+    return g + (info(it, opts) ? cornerDot(x + w - (sh === 'decision' ? w / 2 - 6 : 1), y + 1) : '') + textEl(b.lines, x + w / 2, y + h / 2, opts.fs) + badges(it, x + w, y - 3, opts.fs, true) + '</g>';
+  }
+  function flowchart(diag, d, opts) {
+    var fs = opts.fs, L = layers(diag), n = diag.items.length, gap = fs * 2.4, lf = Math.max(11, Math.round(fs * 0.85));
+    var B = diag.items.map(function (it) {
+      var m = measureBox(it, fs, fs * 11), sh = it.style.shape;
+      if (sh === 'decision') { m.w = m.w * 1.55 + fs; m.h = m.h * 1.7; }
+      else if (sh === 'io') m.w += m.h * 0.7;
+      else if (sh === 'subprocess') m.w += 18;
+      else if (sh === 'terminal') m.w += m.h * 0.4;
+      return { w: m.w, h: m.h, lines: m.lines };
+    });
+    var isBack = function (e) { return L.back[e.from + '>' + e.to] || e.from === e.to || L.layer[e.to] <= L.layer[e.from]; };
+    // 判断から出る矢印：はい は左、いいえ は右（言葉がなければ、出た順に左・右）
+    var side = {};
+    diag.items.forEach(function (it, v) {
+      if (it.style.shape !== 'decision') return;
+      var outs = diag.edges.filter(function (e) { return e.from === v && !isBack(e); });
+      if (outs.length < 2) return;
+      var no = /^(いいえ|no|n|×|ng|なし|ない|違う|ちがう)$/i, yes = /^(はい|yes|y|○|ok|あり|ある)$/i;
+      var nk = function (t) { return String(t || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase(); };
+      var hasYes = outs.some(function (e) { return yes.test(nk(e.label)); });
+      var right = outs.filter(function (e) { return no.test(nk(e.label)); })[0] || (hasYes ? outs.filter(function (e) { return !yes.test(nk(e.label)); })[0] : null) || outs[1];
+      outs.forEach(function (e) { side[diag.edges.indexOf(e)] = e === right ? 1 : -1; });
+    });
+    var rows = [];
+    diag.items.forEach(function (it, v) { (rows[L.layer[v]] = rows[L.layer[v]] || []).push(v); });
+    var cx = [], maxW = Math.max.apply(null, B.map(function (b) { return b.w; }).concat([fs * 5]));
+    rows.forEach(function (row, ri) {
+      if (!row) return;
+      var want = row.map(function (v, k) {
+        var ins = diag.edges.map(function (e, ei) { return { e: e, ei: ei }; }).filter(function (o) { return o.e.to === v && !isBack(o.e) && cx[o.e.from] != null; });
+        if (!ins.length) return k * (maxW + gap);
+        return ins.reduce(function (a, o) { return a + cx[o.e.from] + (side[o.ei] || 0) * (B[o.e.from].w / 2 + B[v].w / 2 + gap) * 0.6; }, 0) / ins.length;
+      });
+      var ord = row.map(function (v, k) { return k; }).sort(function (a, b) { return want[a] - want[b] || a - b; });
+      var prev = null;
+      ord.forEach(function (k) { var v = row[k], x = want[k]; if (prev != null) x = Math.max(x, cx[prev] + B[prev].w / 2 + B[v].w / 2 + gap); cx[v] = x; prev = v; });
+    });
+    var minX = Math.min.apply(null, diag.items.map(function (it, v) { return cx[v] - B[v].w / 2; })), left = 24 + fs * 3;
+    var y = fs * 2.2, rowY = [];
+    rows.forEach(function (row, ri) {
+      if (!row) return;
+      var h = Math.max.apply(null, row.map(function (v) { return B[v].h; }));
+      rowY[ri] = y;
+      row.forEach(function (v) { B[v].x = cx[v] - minX + left - B[v].w / 2; B[v].y = y + (h - B[v].h) / 2; });
+      y += h + fs * 3.6;
+    });
+    var maxR = Math.max.apply(null, B.map(function (b) { return b.x + b.w; })), paths = '', labels = '', nb = 0;
+    var lab = function (t, x, yy) { var w = tw(t, lf) + 12; labels += '<g class="edge-label"><rect x="' + r(x - w / 2) + '" y="' + r(yy - lf * 0.8) + '" width="' + r(w) + '" height="' + r(lf * 1.6) + '" rx="6" fill="#fff" stroke="' + C.grid + '"/>' + textEl([t], x, yy, lf, { fill: C.sub }) + '</g>'; };
+    diag.edges.forEach(function (e, ei) {
+      var a = B[e.from], b = B[e.to], acx = a.x + a.w / 2, acy = a.y + a.h / 2, bcx = b.x + b.w / 2, dd;
+      if (isBack(e)) {
+        // 右を回って、行き先の上から入る（判断の左右の角は、はい・いいえで使うので空けておく）
+        var xr = maxR + fs * 1.6 + nb++ * fs * 1.3, ty = b.y - fs * 1.2 - (nb - 1) * 4;
+        dd = 'M' + r(a.x + a.w) + ' ' + r(acy) + ' L' + r(xr) + ' ' + r(acy) + ' L' + r(xr) + ' ' + r(ty) + ' L' + r(bcx) + ' ' + r(ty) + ' L' + r(bcx) + ' ' + r(b.y - 2);
+        if (e.label) lab(e.label, xr, (acy + ty) / 2);
+      } else if (side[ei]) {
+        var sx = side[ei] < 0 ? a.x : a.x + a.w;
+        dd = 'M' + r(sx) + ' ' + r(acy) + ' L' + r(bcx) + ' ' + r(acy) + ' L' + r(bcx) + ' ' + r(b.y - 2);
+        if (e.label) lab(e.label, (sx + bcx) / 2 || sx + side[ei] * fs * 2, acy - lf * 1.1);
+      } else {
+        var sy = a.y + a.h, my = b.y - fs * 1.8;
+        dd = Math.abs(acx - bcx) < 1 ? 'M' + r(acx) + ' ' + r(sy) + ' L' + r(bcx) + ' ' + r(b.y - 2) : 'M' + r(acx) + ' ' + r(sy) + ' L' + r(acx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(b.y - 2);
+        if (e.label) lab(e.label, acx + tw(e.label, lf) / 2 + 14, sy + fs * 0.9);
+      }
+      paths += '<path class="edge" d="' + dd + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
+    });
+    var body = paths + diag.items.map(function (it, v) { return fcShape(d, it, B[v], opts); }).join('') + labels;
+    return wrapSvg(maxR + fs * 2.4 + nb * fs * 1.3 + 20, y - fs * 1.4, body, 'flowchart');
+  }
+
   // ---- 大事な数字（カード） ----
   function kpi(diag, d, opts) {
     var fs = opts.fs, items = diag.items, per = Math.min(items.length, items.length > 4 ? (items.length === 6 ? 3 : 4) : items.length);
@@ -601,6 +686,7 @@
     switch (diag.type) {
       case 'flow': return flow(diag, d, opts, false);
       case 'lanes': return flow(diag, d, opts, true);
+      case 'flowchart': return flowchart(diag, d, opts);
       case 'timeline': return timeline(diag, d, opts);
       case 'tree': return tree(diag, d, opts);
       case 'chart': return chart(diag, d, opts);

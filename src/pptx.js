@@ -80,6 +80,14 @@
       var line = stroke ? { color: stroke, width: pt(num(el, 'stroke-width', 1)) } : EMPTY;
       if (stroke && el.getAttribute('stroke-dasharray')) line.dashType = num(el, 'stroke-dasharray') <= 2 ? 'sysDot' : 'dash';
       var fillO = fill ? { color: fill, transparency: Math.round((1 - op) * 100) } : { type: 'none' };
+      if (el.classList.contains('deco')) continue;   // 別の手順の縦線は、PowerPoint の形が持っている
+      if (el.getAttribute('data-shape') && pptx.ShapeType[el.getAttribute('data-shape')]) {
+        // フローチャートの形は、PowerPoint のフローチャートの図形にする（あとで形を変えられる）
+        var fb = el.getBBox();
+        slide.addShape(pptx.ShapeType[el.getAttribute('data-shape')], { x: X(fb.x), y: Y(fb.y), w: fb.width * s, h: fb.height * s, fill: fillO, line: line });
+        count++;
+        continue;
+      }
       if (tag === 'rect') {
         var x = num(el, 'x'), y = num(el, 'y'), w = num(el, 'width'), h = num(el, 'height'), rx = num(el, 'rx');
         if (!g) {   // 帯・背景などは、枠で切る
