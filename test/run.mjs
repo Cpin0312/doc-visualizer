@@ -618,6 +618,104 @@ async function savePptx(T, md, tag) {
   const want = ['FLOWCHART_TERMINATOR', 'FLOWCHART_DATA', 'FLOWCHART_DECISION', 'FLOWCHART_PROCESS', 'FLOWCHART_PREDEFINED_PROCESS'];
   ok('PowerPoint：フローチャートは直せる形（端・入出力・ひし形・処理・二重線の四角）・文字 11pt 以上', want.every(w => AU.includes(w)) && AU.filter(a => a.startsWith('FLOWCHART')).length === 7 && rd.slides.every(x => x.minPt >= 11), AU.filter(a => a.startsWith('FLOWCHART')).join(' '));
 }
+// R8a：配置（~~~layout）。箱を動かす・線を曲げる・言葉を動かす・戻す。正本は md の文字だけ
+{
+  const md0 = '# 配置の試し\n\n~~~flow 注文\n受付 -> 確認 -> 出荷 : 発送\n確認 -> 受付 : 差し戻し\n~~~\n\n~~~chart 件数\n4月 : 10\n5月 : 20\n~~~\n';
+  const L1 = { v: 1, diagrams: [{ type: 'flow', name: '注文', parts: { '受付': { x: 300, y: 50 }, '確認>出荷': { bend: [10, 20], label: [0, -8] } } }] };
+  const d0 = P.parseDoc(md0), t1 = P.writeLayout(md0, d0, L1), d1 = P.parseDoc(t1);
+  ok('配置：layout を足しても図は増えず、知らせも出ず、前の行は1文字も変わらない。消すと md が元どおり', d1.diagrams.length === 2 && !d1.warnings.length && d1.diagrams[0].layout['受付'].x === 300 && t1.startsWith(md0) && P.writeLayout(t1, d1, null) === md0, JSON.stringify(d1.diagrams[0].layout));
+  const mw = '```markdown\r\n# t\r\n~~~flow f\r\nA -> B\r\n~~~\r\n```\r\n', dw = P.parseDoc(mw), tw2 = P.writeLayout(mw, dw, { v: 1, diagrams: [{ type: 'flow', name: 'f', parts: { a: { x: 1, y: 2 } } }] }), dw2 = P.parseDoc(tw2);
+  ok('配置：外側の ```markdown の中に足し、改行 CRLF を保つ', /~~~\r\n```\r\n$/.test(tw2) && !/[^\r]\n/.test(tw2) && dw2.diagrams[0].layout.a.y === 2 && P.writeLayout(tw2, dw2, null) === mw, JSON.stringify(tw2.slice(-40)));
+  const db = P.parseDoc(md0 + '\n~~~layout\n{こわれた\n~~~\n'), dv = P.parseDoc(md0 + '\n~~~layout\n{"v":1,"diagrams":[{"type":"flow","name":"注文","parts":{"受付":{"x":"右","y":5},"確認":{"x":10,"y":20}}}]}\n~~~\n');
+  ok('配置：壊れた layout は知らせ1件で、図は自動の並べ方で出る。読めない値だけ捨てる', db.diagrams.length === 2 && db.warnings.length === 1 && dv.warnings.length === 1 && !('x' in dv.diagrams[0].layout['受付']) && dv.diagrams[0].layout['確認'].x === 10, db.warnings.map(w => w.msg).join(' / '));
+  const ms = P.parseDoc('# t\n~~~tree 木\n- 親\n  - 子\n  - 子\n~~~\n');
+  ok('配置：同じ名前の箱の鍵は #2 を付けて分ける', ms.diagrams[0].items.map(i => i.pk).join() === '親,子,子#2', ms.diagrams[0].items.map(i => i.pk).join());
+
+  const f8 = join(out, 'r8a.md'); writeFileSync(f8, md0);
+  await pick(f8);
+  await waitFor(`document.getElementById('status').textContent.includes('r8a.md')`);
+  const mode0 = await B.evalJs('DocVisualizer.mode()');
+  if (mode0 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(200);
+  const rect = n => B.evalJs(`(() => { const b = document.querySelector('#dg0 .item[aria-label="${n}"] .box').getBoundingClientRect(); return { x: b.left, y: b.top, cx: b.left + b.width / 2, cy: b.top + b.height / 2 }; })()`);
+  const edgeStart = k => B.evalJs(`(() => { const p = document.querySelector('#dg0 path.edge[data-ek="${k}"]').getPointAtLength(0); return [Math.round(p.x), Math.round(p.y)]; })()`);
+  const dragBy = async (x, y, dx, dy, steps = 8) => {
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let k = 1; k <= steps; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx * k / steps, y: y + dy * k / steps, button: 'left', buttons: 1 });
+    await sleep(60);
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + dx, y: y + dy, button: 'left', buttons: 0, clickCount: 1 });
+    await sleep(250);
+  };
+  const r0 = await rect('受付'), e0 = await edgeStart('受付>確認');
+  await dragBy(r0.cx, r0.cy, 0, 50);
+  const r1 = await rect('受付'), e1 = await edgeStart('受付>確認'), t2 = await B.evalJs('DocVisualizer.text()');
+  const panelHidden = await B.evalJs(`document.getElementById('panel').hidden`);
+  ok('2D：箱をドラッグすると、その場所に動き、線がついてくる。ポップアップは出ない。md の layout に書く', Math.abs(r1.y - r0.y - 50) <= 3 && Math.abs(r1.x - r0.x) <= 3 && (e1[0] !== e0[0] || e1[1] !== e0[1]) && panelHidden && /~~~layout\n[\s\S]*"受付":\{"x":\d+,"y":\d+\}/.test(t2) && t2.startsWith(md0), JSON.stringify({ dy: Math.round(r1.y - r0.y), e0, e1 }));
+  // 3px だけ動かして離す → 押したことになる（箱は動かない）
+  const r2 = await rect('確認');
+  await dragBy(r2.cx, r2.cy, 3, 0, 2);
+  const pop = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').querySelector('h2').textContent`, 1500);
+  const r3 = await rect('確認');
+  ok('2D：3px で離すとポップアップが出て、箱は動かない', pop === '確認' && Math.abs(r3.x - r2.x) < 1 && (await B.evalJs('DocVisualizer.text()')) === t2, String(pop));
+  await keyPress('Escape', 'Escape', 27);
+  // 言葉を動かす・線を曲げる
+  const lb = await B.evalJs(`(() => { const b = document.querySelector('#dg0 .edge-label[data-ek="確認>出荷"]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  await dragBy(lb.x, lb.y, 0, -30);
+  const t3 = await B.evalJs('DocVisualizer.text()');
+  const mid = await B.evalJs(`(() => { const p = document.querySelector('#dg0 path.edge[data-ek="受付>確認"]'), s = p.ownerSVGElement, q = p.getPointAtLength(p.getTotalLength() * 0.3), m = s.getScreenCTM(); return { x: q.x * m.a + m.e, y: q.y * m.d + m.f }; })()`);
+  await dragBy(mid.x, mid.y, 0, -60);
+  await shot('r8a_moved', false);
+  const t4 = await B.evalJs('DocVisualizer.text()'), dQ = await B.evalJs(`document.querySelector('#dg0 path.edge[data-ek="受付>確認"]').getAttribute('d')`);
+  ok('2D：矢印の言葉を動かせる・線の途中をドラッグすると曲がる', /"確認>出荷":\{"label":\[0,-\d+\]\}/.test(t3) && /"受付>確認":\{"bend":\[\d+,\d+\]\}/.test(t4) && dQ.includes('Q'), dQ + ' | ' + t4.slice(md0.length).replace(/\n/g, ' '));
+  // グラフの棒は動かない
+  const bar = await B.evalJs(`(() => { const b = document.querySelector('#dg1 .item .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  await B.evalJs(`document.getElementById('dg1').scrollIntoView({ block: 'center' })`); await sleep(200);
+  const bar2 = await B.evalJs(`(() => { const b = document.querySelector('#dg1 .item .box').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+  await dragBy(bar2.x, bar2.y, 40, 40);
+  ok('2D：グラフの棒はドラッグしても動かず、md も変わらない', (await B.evalJs('DocVisualizer.text()')) === t4, JSON.stringify(bar));
+  await keyPress('Escape', 'Escape', 27);
+  // 戻す・やり直す・元の配置に戻す
+  const ctrl = async (k, code, vk, shift) => {
+    const mods = (process.platform === 'darwin' ? 4 : 2) | (shift ? 8 : 0);
+    await B.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods });
+    await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk, modifiers: mods });
+    await sleep(250);
+  };
+  await ctrl('z', 'KeyZ', 90); const u1 = await B.evalJs('DocVisualizer.text()');
+  await ctrl('z', 'KeyZ', 90); await ctrl('z', 'KeyZ', 90); const u3 = await B.evalJs('DocVisualizer.text()');
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(200); const ru = await rect('受付');
+  await ctrl('y', 'KeyY', 89); const y1 = await B.evalJs('DocVisualizer.text()');
+  await ctrl('z', 'KeyZ', 90, true); const y2 = await B.evalJs('DocVisualizer.text()');
+  ok('戻す：Ctrl+Z で1つずつ戻り、最後は md が元どおり・箱も元の場所。Ctrl+Y・Ctrl+Shift+Z でやり直す', u1 === t3 && u3 === md0 && Math.abs(ru.y - r0.y) <= 1 && y1 === t2 && y2 === t3, JSON.stringify({ u1: u1 === t3, u3: u3 === md0, y1: y1 === t2, y2: y2 === t3 }));
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(200);
+  await clickAt('#dg0 .reset-layout');
+  const rs = await B.evalJs('DocVisualizer.text()'), rsHidden = await B.evalJs(`document.querySelector('#dg0 .reset-layout').hidden`);
+  await ctrl('z', 'KeyZ', 90); const ru2 = await B.evalJs('DocVisualizer.text()');
+  ok('「元の配置に戻す」で、その図の layout を消す（md が元どおり）。これも Ctrl+Z で戻せる', rs === md0 && rsHidden && ru2 === t3, JSON.stringify({ rs: rs === md0, back: ru2 === t3 }));
+  // 3D：地面の上を動く
+  if (await B.evalJs('!!window.DocScene && !document.getElementById("mode").disabled')) {
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
+    await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(400);
+    const before = JSON.parse((await B.evalJs('DocVisualizer.text()')).match(/\{"v":1[\s\S]*?\n\]\}/)[0].replace(/\n/g, '')).diagrams[0].parts['確認'];
+    const p3 = await B.evalJs(`DocVisualizer.where3d(0, 1)`);
+    await dragBy(p3.x, p3.y, 80, 0);
+    const t5 = await B.evalJs('DocVisualizer.text()'), after = JSON.parse(t5.match(/\{"v":1[\s\S]*?\n\]\}/)[0].replace(/\n/g, '')).diagrams[0].parts['確認'];
+    const p4 = await B.evalJs(`DocVisualizer.where3d(0, 1)`), pop3 = await B.evalJs(`document.getElementById('panel').hidden`);
+    ok('3D：箱をドラッグすると地面の上を動き（横へ）、md の layout に書く。ポップアップは出ない', after && !before && after.x > 0 && p4.x - p3.x > 40 && Math.abs(p4.y - p3.y) < 25 && pop3, JSON.stringify({ after, dx: Math.round(p4.x - p3.x), dy: Math.round(p4.y - p3.y) }));
+    await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  }
+  if (mode0 === '3d' && (await B.evalJs('DocVisualizer.mode()')) !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  // PowerPoint：動かした形がそのまま出る（箱どうしの位置の割合が 2D と同じ）
+  const f9 = join(out, 'r8a_moved.md');
+  writeFileSync(f9, P.writeLayout(md0, d0, { v: 1, diagrams: [{ type: 'flow', name: '注文', parts: { '受付': { x: 9999, y: 9999 } } }] }));
+  const { rd } = await savePptx(B, f9, 'r8a');
+  const pos = rd ? Object.assign({}, ...rd.slides.map(x => x.pos || {})) : {};
+  const sv = await B.evalJs(`(() => { const c = n => { const b = document.querySelector('#dg0 .item[aria-label="' + n + '"] .box').getBBox(); return [b.x + b.width / 2, b.y + b.height / 2]; }; return [c('受付'), c('確認'), c('出荷')]; })()`);
+  const rx2 = (sv[0][0] - sv[1][0]) / (sv[2][0] - sv[1][0]), ry2 = (sv[0][1] - sv[1][1]) / (sv[2][0] - sv[1][0]);
+  const pp = ['受付', '確認', '出荷'].map(n => pos[n]);
+  const rxp = pp.every(Boolean) ? (pp[0][0] - pp[1][0]) / (pp[2][0] - pp[1][0]) : NaN, ryp = pp.every(Boolean) ? (pp[0][1] - pp[1][1]) / (pp[2][0] - pp[1][0]) : NaN;
+  ok('PowerPoint：動かした箱の位置が 2D と同じ割合（枠の外の値は枠の中におさめる）', Math.abs(rxp - rx2) < 0.03 && Math.abs(ryp - ry2) < 0.03 && rx2 > 1, JSON.stringify({ rx2: +rx2.toFixed(3), rxp: +rxp.toFixed(3), ry2: +ry2.toFixed(3), ryp: +ryp.toFixed(3) }));
+}
 // R6：グラフ5種類。3D で描く・押すと値と割合・PowerPoint はグラフ（あとで数字を直せる）
 {
   await pick(join(root, 'samples', '11_graphs.md'));

@@ -468,7 +468,7 @@
     var all = String(text == null ? '' : text).replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)
       .map(function (t, i) { return { text: t, no: i + 1 }; });
     var lines = unwrap(all, warn);
-    var doc = { title: '', summary: '', conclusion: '', todo: '', secret: '', diagrams: [], notes: [], body: [], warnings: warnings };
+    var doc = { title: '', summary: '', conclusion: '', todo: '', secret: '', diagrams: [], notes: [], body: [], warnings: warnings, layout: null, layoutAt: null, wrapEnd: unwrapEnd(all) };
     var sections = [], cur = { heading: null, level: 0, line: 0, lines: [] }, seenStructure = false;
     sections.push(cur);
     for (var i = 0; i < lines.length; i++) {
@@ -483,7 +483,10 @@
         }
         var info = fenceInfo(fm[2]);
         if (!closed) warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、最後までを中身とみなした', 'fix');
-        if (info.type) {
+        if (nk(info.word) === 'layout') {
+          if (doc.layoutAt) warn(ln.no, '配置（layout）が2つ以上あるので、はじめの1つだけを使った', 'skip');
+          else { doc.layoutAt = { start: ln.no, end: closed ? lines[j].no : null }; doc.layoutSrc = inner.map(function (x) { return x.text; }).join('\n'); }
+        } else if (info.type) {
           var body = inner.filter(function (x) { return trim(x.text) && !/^[\s\u3000]*(\/\/|%%)/.test(x.text); });
           var diag = { type: info.type, name: info.name, line: ln.no, items: [] };
           ({ flow: function () { parseGraph(diag, body, warn, false); },
@@ -559,8 +562,83 @@
     doc.notes.forEach(function (n) {
       doc.diagrams.forEach(function (d) { d.items.forEach(function (it) { if (it.key === n.key) n.sources.forEach(function (s) { if (it.sources.indexOf(s) < 0) it.sources.push(s); }); }); });
     });
+    partKeys(doc);
+    readLayout(doc, warn);
     warnings.sort(function (a, b) { return a.line - b.line; });
     return doc;
+  }
+
+  // ---- 配置（~~~layout）：箱の位置・線の曲げ・言葉のずらし。正本は md の文字だけ（R8a） ----
+  // 部品の鍵：箱は名前の鍵（同じ鍵の2つ目からは #2…）、線は「元>先」（同じ組の2本目からは #2…）
+  function partKeys(doc) {
+    doc.diagrams.forEach(function (d) {
+      var seen = {}, eseen = {};
+      d.items.forEach(function (it) { var n = seen[it.key] = (seen[it.key] || 0) + 1; it.pk = n > 1 ? it.key + '#' + n : it.key; });
+      (d.edges || []).forEach(function (e) { var b = d.items[e.from].pk + '>' + d.items[e.to].pk, n = eseen[b] = (eseen[b] || 0) + 1; e.pk = n > 1 ? b + '#' + n : b; });
+    });
+  }
+  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  function isPair(v) { return Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]) && typeof v[0] === 'number' && typeof v[1] === 'number'; }
+  function cleanPart(p) {
+    var o = {}, bad = false;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) return { o: o, bad: true };
+    Object.keys(p).forEach(function (k) {
+      if (k === 'x' || k === 'y') { if (typeof p[k] === 'number' && isFinite(p[k])) o[k] = p[k]; else bad = true; }
+      else if (k === 'bend' || k === 'label') { if (isPair(p[k])) o[k] = p[k].slice(); else bad = true; }
+      else bad = true;   // shortcut: 知らない鍵は描くのに使わない（R8b で形・色を足す）。md の中には残る
+    });
+    if ((o.x == null) !== (o.y == null)) { delete o.x; delete o.y; bad = true; }
+    return { o: o, bad: bad };
+  }
+  function readLayout(doc, warn) {
+    if (!doc.layoutAt) return;
+    var no = doc.layoutAt.start, obj;
+    try { obj = JSON.parse(doc.layoutSrc || '{}'); } catch (e) { warn(no, '配置（layout）が JSON として読めないので、自動の並べ方で出した（動かすと、正しい形で書き直す）', 'fix'); doc.layoutBroken = true; return; }
+    if (!obj || typeof obj !== 'object' || !Array.isArray(obj.diagrams)) { warn(no, '配置（layout）の形がちがうので、自動の並べ方で出した（{"v":1,"diagrams":[…]} の形）', 'fix'); doc.layoutBroken = true; return; }
+    doc.layout = obj;
+    var used = [], bad = false;
+    doc.diagrams.forEach(function (d) {
+      if (!MOVABLE[d.type]) return;
+      for (var k = 0; k < obj.diagrams.length; k++) {
+        var L = obj.diagrams[k];
+        if (used[k] || !L || L.type !== d.type || (L.name || '') !== (d.name || '')) continue;
+        used[k] = true; d.layoutIndex = k;
+        var parts = {};
+        if (L.parts && typeof L.parts === 'object') Object.keys(L.parts).forEach(function (pk) { var c = cleanPart(L.parts[pk]); parts[pk] = c.o; if (c.bad) bad = true; });
+        else if (L.parts != null) bad = true;
+        d.layout = parts;
+        break;
+      }
+    });
+    if (bad) warn(no, '配置（layout）に読めない値があったので、その所は使わなかった', 'fix');
+  }
+  function unwrapEnd(all) {
+    var noop = function () {}, inner = unwrap(all, noop);
+    if (inner === all) return null;
+    var last = inner.length ? inner[inner.length - 1].no : 0;
+    return last < all.length ? last + 1 : null;   // 外側の ```markdown の閉じの行（なければ null）
+  }
+  // layout の区画だけを書きかえた md を返す（ほかの行は1文字も変えない）。obj が null か図が空なら区画を消す
+  function writeLayout(text, doc, obj) {
+    text = String(text);
+    var bom = text.charCodeAt(0) === 0xFEFF ? '\uFEFF' : '', body = bom ? text.slice(1) : text;
+    var eol = /\r\n/.test(body) ? '\r\n' : /\r/.test(body) ? '\r' : '\n';
+    var lines = body.split(/\r\n|\r|\n/);
+    var empty = !obj || !obj.diagrams || !obj.diagrams.length;
+    var block = empty ? [] : ['~~~layout', '{"v":1,"diagrams":['].concat(obj.diagrams.map(function (L, k) { return JSON.stringify(L) + (k < obj.diagrams.length - 1 ? ',' : ''); }), [']}', '~~~']);
+    var at = doc.layoutAt;
+    if (at) {
+      var s0 = at.start - 1, e0 = at.end ? at.end - 1 : lines.length - 1;
+      // 消すときは、前に足した空行も一緒に消す（足して消すと、元の md に1文字も違わず戻る）
+      if (empty && s0 > 0 && lines[s0 - 1] === '') s0--;
+      lines.splice.apply(lines, [s0, e0 - s0 + 1].concat(block));
+    } else if (!empty) {
+      var ins = doc.wrapEnd ? doc.wrapEnd - 1 : lines.length;
+      var trail = !doc.wrapEnd && lines.length && lines[lines.length - 1] === '';   // 最後が改行で終わる md
+      if (trail) ins--;
+      lines.splice.apply(lines, [ins, 0].concat([''], block));
+    }
+    return bom + lines.join(eol);
   }
   function stripMarkup(s) { return String(s).replace(/\*\*|__|`/g, ''); }
   function itemKeyExists(doc, label) {
@@ -597,6 +675,6 @@
     };
   }
 
-  var api = { parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { writeLayout: writeLayout, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

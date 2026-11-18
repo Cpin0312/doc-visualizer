@@ -11,7 +11,7 @@
   function minFont(str) { var m, re = /font-size="([\d.]+)"/g, v = Infinity; while ((m = re.exec(str))) v = Math.min(v, +m[1]); return isFinite(v) ? v : 15; }
   var OK_EXT = /\.(md|markdown|mdown|mkd|txt)$/i;
   var $ = function (id) { return document.getElementById(id); };
-  var state = { doc: null, fileName: '', fs: 15, sel: null, meta: '', mode: '3d', scenes: [], captures: [], gl: '' };
+  var state = { doc: null, text: '', undo: [], redo: [], fileName: '', fs: 15, sel: null, meta: '', mode: '3d', scenes: [], captures: [], gl: '' };
   var D3 = window.DocScene;
   state.gl = D3 ? D3.support() : '3D の部品がない';
   if (state.gl) state.mode = '2d';
@@ -57,7 +57,7 @@
     try { doc = P.parseDoc(text); } catch (e) { showError('読みとりの途中で止まりました：' + e.message + '。画面は前のままです。'); return; }
     if (decodeWarn) doc.warnings.unshift({ line: 0, msg: decodeWarn, kind: 'fix' });
     showError('');
-    state.doc = doc; state.fileName = fileName; state.meta = meta; state.sel = null;
+    state.doc = doc; state.text = String(text); state.undo = []; state.redo = []; state.fileName = fileName; state.meta = meta; state.sel = null;
     closePanel();
     render();
     window.scrollTo(0, 0);
@@ -86,16 +86,11 @@
     $('cards').innerHTML = cardsHtml(doc);
     var hn = hasNoteFn(doc), td = today();
     $('diagrams').innerHTML = doc.diagrams.map(function (d, i) {
-      return '<section class="diagram-box" id="dg' + i + '"><h2>' + esc(d.name || P.TYPES[d.type].label) + '<span class="kind">' + esc(P.TYPES[d.type].label) + '・' + d.items.length + '</span></h2>' +
-        '<div class="svg-wrap">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
+      return '<section class="diagram-box" id="dg' + i + '"><h2>' + esc(d.name || P.TYPES[d.type].label) + '<span class="kind">' + esc(P.TYPES[d.type].label) + '・' + d.items.length + '</span>' +
+        (P.MOVABLE[d.type] ? '<button type="button" class="reset-layout" data-d="' + i + '"' + (hasLayout(d) ? '' : ' hidden') + '>元の配置に戻す</button>' : '') + '</h2>' +
+        '<div class="svg-wrap' + (P.MOVABLE[d.type] ? ' movable' : '') + '">' + R.svg(d, i, { fs: state.fs, today: td, hasNote: hn }) + '</div></section>';
     }).join('');
-    // 横に長い図は、小さくしすぎずに横へ動かして見る
-    // 縮めると文字が 11px より小さくなる図は、縮めずに横へ動かして見る
-    Array.prototype.forEach.call(document.querySelectorAll('.svg-wrap'), function (w) {
-      var s = w.querySelector('svg'), sw = +s.getAttribute('data-w'), cw = w.parentNode.clientWidth - 32;
-      var mf = minFont(s.outerHTML);
-      if (cw > 0 && mf * cw / sw < MIN_PX) { w.classList.add('wide'); s.style.width = Math.ceil(sw * MIN_PX / mf) + 'px'; }
-    });
+    Array.prototype.forEach.call(document.querySelectorAll('.svg-wrap'), fitWide);
     build3d(doc);
     renderLegend(doc);
     renderWarnings(doc);
@@ -109,6 +104,131 @@
   var GUIDE = '```flow 受注の流れ\n受付 -> 確認 -> 見積\n見積 -> 承認 : OK\n承認 !期限\n```\n\n' +
     '図の種類：flow（流れ）・lanes（担当ごとの流れ）・timeline（日程）・tree（木）・chart（数字）・kpi（大事な数字）・compare（比べる）\n' +
     '印：!期限（赤）・?確認（黄）・+完了（緑）\u3000箱の説明：「## 箱の名前」の下に書く\u3000出どころ：[元：資料名 2ページ]';
+
+  // 縮めると文字が 11px より小さくなる図は、縮めずに横へ動かして見る
+  function fitWide(w) {
+    var s = w.querySelector('svg'), sw = +s.getAttribute('data-w'), cw = w.parentNode.clientWidth - 32;
+    var mf = minFont(s.outerHTML);
+    w.classList.remove('wide'); s.style.width = '';
+    if (cw > 0 && mf * cw / sw < MIN_PX) { w.classList.add('wide'); s.style.width = Math.ceil(sw * MIN_PX / mf) + 'px'; }
+  }
+  function hasLayout(d) { return !!(d.layout && Object.keys(d.layout).length); }
+  function svgOf(d, i) { return R.svg(d, i, { fs: state.fs, today: today(), hasNote: hasNoteFn(state.doc) }); }
+  // 1つの図だけを描き直す（2D と 3D）。動かしている間は 3D を作り直さない
+  function redrawDiagram(i, no3d) {
+    var box = $('dg' + i), d = state.doc.diagrams[i], w = box.querySelector('.svg-wrap');
+    w.innerHTML = svgOf(d, i);
+    fitWide(w);
+    var rb = box.querySelector('.reset-layout'); if (rb) rb.hidden = !hasLayout(d);
+    if (!no3d) build3dOne(state.doc, i);
+    if (state.sel && state.sel.d === i) { var g = w.querySelector('.item[data-i="' + state.sel.i + '"]'); if (g) g.classList.add('sel'); }
+  }
+
+  // ---- 配置を変える（R8a）：正本は md の文字だけ。書きかえ → 読み直し → 変わった図だけ描き直す ----
+  function applyText(text, pushUndo) {
+    var doc;
+    try { doc = P.parseDoc(text); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return false; }
+    var old = state.doc;
+    if (pushUndo) { state.undo.push(state.text); if (state.undo.length > 100) state.undo.shift(); state.redo = []; }
+    state.text = text; state.doc = doc;
+    if (doc.diagrams.length !== old.diagrams.length) { render(); return true; }
+    doc.diagrams.forEach(function (d, i) { if (JSON.stringify(d.layout || null) !== JSON.stringify(old.diagrams[i].layout || null)) redrawDiagram(i); });
+    renderWarnings(doc);
+    return true;
+  }
+  // 図 i の部品 pk の配置を変える（patch が null なら、その図の配置を全部消す）
+  function setLayout(i, pk, patch) {
+    var doc = state.doc, d = doc.diagrams[i];
+    var obj = doc.layout ? JSON.parse(JSON.stringify(doc.layout)) : { v: 1, diagrams: [] };
+    var k = d.layoutIndex;
+    if (k == null) { if (patch == null) return; k = obj.diagrams.push({ type: d.type, name: d.name || '', parts: {} }) - 1; }
+    var L = obj.diagrams[k];
+    if (patch == null) obj.diagrams.splice(k, 1);
+    else {
+      if (!L.parts || typeof L.parts !== 'object') L.parts = {};
+      var cur = L.parts[pk] && typeof L.parts[pk] === 'object' ? L.parts[pk] : {};
+      Object.keys(patch).forEach(function (key) { cur[key] = patch[key]; });
+      L.parts[pk] = cur;
+    }
+    var text;
+    try { text = P.writeLayout(state.text, doc, obj); } catch (e) { showError('配置を書きこめませんでした：' + e.message + '。md は前のままです。'); return; }
+    applyText(text, true);
+  }
+  function undoRedo(back) {
+    var from = back ? state.undo : state.redo, to = back ? state.redo : state.undo;
+    if (!state.doc || !from.length) return;
+    to.push(state.text);
+    applyText(from.pop(), false);
+    toast(back ? '1つ戻しました' : 'やり直しました', 1500);
+  }
+
+  // 2D：箱・線の言葉・線をドラッグ。4px 以上動いたら「動かす」、それ以下なら今のとおり押す（click）
+  var drag2 = null, swallowClick = false;
+  function svgPoint(svg, x, y) { var m = svg.getScreenCTM(); if (!m) return null; var p = svg.createSVGPoint(); p.x = x; p.y = y; p = p.matrixTransform(m.inverse()); return [p.x, p.y]; }
+  function edgeUnder(svg, x, y) {
+    var pt = svgPoint(svg, x, y), hit = null;
+    if (!pt) return null;
+    var sp = svg.createSVGPoint(); sp.x = pt[0]; sp.y = pt[1];
+    Array.prototype.forEach.call(svg.querySelectorAll('path.edge[data-ek]'), function (p) {
+      if (hit) return;
+      var old = p.getAttribute('stroke-width');
+      p.setAttribute('stroke-width', '14');
+      try { if (p.isPointInStroke(sp)) hit = p; } catch (e) { /* 古いブラウザ：線は曲げられない */ }
+      p.setAttribute('stroke-width', old);
+    });
+    return hit;
+  }
+  function startDrag2(e) {
+    if (e.button !== 0 || present.on || !state.doc) return;
+    var svg = e.target.closest && e.target.closest('.svg-wrap svg'), box = svg && svg.closest('.diagram-box');
+    if (!svg) return;
+    var i = +box.id.slice(2), d = state.doc.diagrams[i];
+    if (!P.MOVABLE[d.type]) return;
+    var p0 = svgPoint(svg, e.clientX, e.clientY), lay = d.layout || {}, g, t = null;
+    if (!p0) return;
+    if ((g = e.target.closest('.item'))) {
+      var it = d.items[+g.getAttribute('data-i')], bb = g.querySelector('.box').getBBox();
+      t = { kind: 'box', pk: it.pk, base: [bb.x, bb.y], w: bb.width, h: bb.height };
+    } else if ((g = e.target.closest('.edge-label[data-ek]'))) {
+      var pk = g.getAttribute('data-ek'), l0 = (lay[pk] || {}).label || [0, 0];
+      t = { kind: 'label', pk: pk, base: l0.slice() };
+    } else if ((g = edgeUnder(svg, e.clientX, e.clientY))) {
+      var pk2 = g.getAttribute('data-ek'), b0 = (lay[pk2] || {}).bend;
+      t = { kind: 'bend', pk: pk2, base: b0 ? b0.slice() : p0 };
+    }
+    if (!t) return;
+    t.i = i; t.p0 = p0; t.x0 = e.clientX; t.y0 = e.clientY; t.moving = false; t.W = +svg.getAttribute('data-w'); t.H = +svg.getAttribute('data-h');
+    drag2 = t;
+    if (t.kind !== 'box') e.preventDefault();
+  }
+  function dragValue(t, svg, x, y) {
+    var p = svgPoint(svg, x, y) || t.p0, dx = p[0] - t.p0[0], dy = p[1] - t.p0[1];
+    if (t.kind === 'box') return { x: Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W - t.w))), y: Math.round(Math.max(0, Math.min(t.base[1] + dy, t.H - t.h))) };
+    if (t.kind === 'label') return { label: [Math.round(t.base[0] + dx), Math.round(t.base[1] + dy)] };
+    return { bend: [Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W))), Math.round(Math.max(0, Math.min(t.base[1] + dy, t.H)))] };
+  }
+  function previewDrag(t, v) {
+    var d = state.doc.diagrams[t.i], keep = d.layout, tmp = JSON.parse(JSON.stringify(keep || {}));
+    tmp[t.pk] = Object.assign(tmp[t.pk] || {}, v);
+    d.layout = tmp;
+    try { redrawDiagram(t.i, true); } finally { d.layout = keep; }
+  }
+  window.addEventListener('pointermove', function (e) {
+    var t = drag2;
+    if (!t) return;
+    if (!t.moving && Math.abs(e.clientX - t.x0) + Math.abs(e.clientY - t.y0) < 4) return;
+    t.moving = true; closePanel();
+    var svg = $('dg' + t.i).querySelector('.svg-wrap svg');
+    t.v = dragValue(t, svg, e.clientX, e.clientY);
+    if (!t.raf) t.raf = requestAnimationFrame(function () { t.raf = 0; if (drag2 === t) previewDrag(t, t.v); });
+  });
+  window.addEventListener('pointerup', function () {
+    var t = drag2; drag2 = null;
+    if (!t || !t.moving) return;
+    if (t.raf) cancelAnimationFrame(t.raf);
+    swallowClick = true; setTimeout(function () { swallowClick = false; }, 0);
+    setLayout(t.i, t.pk, t.v);
+  });
 
   function cardsHtml(doc) {
     var c = [['summary', 'ひとことで', ''], ['conclusion', '結論', 'conclusion'], ['todo', 'すること', 'todo']];
@@ -293,9 +413,37 @@
     dispose3d();
     if (state.gl) { applyMode(); return; }
     try {
-      doc.diagrams.forEach(function (d, i) {
-        var box = $('dg' + i), svg = box.querySelector('.svg-wrap svg');
-        var sc = D3.create(d, svg, { onPick: function (it, e) { if (it == null) closePanel(); else press(i, it, { x: e.clientX, y: e.clientY, w: 0, h: 0 }, false); } });
+      doc.diagrams.forEach(function (d, i) { make3d(doc, i); });
+    } catch (e) {
+      fallback2d('3D を作れなかったので 2D で出しています（' + e.message + '）');
+      return;
+    }
+    applyMode();
+  }
+  // 図 i の 3D だけを作り直す（配置を変えたとき）。向きは残す
+  function build3dOne(doc, i) {
+    if (state.gl || !state.scenes[i]) return;
+    var old = state.scenes[i], view = old.getView && old.getView();
+    if (io) io.unobserve(old.canvas);
+    old.dispose();
+    var sc0 = $('dg' + i).querySelector('.v3scroll'); if (sc0) sc0.remove();
+    try { make3d(doc, i, view); } catch (e) { fallback2d('3D を作れなかったので 2D で出しています（' + e.message + '）'); return; }
+    redraw(i);
+  }
+  function make3d(doc, i, view) {
+        var d = doc.diagrams[i], box = $('dg' + i), svg = box.querySelector('.svg-wrap svg');
+        var sc = D3.create(d, svg, {
+          onPick: function (it, e) { if (it == null) closePanel(); else press(i, it, { x: e.clientX, y: e.clientY, w: 0, h: 0 }, false); },
+          // 箱を地面の上で動かす（動かせる図だけ）。離したら md の配置に書く
+          canMove: P.MOVABLE[d.type] ? function () { return true; } : null,
+          onMove: function (it, dx, dy) {
+            var g = $('dg' + i).querySelector('.svg-wrap .item[data-i="' + it + '"] .box'), bb = g && g.getBBox(), W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
+            if (!bb) return;
+            closePanel();
+            setLayout(i, state.doc.diagrams[i].items[it].pk, { x: Math.round(Math.max(0, Math.min(bb.x + dx, W - bb.width))), y: Math.round(Math.max(0, Math.min(bb.y + dy, H - bb.height))) });
+          }
+        });
+        if (view && sc.setView) sc.setView(view);
         var wrap = document.createElement('div'), scroll = document.createElement('div');
         wrap.className = 'view3d'; scroll.className = 'v3scroll';
         // 画面の形は、3D で見たときの図の形に合わせる（高さ 280〜620px）。文字が 11px を下まわるなら、形を保って大きくし、横へ動かして見る
@@ -318,12 +466,6 @@
         if (io) io.observe(sc.canvas);
         state.scenes[i] = sc;
         state.captures[i] = sc.capture(1200, 675);
-      });
-    } catch (e) {
-      fallback2d('3D を作れなかったので 2D で出しています（' + e.message + '）');
-      return;
-    }
-    applyMode();
   }
   function redraw(k) { var sc = state.scenes[k]; if (sc && state.mode === '3d') sc.draw(); }
   function applyMode() {
@@ -618,7 +760,11 @@
       else showError('コピーできませんでした。copilot-prompt.md を開いて、中身をコピーしてください。');
     });
   });
+  $('diagrams').addEventListener('pointerdown', startDrag2);
   $('diagrams').addEventListener('click', function (e) {
+    if (swallowClick) { swallowClick = false; return; }
+    var rb = e.target.closest && e.target.closest('.reset-layout');
+    if (rb) { setLayout(+rb.getAttribute('data-d'), null, null); toast('元の配置に戻しました（Ctrl+Z で取り消せます）', 2500); return; }
     var g = e.target.closest && e.target.closest('.item');
     if (g) press(+g.getAttribute('data-d'), +g.getAttribute('data-i'), anchorOf(g), false);
   });
@@ -644,6 +790,12 @@
     }
     if (e.key === 'Escape') closePanel();
     var tag = (e.target && e.target.tagName || '').toLowerCase();
+    var typing = tag === 'input' || tag === 'select' || tag === 'textarea' || (e.target && e.target.isContentEditable);
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
+      var k = (e.key || '').toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(true); return; }
+      if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedo(false); return; }
+    }
     if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey && tag !== 'input' && tag !== 'select' && tag !== 'textarea') { e.preventDefault(); startPresent(); }
   });
   document.addEventListener('fullscreenchange', function () { if (!document.fullscreenElement && present.on) endPresent(); });
@@ -675,6 +827,8 @@
     pptx: function () { return lastPptx; },
     // 3D で、図のいちばん小さい文字が画面で何 px に見えるか
     text3d: function (d) { var sc = state.scenes[d], c = sc && sc.canvas; return sc ? +(sc.textScale(c.clientWidth, c.clientHeight) * minFont($('dg' + d).querySelector('.svg-wrap svg').outerHTML)).toFixed(1) : null; },
-    mode: function () { return state.mode; }
+    mode: function () { return state.mode; },
+    text: function () { return state.text; },
+    canUndo: function () { return [state.undo.length, state.redo.length]; }
   };
 })();

@@ -108,3 +108,8 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 .page .p-note .src { color: var(--sub); font-size: 12px; }
 .page .p-legend { font-size: 12px; color: var(--sub); margin-top: 4px; }
 .page .p-list { font-size: 14px; }
+/* R8a：動かせる図（箱・線の言葉はドラッグで動く。線はドラッグで曲がる） */
+.svg-wrap svg { -webkit-user-select: none; user-select: none; }
+.diagram-box .movable .item, .diagram-box .movable .edge-label { cursor: move; }
+.reset-layout { margin-left: 10px; font: inherit; font-size: 0.8rem; font-weight: normal; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); cursor: pointer; vertical-align: middle; }
+.reset-layout:hover { background: #eef3fb; }

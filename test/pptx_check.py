@@ -20,6 +20,7 @@ for s in p.slides:
         'cust': sum('custGeom' in x for x in xml), 'arrows': sum('tailEnd' in x for x in xml),
         'pics': sum(1 for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE),
         'secret': any(sh.name == 'secret' for sh in s.shapes),
+        'pos': {sh.text_frame.text: [sh.left + sh.width / 2, sh.top + sh.height / 2] for sh in s.shapes if sh.has_text_frame and sh.text_frame.text},
         'auto': [kind(sh) for sh in s.shapes if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE],
         'charts': [{'type': str(sh.chart.chart_type).split(' ')[0], 'cats': [str(c) for c in sh.chart.plots[0].categories],
                     'series': [[se.name, list(se.values)] for se in sh.chart.plots[0].series],

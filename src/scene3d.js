@@ -382,18 +382,41 @@
       var hit = ray.intersectObjects(rootG.children, true).filter(function (h) { return h.object.userData.item != null; })[0];
       return hit ? hit.object.userData.item : null;
     }
+    // 画面の点 → 地面（flow・lanes は床、ほかは立てた板。高さ 0）の上の SVG の座標
+    var plane0 = ground ? new T.Plane(new T.Vector3(0, 1, 0), 0) : new T.Plane(new T.Vector3(0, 0, 1), 0);
+    function ground0(ev, el) {
+      var b = el.getBoundingClientRect(), q = new T.Vector3();
+      var ndc = new T.Vector2((ev.clientX - b.left) / b.width * 2 - 1, -((ev.clientY - b.top) / b.height) * 2 + 1);
+      place(b.width / b.height, lastT);
+      ray.setFromCamera(ndc, cam);
+      if (!ray.ray.intersectPlane(plane0, q)) return null;
+      return ground ? [q.x / S + W / 2, q.z / S + H / 2] : [q.x / S + W / 2, H / 2 - q.y / S];
+    }
     function bind(el, redraw) {
-      el.addEventListener('pointerdown', function (e) { drag = { x: e.clientX, y: e.clientY, az: view.dAz, el: view.dEl, moved: false }; try { el.setPointerCapture(e.pointerId); } catch (x) { /* なくてよい */ } });
+      el.addEventListener('pointerdown', function (e) {
+        var hit = opts.canMove ? pick(e, el) : null, g0 = hit != null && ground0(e, el);
+        drag = { x: e.clientX, y: e.clientY, az: view.dAz, el: view.dEl, moved: false, item: g0 ? hit : null, g0: g0 };
+        try { el.setPointerCapture(e.pointerId); } catch (x) { /* なくてよい */ }
+      });
       el.addEventListener('pointermove', function (e) {
-        if (!drag) { el.style.cursor = pick(e, el) != null ? 'pointer' : 'grab'; return; }
+        if (!drag) { el.style.cursor = pick(e, el) != null ? (opts.canMove ? 'move' : 'pointer') : 'grab'; return; }
         var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+        if (drag.item != null) {
+          // 箱を地面の上で動かす（高さは変えない）。線は離したときにつけ直す
+          if (!drag.moved) return;
+          var g1 = ground0(e, el);
+          if (g1) { drag.delta = [g1[0] - drag.g0[0], g1[1] - drag.g0[1]]; items[drag.item].group.position.copy(P(drag.delta[0], drag.delta[1], 0).sub(P(0, 0, 0))); }
+          if (redraw) redraw();
+          return;
+        }
         view.dAz = Math.max(-0.9, Math.min(0.9, drag.az - dx * 0.006));
         view.dEl = Math.max(-0.8, Math.min(0.6, drag.el + dy * 0.005));
         if (redraw) redraw();
       });
       el.addEventListener('pointerup', function (e) {
         var d = drag; drag = null;
+        if (d && d.item != null && d.moved) { if (d.delta && opts.onMove) opts.onMove(d.item, d.delta[0], d.delta[1]); else items[d.item].group.position.set(0, 0, 0); return; }
         if (d && !d.moved && opts.onPick) opts.onPick(pick(e, el), e);   // 何もない所なら null（窓の外を押した）
       });
       el.addEventListener('dblclick', function () { view.dAz = 0; view.dEl = 0; if (redraw) redraw(); });
@@ -424,6 +447,9 @@
       draw: function (t, target) { return drawTo(target || canvas, t == null ? performance.now() / 1000 : t); },
       capture: capture, bind: bind, focus: focus, select: select, dispose: dispose,
       busy: function () { return !!tween; },
+      // 配置を変えて作り直すとき、回した向きを残す
+      getView: function () { return { dAz: view.dAz, dEl: view.dEl }; },
+      setView: function (v) { if (v) { view.dAz = v.dAz; view.dEl = v.dEl; } },
       // 全体を見る向きで、図が画面の上で横長・縦長どちらに見えるか（幅÷高さ）。画面の形をこれに合わせると、むだな余白がなくなる
       shape: function () {
         var dv = dirOf(baseAz, baseEl), mn = bounds.min, mx = bounds.max, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;

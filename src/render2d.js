@@ -161,13 +161,54 @@
     return cols;
   }
 
+  // ---- 配置（layout）：自動の並べ方のあとで、動かした箱を置き直す。枠（W×H）の中におさめる ----
+  function applyLayout(diag, B, W, H) {
+    var L = diag.layout || {}, moved = {};
+    diag.items.forEach(function (it, v) {
+      var p = L[it.pk], b = B[v];
+      if (!b || !p || p.x == null) return;
+      b.x = Math.max(0, Math.min(p.x, W - b.w)); b.y = Math.max(0, Math.min(p.y, H - b.h));
+      moved[v] = true;
+    });
+    return moved;
+  }
+  function edgeLay(diag, pk) { return (diag.layout || {})[pk] || {}; }
+  function hasReverse(diag, e) { return diag.edges.some(function (o) { return o.from === e.to && o.to === e.from; }); }
+  // 箱の真ん中から (tx, ty) へ向かう線が、箱のふちと交わる点
+  function rim(b, tx, ty, pad) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = tx - cx, dy = ty - cy;
+    if (!dx && !dy) return [cx, cy];
+    var k = Math.min(dx ? (b.w / 2 + pad) / Math.abs(dx) : Infinity, dy ? (b.h / 2 + pad) / Math.abs(dy) : Infinity);
+    return [cx + dx * k, cy + dy * k];
+  }
+  // 動かした箱の線・曲げた線：箱のふちから箱のふちへ。曲げる点があれば、その点を通る曲線
+  function freeEdge(a, b, bend, side) {
+    // 行きと帰りの線があるときは、それぞれ右側へふくらませて重ねない（向きが逆なので、自然に反対側になる）
+    if (!bend && side) {
+      var ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2, L = Math.hypot(bx - ax, by - ay) || 1;
+      bend = [(ax + bx) / 2 - (by - ay) / L * side, (ay + by) / 2 + (bx - ax) / L * side];
+    }
+    var ta = bend || [b.x + b.w / 2, b.y + b.h / 2], tb = bend || [a.x + a.w / 2, a.y + a.h / 2];
+    var s0 = rim(a, ta[0], ta[1], 0), e0 = rim(b, tb[0], tb[1], 2);
+    if (!bend) return { d: 'M' + r(s0[0]) + ' ' + r(s0[1]) + ' L' + r(e0[0]) + ' ' + r(e0[1]), mx: (s0[0] + e0[0]) / 2, my: (s0[1] + e0[1]) / 2 };
+    var c = [2 * bend[0] - (s0[0] + e0[0]) / 2, 2 * bend[1] - (s0[1] + e0[1]) / 2];
+    return { d: 'M' + r(s0[0]) + ' ' + r(s0[1]) + ' Q' + r(c[0]) + ' ' + r(c[1]) + ' ' + r(e0[0]) + ' ' + r(e0[1]), mx: bend[0], my: bend[1] };
+  }
+  function ekAttr(pk) { return pk ? ' data-ek="' + esc(pk) + '"' : ''; }
+  function edgeLabel(t, x, y, fs, pk) {
+    var w = tw(t, fs) + 12;
+    return '<g class="edge-label"' + ekAttr(pk) + '><rect x="' + r(x - w / 2) + '" y="' + r(y - fs * 0.8) + '" width="' + r(w) + '" height="' + r(fs * 1.6) + '" rx="6" fill="#fff" stroke="' + C.grid + '"/>' +
+      textEl([t], x, y, fs, { fill: C.sub }) + '</g>';
+  }
+
   // 戻る矢印（下を回る線）は、どれも別の深さ yb を通す（yb はふつうの線の言葉が重ならない間かくで、呼ぶ側が決める）
-  function edgePaths(diag, d, B, backY, opts) {
+  function edgePaths(diag, d, B, backY, opts, moved) {
     var out = '', labels = '', fs = Math.max(11, Math.round(opts.fs * 0.85));
     diag.edges.forEach(function (e, ei) {
-      var a = B[e.from], b = B[e.to], path, mx, my;
+      var a = B[e.from], b = B[e.to], path, mx, my, lay = edgeLay(diag, e.pk);
       if (!a || !b) return;
-      if (backY[ei] != null) {
+      if ((moved[e.from] || moved[e.to] || lay.bend) && e.from !== e.to) { var fe = freeEdge(a, b, lay.bend, hasReverse(diag, e) ? opts.fs * 1.6 : 0); path = fe.d; mx = fe.mx; my = fe.my; }
+      else if (backY[ei] != null) {
         var yb = backY[ei], x1 = a.x + a.w / 2, x2 = b.x + b.w / 2, y0 = a.y + a.h, y3 = b.y + b.h + 2;
         if (e.from === e.to) x2 = x1 + a.w / 4;
         var c = (yb - (y0 + y3) / 8) / 0.75;   // 線のまん中がちょうど yb を通るように
@@ -178,12 +219,8 @@
         path = 'M' + r(sx) + ' ' + r(sy) + ' C' + r(cx) + ' ' + r(sy) + ' ' + r(cx) + ' ' + r(ey) + ' ' + r(ex) + ' ' + r(ey);
         mx = cx; my = (sy + ey) / 2;
       }
-      out += '<path class="edge" d="' + path + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
-      if (e.label) {
-        var w = tw(e.label, fs) + 12;
-        labels += '<g class="edge-label"><rect x="' + r(mx - w / 2) + '" y="' + r(my - fs * 0.8) + '" width="' + r(w) + '" height="' + r(fs * 1.6) + '" rx="6" fill="#fff" stroke="' + C.grid + '"/>' +
-          textEl([e.label], mx, my, fs, { fill: C.sub }) + '</g>';
-      }
+      out += '<path class="edge"' + ekAttr(e.pk) + ' d="' + path + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
+      if (e.label) labels += edgeLabel(e.label, mx + (lay.label ? lay.label[0] : 0), my + (lay.label ? lay.label[1] : 0), fs, e.pk);
     });
     return { paths: out, labels: labels };
   }
@@ -245,7 +282,8 @@
       Object.keys(backIdx).forEach(function (ei) { backY[ei] = bottom + fs * 1.2 + (backIdx[ei].k - 1) * step; });
       extra = fs * 1.2 + nBack * step;
     }
-    var E = edgePaths(diag, d, B, backY, opts);
+    var moved = applyLayout(diag, B, width, bottom + extra + 24);
+    var E = edgePaths(diag, d, B, backY, opts, moved);
     body += E.paths;
     diag.items.forEach(function (it) { if (B[it.id]) body += drawBox(d, it, B[it.id], opts); });
     body += E.labels;
@@ -350,16 +388,17 @@
       return horiz ? { x: dpos[it.depth], y: pos[it.id] - m.h / 2 + 20, w: m.w, h: m.h, lines: m.lines }
         : { x: pos[it.id] - m.w / 2 + 20, y: dpos[it.depth], w: m.w, h: m.h, lines: m.lines };
     });
-    var body = '';
+    var body = '', W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; })) + 30, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; })) + 30;
+    var moved = applyLayout(diag, B, W, H);
     items.forEach(function (it) {
       if (it.parent == null) return;
-      var a = B[it.parent], b = B[it.id], p;
-      if (horiz) { var x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; p = 'M' + r(x1) + ' ' + r(y1) + ' C' + r(mx) + ' ' + r(y1) + ' ' + r(mx) + ' ' + r(y2) + ' ' + r(x2) + ' ' + r(y2); }
+      var a = B[it.parent], b = B[it.id], p, pk = items[it.parent].pk + '>' + it.pk, lay = edgeLay(diag, pk);
+      if (moved[it.parent] || moved[it.id] || lay.bend) p = freeEdge(a, b, lay.bend).d;
+      else if (horiz) { var x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; p = 'M' + r(x1) + ' ' + r(y1) + ' C' + r(mx) + ' ' + r(y1) + ' ' + r(mx) + ' ' + r(y2) + ' ' + r(x2) + ' ' + r(y2); }
       else { var X1 = a.x + a.w / 2, Y1 = a.y + a.h, X2 = b.x + b.w / 2, Y2 = b.y, my = (Y1 + Y2) / 2; p = 'M' + r(X1) + ' ' + r(Y1) + ' C' + r(X1) + ' ' + r(my) + ' ' + r(X2) + ' ' + r(my) + ' ' + r(X2) + ' ' + r(Y2); }
-      body += '<path class="edge" d="' + p + '" fill="none" stroke="' + C.edge + '" stroke-width="2"/>';
+      body += '<path class="edge"' + ekAttr(pk) + ' d="' + p + '" fill="none" stroke="' + C.edge + '" stroke-width="2"/>';
     });
     items.forEach(function (it) { body += drawBox(d, it, B[it.id], opts); });
-    var W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; })) + 30, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; })) + 30;
     return wrapSvg(W, H, body, 'tree');
   }
 
@@ -594,10 +633,17 @@
       y += h + fs * 3.6;
     });
     var maxR = Math.max.apply(null, B.map(function (b) { return b.x + b.w; })), paths = '', labels = '', nb = 0;
-    var lab = function (t, x, yy) { var w = tw(t, lf) + 12; labels += '<g class="edge-label"><rect x="' + r(x - w / 2) + '" y="' + r(yy - lf * 0.8) + '" width="' + r(w) + '" height="' + r(lf * 1.6) + '" rx="6" fill="#fff" stroke="' + C.grid + '"/>' + textEl([t], x, yy, lf, { fill: C.sub }) + '</g>'; };
+    var nBack = diag.edges.filter(isBack).length, FW = maxR + fs * 2.4 + nBack * fs * 1.3 + 20, FH = y - fs * 1.4;
+    var moved = applyLayout(diag, B, FW, FH), lay;
+    var lab = function (t, x, yy) { labels += edgeLabel(t, x + (lay.label ? lay.label[0] : 0), yy + (lay.label ? lay.label[1] : 0), lf, lay.pk); };
     diag.edges.forEach(function (e, ei) {
-      var a = B[e.from], b = B[e.to], acx = a.x + a.w / 2, acy = a.y + a.h / 2, bcx = b.x + b.w / 2, dd;
-      if (isBack(e)) {
+      var a = B[e.from], b = B[e.to], acx = a.x + a.w / 2, acy = a.y + a.h / 2, bcx = b.x + b.w / 2, dd, el = edgeLay(diag, e.pk);
+      lay = { bend: el.bend, label: el.label, pk: e.pk };
+      if ((moved[e.from] || moved[e.to] || lay.bend) && e.from !== e.to) {
+        if (isBack(e)) nb++;   // 戻る矢印の列は、動かしても詰めない（ほかの戻る矢印の位置が変わらないように）
+        var fe = freeEdge(a, b, lay.bend, hasReverse(diag, e) ? fs * 1.6 : 0); dd = fe.d;
+        if (e.label) lab(e.label, fe.mx, fe.my - lf * 1.1);
+      } else if (isBack(e)) {
         // 右を回って、行き先の上から入る（判断の左右の角は、はい・いいえで使うので空けておく）
         var xr = maxR + fs * 1.6 + nb++ * fs * 1.3, ty = b.y - fs * 1.2 - (nb - 1) * 4;
         dd = 'M' + r(a.x + a.w) + ' ' + r(acy) + ' L' + r(xr) + ' ' + r(acy) + ' L' + r(xr) + ' ' + r(ty) + ' L' + r(bcx) + ' ' + r(ty) + ' L' + r(bcx) + ' ' + r(b.y - 2);
@@ -611,10 +657,10 @@
         dd = Math.abs(acx - bcx) < 1 ? 'M' + r(acx) + ' ' + r(sy) + ' L' + r(bcx) + ' ' + r(b.y - 2) : 'M' + r(acx) + ' ' + r(sy) + ' L' + r(acx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(my) + ' L' + r(bcx) + ' ' + r(b.y - 2);
         if (e.label) lab(e.label, acx + tw(e.label, lf) / 2 + 14, sy + fs * 0.9);
       }
-      paths += '<path class="edge" d="' + dd + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
+      paths += '<path class="edge"' + ekAttr(e.pk) + ' d="' + dd + '" fill="none" stroke="' + C.edge + '" stroke-width="2" marker-end="url(#' + ARW + ')"/>';
     });
     var body = paths + diag.items.map(function (it, v) { return fcShape(d, it, B[v], opts); }).join('') + labels;
-    return wrapSvg(maxR + fs * 2.4 + nb * fs * 1.3 + 20, y - fs * 1.4, body, 'flowchart');
+    return wrapSvg(FW, FH, body, 'flowchart');
   }
 
   // ---- 大事な数字（カード） ----
