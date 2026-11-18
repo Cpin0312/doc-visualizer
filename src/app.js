@@ -8,7 +8,10 @@
   var MAX_BYTES = 5 * 1024 * 1024;
   var OK_EXT = /\.(md|markdown|mdown|mkd|txt)$/i;
   var $ = function (id) { return document.getElementById(id); };
-  var state = { doc: null, fileName: '', fs: 15, sel: null, meta: '' };
+  var state = { doc: null, fileName: '', fs: 15, sel: null, meta: '', mode: '3d', scenes: [], captures: [], gl: '' };
+  var D3 = window.DocScene;
+  state.gl = D3 ? D3.support() : '3D の部品がない';
+  if (state.gl) state.mode = '2d';
 
   // 試験のために「今日」を変えられる（例：DocVisualizer.html#today=2026-11-18）
   function today() {
@@ -70,6 +73,7 @@
     if (!doc) return;
     $('welcome').hidden = true; $('doc').hidden = false;
     $('pdf').disabled = false;
+    $('presentBtn').disabled = !doc.diagrams.length;
     document.documentElement.style.setProperty('--fs', state.fs + 'px');
     $('status').textContent = '読みこみ：' + state.fileName + '（' + state.meta + '）・図 ' + doc.diagrams.length + ' つ';
     $('title').textContent = title(doc);
@@ -86,6 +90,7 @@
       var s = w.querySelector('svg'), sw = +s.getAttribute('data-w');
       if (w.clientWidth && sw / w.clientWidth > 1.8) w.classList.add('wide');
     });
+    build3d(doc);
     renderLegend(doc);
     renderWarnings(doc);
     var bodyHtml = doc.body.map(function (s) { return (s.heading ? '<h' + Math.min(6, s.level + 1) + '>' + inline(s.heading) + '</h' + Math.min(6, s.level + 1) + '>' : '') + md(s.lines); }).join('');
@@ -191,6 +196,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.item.sel'), function (e) { e.classList.remove('sel'); });
     var g = document.querySelector('#dg' + d + ' .item[data-i="' + i + '"]');
     if (g) g.classList.add('sel');
+    state.scenes.forEach(function (sc, k) { if (sc) { sc.select(k === d ? i : null); redraw(k); } });
     state.sel = { d: d, i: i };
     var n = noteFor(it.key), h = '<h2>' + esc(it.label) + '</h2>';
     h += it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('');
@@ -214,8 +220,151 @@
   }
   function closePanel() {
     $('panel').hidden = true;
+    state.scenes.forEach(function (sc, k) { if (sc) { sc.select(null); redraw(k); } });
     Array.prototype.forEach.call(document.querySelectorAll('.item.sel'), function (e) { e.classList.remove('sel'); });
     state.sel = null;
+  }
+
+  // ---- 3D ----
+  var visible = {}, io = window.IntersectionObserver ? new IntersectionObserver(function (es) {
+    es.forEach(function (e) { visible[e.target.getAttribute('data-d')] = e.isIntersecting; });
+  }) : null;
+  function dispose3d() {
+    state.scenes.forEach(function (sc) { if (sc) { if (io) io.unobserve(sc.canvas); sc.dispose(); } });
+    state.scenes = []; state.captures = []; visible = {};
+  }
+  function fallback2d(reason) {
+    state.gl = reason; state.mode = '2d';
+    dispose3d();
+    applyMode();
+  }
+  function build3d(doc) {
+    dispose3d();
+    if (state.gl) { applyMode(); return; }
+    try {
+      doc.diagrams.forEach(function (d, i) {
+        var box = $('dg' + i), svg = box.querySelector('.svg-wrap svg');
+        var sc = D3.create(d, svg, { onPick: function (it) { openItem(i, it); } });
+        var wrap = document.createElement('div');
+        wrap.className = 'view3d';
+        var W = +svg.getAttribute('data-w'), H = +svg.getAttribute('data-h');
+        wrap.style.setProperty('--ar', String(Math.min(1.1, Math.max(0.36, (H / W) * (sc.ground ? 0.85 : 1)))));
+        sc.canvas.setAttribute('data-d', i);
+        sc.canvas.setAttribute('role', 'img');
+        sc.canvas.setAttribute('aria-label', (d.name || P.TYPES[d.type].label) + ' の 3D の図（押すと説明、ドラッグで回す、2回押すと元の向き）');
+        wrap.appendChild(sc.canvas);
+        box.appendChild(wrap);
+        sc.bind(sc.canvas, function () { sc.draw(); });
+        if (io) io.observe(sc.canvas);
+        state.scenes[i] = sc;
+        state.captures[i] = sc.capture(1200, 675);
+      });
+    } catch (e) {
+      fallback2d('3D を作れなかったので 2D で出しています（' + e.message + '）');
+      return;
+    }
+    applyMode();
+  }
+  function redraw(k) { var sc = state.scenes[k]; if (sc && state.mode === '3d') sc.draw(); }
+  function applyMode() {
+    var m3 = state.mode === '3d' && !state.gl;
+    $('diagrams').classList.toggle('mode-3d', m3);
+    var b = $('mode');
+    b.disabled = !!state.gl || !state.doc;
+    b.textContent = m3 ? '2D にする' : '3D にする';
+    b.setAttribute('aria-pressed', String(m3));
+    b.title = state.gl ? state.gl : (m3 ? '平らな図（2D）にする' : '立体の図（3D）にする');
+    var note = $('glnote');
+    note.hidden = !state.gl || !state.doc;
+    note.textContent = state.gl ? '3D は使えないので、2D で出しています（理由：' + state.gl + '）' : '';
+    if (m3) state.scenes.forEach(function (sc, k) { redraw(k); });
+  }
+  if (D3) D3.setOnLost(function () { fallback2d('3D の描き手（WebGL）が止まった'); });
+  // ゆっくり動かす。見えていない図・隠れたタブ・動きを減らす設定のときは止める
+  function loop() {
+    requestAnimationFrame(loop);
+    if (document.hidden || (D3 && D3.reduced)) return;
+    if (present.on) { if (present.scene) present.scene.draw(null, present.canvas); return; }
+    if (state.mode !== '3d') return;
+    state.scenes.forEach(function (sc, k) { if (sc && visible[k]) sc.draw(); });
+  }
+  window.addEventListener('resize', function () { state.scenes.forEach(function (sc, k) { redraw(k); }); });
+
+  // ---- 発表（P かボタン。F5 は読みこみ直しになるので使わない） ----
+  var present = { on: false, steps: [], k: 0, scene: null, canvas: null, d: -1 };
+  function startPresent() {
+    var doc = state.doc;
+    if (!doc || !doc.diagrams.length || present.on) return;
+    present.steps = [];
+    doc.diagrams.forEach(function (d, i) {
+      present.steps.push({ d: i, i: null });
+      var order = d.items.map(function (it) { return it.id; });
+      var svg = $('dg' + i).querySelector('.svg-wrap svg');
+      if (d.type === 'flow' || d.type === 'lanes') {
+        // 左から右、上から下の順
+        var pos = {};
+        Array.prototype.forEach.call(svg.querySelectorAll('.item'), function (g) { var b = g.querySelector('.box'); pos[g.getAttribute('data-i')] = [+b.getAttribute('x'), +b.getAttribute('y')]; });
+        order.sort(function (a, b) { return (pos[a][0] - pos[b][0]) || (pos[a][1] - pos[b][1]); });
+      }
+      order.forEach(function (id) { present.steps.push({ d: i, i: id }); });
+    });
+    present.on = true; present.k = 0; present.d = -1;
+    closePanel();
+    $('present').hidden = false;
+    var el = $('present');
+    if (el.requestFullscreen) el.requestFullscreen().catch(function () { /* 全画面にできなくても続ける */ });
+    showStep();
+  }
+  function endPresent() {
+    if (!present.on) return;
+    present.on = false;
+    if (present.scene) present.scene.focus(null);
+    present.scene = null; present.d = -1;
+    $('present').hidden = true;
+    $('pStage').innerHTML = '';
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    state.scenes.forEach(function (sc, k) { if (sc) { sc.select(null); redraw(k); } });
+  }
+  function showStep() {
+    var st = present.steps[present.k], doc = state.doc, d = doc.diagrams[st.d];
+    var use3d = state.mode === '3d' && state.scenes[st.d];
+    if (present.d !== st.d) {
+      present.d = st.d;
+      var stage = $('pStage');
+      stage.innerHTML = '';
+      if (present.scene) present.scene.focus(null);
+      if (use3d) {
+        present.canvas = document.createElement('canvas');
+        present.canvas.className = 'p-canvas';
+        stage.appendChild(present.canvas);
+        present.scene = state.scenes[st.d];
+      } else {
+        present.scene = null;
+        stage.innerHTML = $('dg' + st.d).querySelector('.svg-wrap').innerHTML;
+      }
+    }
+    var it = st.i == null ? null : d.items[st.i];
+    if (present.scene) { present.scene.focus(st.i); present.scene.draw(null, present.canvas); }
+    else Array.prototype.forEach.call($('pStage').querySelectorAll('.item'), function (g) { g.classList.toggle('sel', st.i != null && +g.getAttribute('data-i') === st.i); g.classList.toggle('dim', st.i != null && +g.getAttribute('data-i') !== st.i); });
+    var cap = '<div class="p-where">' + esc(d.name || P.TYPES[d.type].label) + '（' + esc(P.TYPES[d.type].label) + '）</div>';
+    if (it) {
+      var n = noteFor(it.key);
+      var text = n ? n.lines.filter(function (l) { return !l.code; }).map(function (l) { return l.text; }).join(' ').trim() : '';
+      cap += '<h2>' + esc(it.label) + ' ' + it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('') + '</h2>' +
+        (it.valueText ? '<p class="p-val">' + esc(it.valueText) + (d.unit ? '（' + esc(d.unit) + '）' : '') + (it.note ? '　' + esc(it.note) : '') + '</p>' : '') +
+        (it.dateText ? '<p class="p-val">' + esc(it.dateText) + '</p>' : '') +
+        (text ? '<p>' + esc(text.length > 220 ? text.slice(0, 220) + '…' : text) + '</p>' : '') +
+        (it.sources.length ? '<p class="p-src">出どころ：' + esc(it.sources.join('／')) + '</p>' : '');
+    } else cap += '<h2>' + esc(d.name || P.TYPES[d.type].label) + '</h2><p>全体（' + d.items.length + '）</p>';
+    $('pCaption').innerHTML = cap;
+    $('pCount').textContent = (present.k + 1) + ' / ' + present.steps.length + '　→・スペース：次　←：前　Esc：終わる';
+  }
+  function stepPresent(n) {
+    if (!present.on) return;
+    var k = present.k + n;
+    if (k < 0) k = 0;
+    if (k >= present.steps.length) { endPresent(); return; }
+    present.k = k; showStep();
   }
 
   // ---- 印刷（PDF）用のページ。いつも作っておく（Ctrl+P でも同じものが出る） ----
@@ -228,6 +377,7 @@
       var legend = legendItems(doc, [d]).join('\u3000');
       pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（' + P.TYPES[d.type].label + '）</h2><div class="p-fig">' +
         R.svg(d, i, { fs: 15, today: td, hasNote: hn }) + '</div>' + (legend ? '<div class="p-legend">' + legend + '</div>' : ''));
+      if (state.captures[i]) pages.push('<h2>' + esc(d.name || P.TYPES[d.type].label) + '（3D）</h2><div class="p-fig"><img class="p-3d" alt="" src="' + state.captures[i] + '"></div>');
     });
     // 箱の説明と出どころ、本文。ページからあふれないよう文字数で分け、長い1つは行で（長い行は字で）切る
     function lineText(l) { return l.code ? l.code.join('\n') : l.text; }
@@ -335,7 +485,28 @@
     if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openItem(+g.getAttribute('data-d'), +g.getAttribute('data-i')); }
   });
   $('panelClose').addEventListener('click', closePanel);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePanel(); });
+  document.addEventListener('keydown', function (e) {
+    if (present.on) {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown' || e.key === 'Enter') { e.preventDefault(); stepPresent(1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); stepPresent(-1); }
+      else if (e.key === 'Escape') { e.preventDefault(); endPresent(); }
+      return;
+    }
+    if (e.key === 'Escape') closePanel();
+    var tag = (e.target && e.target.tagName || '').toLowerCase();
+    if ((e.key === 'p' || e.key === 'P') && !e.ctrlKey && !e.metaKey && !e.altKey && tag !== 'input' && tag !== 'select' && tag !== 'textarea') { e.preventDefault(); startPresent(); }
+  });
+  document.addEventListener('fullscreenchange', function () { if (!document.fullscreenElement && present.on) endPresent(); });
+  $('presentBtn').addEventListener('click', startPresent);
+  $('pNext').addEventListener('click', function () { stepPresent(1); });
+  $('pPrev').addEventListener('click', function () { stepPresent(-1); });
+  $('pEnd').addEventListener('click', endPresent);
+  $('mode').addEventListener('click', function () {
+    if (state.gl) return;
+    state.mode = state.mode === '3d' ? '2d' : '3d';
+    applyMode();
+  });
+  requestAnimationFrame(loop);
 
   // ドラッグ＆ドロップ（どこに落としても読む。ほかのページに移らないようにする）
   var dragDepth = 0;
@@ -347,5 +518,10 @@
     var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) loadFile(f);
   });
-  window.DocVisualizer = { version: '__VERSION__' };
+  window.DocVisualizer = {
+    version: '__VERSION__',
+    // 試験用に「見るだけ」のもの（中の動きは変えない）
+    where3d: function (d, i) { var sc = state.scenes[d]; return sc ? sc.project(i, sc.canvas) : null; },
+    mode: function () { return state.mode; }
+  };
 })();

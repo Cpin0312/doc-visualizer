@@ -1,0 +1,20 @@
+// 開発用：見本を開いて画面の絵を撮る（node test/peek.mjs <html> <見本の番号> <出し先.png> [--nogl]）
+import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { launch, sleep } from './cdp.mjs';
+const [html, idx, out] = process.argv.slice(2);
+const nogl = process.argv.includes('--nogl');
+const B = await launch({ extra: nogl ? ['--disable-3d-apis', '--disable-webgl'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const errs = [];
+B.on(m => { if (m.method === 'Runtime.exceptionThrown') errs.push(JSON.stringify(m.params.exceptionDetails).slice(0, 500)); if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errs.push(JSON.stringify(m.params.args).slice(0, 300)); });
+await B.send('Runtime.enable'); await B.send('Page.enable');
+await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
+await B.send('Page.navigate', { url: pathToFileURL(resolve(html)).href + '#today=2026-11-18' });
+await sleep(1500);
+const info = await B.evalJs(`(async () => { const s = document.getElementById('sample'); s.value = '${idx}'; s.dispatchEvent(new Event('change')); await new Promise(r => setTimeout(r, 2500));
+  return { gl: document.getElementById('glnote').textContent, canv: document.querySelectorAll('.view3d canvas').length, mode: document.getElementById('mode').textContent, caps: document.querySelectorAll('#print img.p-3d').length }; })()`);
+console.log(JSON.stringify(info), errs);
+const r = await B.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+writeFileSync(out, Buffer.from(r.data, 'base64'));
+B.close(); process.exit(0);

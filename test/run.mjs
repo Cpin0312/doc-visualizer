@@ -73,7 +73,9 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---------- 2) ブラウザで本物の道 ----------
 let B;
-try { B = await launch(); } catch (e) {
+// ヘッドレスでも WebGL が使えるように、ソフトの描き手（SwiftShader）を使う
+const GL_ON = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+try { B = await launch({ extra: GL_ON }); } catch (e) {
   // ブラウザがないときは落ちずに知らせて止まる（node の読みとりの結果は残す）
   console.log('\n× ブラウザの試験を始められない：' + e.message);
   const bad = results.filter(r => !r.ok);
@@ -91,7 +93,10 @@ B.on(m => {
 });
 await B.send('Network.enable'); await B.send('Runtime.enable'); await B.send('Log.enable'); await B.send('Page.enable'); await B.send('DOM.enable');
 await B.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
-const url = pathToFileURL(join(root, 'dist', 'DocVisualizer.html')).href + '#today=2026-11-18';
+const hi = process.argv.indexOf('--html');
+const htmlPath = hi > 0 ? resolve(process.argv[hi + 1]) : join(root, 'dist', 'DocVisualizer.html');
+console.log('試す HTML：' + htmlPath);
+const url = pathToFileURL(htmlPath).href + '#today=2026-11-18';
 await B.send('Page.navigate', { url });
 for (let i = 0; i < 50; i++) { if (await B.evalJs('document.readyState === "complete" && !!window.DocVisualizer').catch(() => false)) break; await sleep(100); }
 ok('file:// で開ける（' + url.slice(0, 60) + '…）', await B.evalJs('!!window.DocVisualizer && !!window.DocParse && !!window.DocRender'));
@@ -118,8 +123,8 @@ const state = () => B.evalJs(`({
   pages: document.querySelectorAll('#print .page').length,
   guide: !document.getElementById('guide').hidden
 })`);
-async function shot(name) {
-  const r = await B.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+async function shot(name, whole = true) {
+  const r = await B.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: whole });
   writeFileSync(join(out, name + '.png'), Buffer.from(r.data, 'base64'));
 }
 
@@ -171,6 +176,8 @@ async function clickAt(sel) {
 {
   await pick(join(root, 'samples', '01_flow.md'));
   await waitFor(`document.getElementById('status').textContent.includes('01_flow.md')`);
+  // ここからは 2D で押す（3D で押すのは下で別に試す）
+  if (await B.evalJs('DocVisualizer.mode()') === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
   await clickAt('#dg0 .item[aria-label="受付"] .box');
   const p = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
   ok('箱を押す → 説明と出どころが横に出る', p && p.includes('台帳に書く') && p.includes('注文の手順（架空）2ページ'), (p || '').replace(/\n/g, ' ').slice(0, 80));
@@ -188,6 +195,129 @@ async function clickAt(sel) {
   const after = await waitFor(`document.querySelector('#dg0 .item text').getAttribute('font-size') === '18' && '18'`);
   ok('文字の大きさ「大」で図の文字も大きくなる', before === '15' && after === '18', before + ' → ' + after);
   await clickAt('.fs[data-fs="15"]');
+}
+
+// ---------- 3D（WebGL あり） ----------
+// 絵が真っ黒・真っ白でないか：明るさのばらつきと、色のついた点の割合で見る
+const pixelCheck = src => `(async () => {
+  const img = ${src};
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height).data;
+  let n = 0, dark = 0, colored = 0, sum = 0, sum2 = 0, hash = 0;
+  for (let i = 0; i < d.length; i += 4 * 7) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; n++; sum += l; sum2 += l * l; if (l < 20) dark++; if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 40) colored++; hash = (hash * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) % 1000000007; }
+  const mean = sum / n;
+  return { w: c.width, h: c.height, darkRatio: dark / n, colored: colored / n, sd: Math.sqrt(sum2 / n - mean * mean), hash };
+})()`;
+const notBlack = p => p && p.w > 100 && p.darkRatio < 0.5 && p.sd > 8;
+{
+  await pick(join(root, 'samples', '08_copilot_wrapped.md'));
+  await waitFor(`document.getElementById('status').textContent.includes('08_copilot')`);
+  if (await B.evalJs('DocVisualizer.mode()') !== '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`); }
+  await sleep(600);
+  const st3 = await B.evalJs(`({ canv: document.querySelectorAll('#diagrams .view3d canvas').length, shown: Array.from(document.querySelectorAll('#diagrams .view3d')).filter(v => v.offsetHeight > 100).length, svgHidden: Array.from(document.querySelectorAll('#diagrams .svg-wrap')).every(w => getComputedStyle(w).visibility === 'hidden'), btn: document.getElementById('mode').textContent, note: document.getElementById('glnote').hidden, caps: document.querySelectorAll('#print img.p-3d').length })`);
+  ok('3D：7種類すべてを 3D で描く（図ごとに 3D の画面）', st3.canv === 7 && st3.shown === 7 && st3.svgHidden && st3.btn === '2D にする' && st3.note, JSON.stringify(st3));
+  const shots = [];
+  for (let i = 0; i < 7; i++) shots.push(await B.evalJs(pixelCheck(`document.querySelector('#dg${i} .view3d canvas')`)).catch(e => ({ err: e.message })));
+  // 画面の外の図は描かれないので、見える所まで動かしてから見る
+  for (let i = 0; i < 7; i++) if (!notBlack(shots[i])) { await B.evalJs(`document.getElementById('dg${i}').scrollIntoView()`); await sleep(400); shots[i] = await B.evalJs(pixelCheck(`document.querySelector('#dg${i} .view3d canvas')`)); }
+  ok('3D：画面の絵が真っ黒でない（7つ）', shots.every(notBlack), shots.map(p => p.err ? p.err : `暗${(p.darkRatio * 100).toFixed(0)}%・色${(p.colored * 100).toFixed(0)}%`).join(' / '));
+  const caps = [];
+  for (let i = 0; i < 7; i++) caps.push(await B.evalJs(pixelCheck(`await (async () => { const im = new Image(); im.src = document.querySelectorAll('#print img.p-3d')[${i}].src; await im.decode(); return im; })()`)));
+  ok('3D：PDF 用に撮った絵が真っ黒でない（7枚・1200×675）', caps.every(p => notBlack(p) && p.w === 1200 && p.h === 675), caps.map(p => `${p.w}×${p.h}・暗${(p.darkRatio * 100).toFixed(0)}%`).join(' / '));
+  await B.evalJs(`window.scrollTo(0, 0)`);
+  await sleep(300);
+  await shot('3d_08_top');
+
+  // 3D の箱を押すと説明が出る（本物のマウスで押す。押す場所は箱の真ん中が見える所）
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`);
+  await sleep(500);
+  const at = await B.evalJs(`DocVisualizer.where3d(0, 0)`);
+  for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 });
+  const pp = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
+  ok('3D：箱を押すと説明と出どころが出る', pp && pp.includes('受付') && pp.includes('受付の見直し案'), (pp || '').replace(/\n/g, ' ').slice(0, 60));
+  await B.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+
+  // ドラッグで回すと絵が変わる。2回押すと元の向き
+  const h1 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
+  const c0 = await B.evalJs(`(() => { const b = document.querySelector('#dg0 .view3d canvas').getBoundingClientRect(); return { x: b.left + 40, y: b.top + 40 }; })()`);
+  await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c0.x, y: c0.y, button: 'left', clickCount: 1 });
+  for (let k = 1; k <= 6; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c0.x + k * 25, y: c0.y + k * 8, button: 'left', buttons: 1 });
+  await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c0.x + 150, y: c0.y + 48, button: 'left', clickCount: 1 });
+  await sleep(200);
+  const h2 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
+  ok('3D：ドラッグで回せる（絵が変わる）', h1 !== h2);
+
+  // 3D ⇄ 2D
+  await clickAt('#mode');
+  const s2 = await waitFor(`DocVisualizer.mode() === '2d' && ({ svg: Array.from(document.querySelectorAll('#diagrams .svg-wrap')).every(w => getComputedStyle(w).visibility === 'visible' && w.offsetHeight > 50), v3: Array.from(document.querySelectorAll('#diagrams .view3d')).every(v => v.offsetHeight === 0), btn: document.getElementById('mode').textContent })`);
+  ok('3D⇄2D：2D にすると平らな図だけが出る', s2 && s2.svg && s2.v3 && s2.btn === '3D にする', JSON.stringify(s2));
+  await clickAt('#mode');
+  ok('3D⇄2D：もう一度押すと 3D に戻る', await waitFor(`DocVisualizer.mode() === '3d' && document.querySelector('#dg0 .view3d').offsetHeight > 100`));
+
+  // 発表（P で始め、→ で次、← で前、Esc で終わる）
+  const key = async (k, code, vk) => { await B.send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk, text: k.length === 1 ? k : undefined }); await B.send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk }); };
+  await B.evalJs('document.activeElement && document.activeElement.blur()');
+  await key('p', 'KeyP', 80);
+  const pr1 = await waitFor(`!document.getElementById('present').hidden && document.getElementById('pCount').textContent`);
+  await key('ArrowRight', 'ArrowRight', 39);
+  await sleep(1300);
+  const cap1 = await B.evalJs(`document.getElementById('pCaption').innerText`);
+  const pc = await B.evalJs(pixelCheck(`document.querySelector('#pStage canvas')`)).catch(e => ({ err: e.message }));
+  await shot('3d_present', false);   // 発表は画面に固定なので、見えている所だけ撮る
+  await key('ArrowRight', 'ArrowRight', 39);
+  const cap2 = await B.evalJs(`document.getElementById('pCaption').innerText`);
+  await key('ArrowLeft', 'ArrowLeft', 37);
+  const cap3 = await B.evalJs(`document.getElementById('pCaption').innerText`);
+  ok('発表：P で始まる（全部の歩みの数が出る）', pr1 && /^1 \/ \d+/.test(pr1), pr1);
+  ok('発表：→ で次の箱、← で前に戻る。説明が大きく出る', cap1.includes('受付') && cap1.includes('電話・メール・対面') && !cap2.includes('電話・メール・対面') && cap3 === cap1, [cap1, cap2, cap3].map(c => c.split('\n')[1]).join(' → '));
+  ok('発表：3D の絵が出ている（真っ黒でない）', notBlack(pc), JSON.stringify(pc).slice(0, 80));
+  await key('Escape', 'Escape', 27);
+  ok('発表：Esc で終わる', await waitFor(`document.getElementById('present').hidden`));
+  // 2D で発表
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  await B.evalJs('document.activeElement && document.activeElement.blur()');
+  await key('p', 'KeyP', 80); await key('ArrowRight', 'ArrowRight', 39);
+  const p2d = await waitFor(`!document.getElementById('present').hidden && ({ svg: document.querySelectorAll('#pStage svg').length, sel: document.querySelectorAll('#pStage .item.sel').length, dim: document.querySelectorAll('#pStage .item.dim').length })`);
+  ok('発表（2D）：その箱を目立たせ、ほかを薄くする', p2d && p2d.svg === 1 && p2d.sel === 1 && p2d.dim >= 1, JSON.stringify(p2d));
+  await key('Escape', 'Escape', 27);
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
+  // F5 では始まらない（読みこみ直しのキーは使わない）：P 以外のキーで発表が開かない
+  await key('F5', 'F5', 116).catch(() => {});
+  ok('発表：F5 では始めない', await B.evalJs(`document.getElementById('present').hidden`));
+
+  // 選び直しても 3D の部品が増え続けない（3回読ませて、形と絵の数が同じ）
+  const mem = [];
+  for (let k = 0; k < 3; k++) {
+    await pick(join(root, 'samples', k % 2 ? '01_flow.md' : '08_copilot_wrapped.md'));
+    await waitFor(`document.getElementById('status').textContent.includes('${k % 2 ? '01_flow' : '08_copilot'}')`);
+    await sleep(300);
+    mem.push(await B.evalJs('JSON.stringify(DocScene.stats())'));
+  }
+  ok('選び直し：3D の部品を片づける（3回目の数＝1回目の数）', mem[0] === mem[2] && (await B.evalJs(`document.querySelectorAll('.view3d canvas').length`)) === 7, mem.join(' → '));
+
+  // 動きを減らす設定：止まった絵になる
+  await B.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await B.send('Page.reload', {});
+  await waitFor('document.readyState === "complete" && !!window.DocVisualizer');
+  await pick(join(root, 'samples', '01_flow.md'));
+  await waitFor(`document.getElementById('status').textContent.includes('01_flow')`);
+  await sleep(500);
+  const r1 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
+  await sleep(1200);
+  const r2 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
+  ok('動きを減らす設定（prefers-reduced-motion）なら 3D は止まった絵', r1 === r2 && await B.evalJs('DocScene.reduced'));
+  await B.send('Emulation.setEmulatedMedia', { features: [] });
+  await B.send('Page.reload', {});
+  await waitFor('document.readyState === "complete" && !!window.DocVisualizer');
+  await pick(join(root, 'samples', '01_flow.md'));
+  await waitFor(`document.getElementById('status').textContent.includes('01_flow')`);
+  await sleep(300);
+  const m1 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
+  await sleep(1200);
+  const m2 = (await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`))).hash;
+  ok('ふだんは 3D がゆっくり動く（光が流れる）', m1 !== m2);
 }
 
 // ドラッグ＆ドロップ（ブラウザの中で File を作って落とす）
@@ -238,8 +368,13 @@ async function clickAt(sel) {
     texts.push((await pg.getTextContent()).items.map(x => x.str).join('').normalize('NFKC').replace(/[\s\x00-\x1f]+/g, '').replace(/⻑/g, '長'));
   }
   writeFileSync(join(out, '08_pdf_text.json'), JSON.stringify(texts, null, 1));
-  ok('PDF：ページの数（表紙＋図7つ＋説明）', doc.numPages === pages && pages >= 9, `PDF ${doc.numPages} ページ・画面の印刷用 ${pages}`);
+  ok('PDF：ページの数（表紙＋図7つ＋3D の絵7つ＋説明）', doc.numPages === pages && pages >= 16, `PDF ${doc.numPages} ページ・画面の印刷用 ${pages}`);
   ok('PDF：A4 横', landscape);
+  {
+    let imgPages = 0;
+    for (let i = 1; i <= doc.numPages; i++) { const ops = await (await doc.getPage(i)).getOperatorList(); if (ops.fnArray.includes(pdfjs.OPS.paintImageXObject)) imgPages++; }
+    ok('PDF：3D の絵のページが図ごとにある（絵が入っている）', imgPages === 7 && texts.filter(t => t.includes('(3D)')).length === 7, `絵のあるページ ${imgPages}`);
+  }
   ok('PDF：日本語が文字として入っている（題名・ひとことで）', texts[0].includes('新しい受付のしくみ(架空の例・Copilotの出し方)') && texts[0].includes('受付を1つの窓口にまとめ'), texts[0].slice(0, 40));
   ok('PDF：全ページに社外秘の印とページ番号', texts.every((t, i) => t.includes('関係者限り') && t.includes(`${i + 1}/${doc.numPages}`)), texts.map((t, i) => t.includes('関係者限り') && t.includes(`${i + 1}/${doc.numPages}`) ? '○' : '×').join(''));
   ok('PDF：図のページに箱の名前、最後に説明と出どころ', texts[1].includes('振り分け') && texts[texts.length - 1].includes('受付の見直し案'), texts[texts.length - 1].slice(0, 40));
@@ -284,6 +419,32 @@ ok('外への読みこみ 0 件（file・data・blob 以外）', outside.length 
 ok('エラー・CSP の止めが 0 件', errors.length === 0, errors.slice(0, 3).join(' | '));
 ok('ブラウザに何も保存しない（localStorage・sessionStorage が空）', await B.evalJs('localStorage.length === 0 && sessionStorage.length === 0').catch(() => true));
 B.close();
+
+// ---------- WebGL なし（会社の PC で止められたとき）：自動で 2D、理由を1行 ----------
+{
+  const N = await launch({ extra: ['--disable-3d-apis', '--disable-webgl', '--disable-gpu'] });
+  const nErr = [];
+  N.on(m => { if (m.method === 'Runtime.exceptionThrown') nErr.push(JSON.stringify(m.params.exceptionDetails).slice(0, 200)); if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') nErr.push('console.error'); });
+  await N.send('Runtime.enable'); await N.send('Page.enable'); await N.send('DOM.enable');
+  await N.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
+  await N.send('Page.navigate', { url });
+  for (let i = 0; i < 50; i++) { if (await N.evalJs('document.readyState === "complete" && !!window.DocVisualizer').catch(() => false)) break; await sleep(100); }
+  const { root: d0 } = await N.send('DOM.getDocument', { depth: 1 });
+  const { nodeId } = await N.send('DOM.querySelector', { nodeId: d0.nodeId, selector: '#file' });
+  await N.send('DOM.setFileInputFiles', { nodeId, files: [join(root, 'samples', '08_copilot_wrapped.md')] });
+  let st = null;
+  for (let t = 0; t < 50 && !st; t++) { st = await N.evalJs(`document.getElementById('status').textContent.includes('08_copilot') && ({ note: document.getElementById('glnote').hidden ? '' : document.getElementById('glnote').textContent, btn: document.getElementById('mode').disabled, canv: document.querySelectorAll('.view3d canvas').length, svg: Array.from(document.querySelectorAll('#diagrams .svg-wrap')).filter(w => w.offsetHeight > 50).length, pages: document.querySelectorAll('#print .page').length, imgs: document.querySelectorAll('#print img').length })`).catch(() => null); if (!st) await sleep(100); }
+  ok('WebGL なし：自動で 2D にし、理由を1行出す。3D のボタンは押せない', st && /3D は使えない/.test(st.note) && st.btn && st.canv === 0 && st.svg === 7, JSON.stringify(st));
+  ok('WebGL なし：PDF は 2D だけ（3D の絵のページなし）', st && st.imgs === 0 && st.pages >= 9, st && `印刷 ${st.pages} ページ`);
+  await N.evalJs('document.activeElement && document.activeElement.blur()');
+  await N.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'p', code: 'KeyP', windowsVirtualKeyCode: 80, text: 'p' });
+  await N.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'p', code: 'KeyP', windowsVirtualKeyCode: 80 });
+  ok('WebGL なし：発表は 2D で動く', await N.evalJs(`!document.getElementById('present').hidden && document.querySelectorAll('#pStage svg').length === 1`));
+  const r = await N.send('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(join(out, 'nogl_present.png'), Buffer.from(r.data, 'base64'));
+  ok('WebGL なし：エラーが 0 件', nErr.length === 0, nErr.slice(0, 2).join(' | '));
+  N.close();
+}
 
 const bad = results.filter(r => !r.ok);
 writeFileSync(join(out, 'result.json'), JSON.stringify({ when: new Date().toISOString(), platform: process.platform, browser: B.exe, pass: results.length - bad.length, fail: bad.length, results }, null, 2));

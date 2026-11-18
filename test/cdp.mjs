@@ -30,7 +30,7 @@ export function findBrowser() {
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-export async function launch({ headless = true } = {}) {
+export async function launch({ headless = true, extra = [] } = {}) {
   const exe = findBrowser();
   const profile = mkdtempSync(join(tmpdir(), 'docvis-'));
   // 番号は 0（空いている番号を選ばせ、DevToolsActivePort から読む）
@@ -38,6 +38,7 @@ export async function launch({ headless = true } = {}) {
     '--disable-extensions', '--disable-background-networking', '--disable-sync', '--disable-component-update',
     '--window-size=1366,900', 'about:blank'];
   if (headless) args.unshift('--headless=new');
+  args.unshift(...extra);
   const proc = spawn(exe, args, { stdio: 'ignore' });
   const cleanup = () => { try { proc.kill(); } catch {} try { rmSync(profile, { recursive: true, force: true }); } catch {} };
   process.on('exit', cleanup);

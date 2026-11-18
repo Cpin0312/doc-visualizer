@@ -1,6 +1,6 @@
 // npm run build → dist/DocVisualizer.html（1枚。全部インライン。Windows・Mac どちらでも node だけで動く）
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -19,10 +19,26 @@ const samples = readdirSync(join(root, 'samples')).filter(f => f.endsWith('.md')
 });
 const prompt = rd('copilot-prompt.md');
 
+// three.js（MIT）の ES モジュール版を、ふつうの <script> で動く形にする（file:// では外のモジュールを読めないため）
+function threeClassic() {
+  let src = readFileSync(join(root, 'node_modules', 'three', 'build', 'three.module.min.js'), 'utf8');
+  const m = /export\s*\{([^}]*)\}\s*;?\s*$/.exec(src);
+  if (!m || /\bimport\s*[{*\w]/.test(src.slice(0, 2000))) throw new Error('three.module.min.js の形が思っていたものと違う');
+  const pairs = m[1].split(',').map(p => p.trim().split(/\s+as\s+/)).map(([a, b]) => `${JSON.stringify(b || a)}:${a}`);
+  return '(function(){' + src.slice(0, m.index) + '\nwindow.THREE=Object.freeze({' + pairs.join(',') + '});})();';
+}
+const threePkg = JSON.parse(rd('node_modules/three/package.json'));
+const licenses = `/*! 入っている部品のライセンス
+ * three.js ${threePkg.version} — ${rd('node_modules/three/LICENSE').trim().replace(/\*\//g, '* /').replace(/\n/g, '\n * ')}
+ */`;
+
 const scripts = [
+  licenses,
+  threeClassic(),
   `window.DV_SAMPLES = ${json(samples)};\nwindow.DV_PROMPT = ${json(prompt)};`,
   rd('src/parse.js'),
   rd('src/render2d.js'),
+  rd('src/scene3d.js'),
   rd('src/app.js')
 ].map(code).join('\n;\n');
 
@@ -43,6 +59,9 @@ for (const re of bad) if (re.test(html)) throw new Error('外を読みこむ書�
 const opens = (html.match(/<script\b/gi) || []).length, closes = (html.match(/<\/script>/gi) || []).length;
 if (opens !== 1 || closes !== 1) throw new Error(`<script> の数がおかしい（${opens} / ${closes}）`);
 
-mkdirSync(join(root, 'dist'), { recursive: true });
-writeFileSync(join(root, 'dist', 'DocVisualizer.html'), html);
-console.log(`dist/DocVisualizer.html ${(Buffer.byteLength(html) / 1024).toFixed(1)} KB（見本 ${samples.length}）`);
+// 出し先：node build.mjs --out <ファイル>（既定 dist/DocVisualizer.html）
+const oi = process.argv.indexOf('--out');
+const dest = oi > 0 ? resolve(process.argv[oi + 1]) : join(root, 'dist', 'DocVisualizer.html');
+mkdirSync(dirname(dest), { recursive: true });
+writeFileSync(dest, html);
+console.log(`${dest} ${(Buffer.byteLength(html) / 1024).toFixed(1)} KB（見本 ${samples.length}）`);
