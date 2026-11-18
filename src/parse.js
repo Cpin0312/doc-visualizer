@@ -315,7 +315,7 @@
       var m = /^([ \t\u3000]*)/.exec(ln.text);
       var ind = 0;
       for (var i = 0; i < m[1].length; i++) ind += m[1][i] === '\t' ? 4 : m[1][i] === '\u3000' ? 2 : 1;
-      var s = ln.text.slice(m[1].length).replace(/^(?:[-*+・●○■□▪︎◆◇]|\d+[.)．）])[\s\u3000]+/, '');
+      var s = ln.text.slice(m[1].length).replace(/^(?:[-*+・●○■□▪︎◆◇]|\d+[.)．）])[\s\u3000]+/, ''), head = ln.text.length - s.length;
       var src = [];
       var tm = takeMarks(takeSources(s, src));
       if (!tm.label) return;
@@ -323,6 +323,8 @@
       var it = reg.get(tm.label, ln.no, false);
       if (!it) return;
       addMarks(it, tm.marks, src);
+      var at = ln.text.indexOf(tm.label, head);   // 名前を直す・消すときの場所
+      (it.spans = it.spans || []).push(at >= 0 ? { line: ln.no, start: at, end: at + tm.label.length, seg: 0, segs: 1 } : { line: ln.no, bad: true, seg: 0, segs: 1 });
       it.parent = stack.length ? stack[stack.length - 1].it.id : null;
       it.depth = stack.length;
       stack.push({ ind: ind, it: it });
@@ -758,7 +760,7 @@
     });
     return joinText(t);
   }
-  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
+  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1, tree: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
   // 図の閉じの行のすぐ前に1行足す
   function appendLine(text, d, line) {
     var t = splitText(text);
@@ -772,12 +774,12 @@
     var used = {}, name = '新しい箱', n = 1;
     d.items.forEach(function (it) { used[it.key] = 1; });
     while (used[nk(name)]) name = '新しい箱' + (++n);
-    return { text: appendLine(text, d, (d.type === 'lanes' && d.lanes && d.lanes[0] ? '[' + d.lanes[0] + '] ' : '') + name), name: name };
+    return { text: appendLine(text, d, (d.type === 'tree' ? '- ' : d.type === 'lanes' && d.lanes && d.lanes[0] ? '[' + d.lanes[0] + '] ' : '') + name), name: name };
   }
   // 線を引く：「A -> B」の行を足す（lanes は両方の担当も書く）
   function addEdge(text, doc, di, from, to) {
     var d = doc.diagrams[di], a = d && d.items[from], b = d && d.items[to];
-    if (!a || !b || !EDITABLE[d.type]) throw new Error('この図には線を引けない');
+    if (!a || !b || !EDITABLE[d.type] || d.type === 'tree') throw new Error('この図には線を引けない');
     if (from === to) throw new Error('同じ箱には線を引けない');
     var ln = function (it) { return (d.type === 'lanes' && it.lane ? '[' + it.lane + '] ' : '') + it.label; };
     return appendLine(text, d, ln(a) + ' -> ' + ln(b));
@@ -807,12 +809,17 @@
     replaceSpans(t, edits);
     return joinText(t);
   }
+  function subtree(d, id) {
+    var out = [id];
+    for (var k = 0; k < out.length; k++) d.items.forEach(function (x) { if (x.parent === out[k] && out.indexOf(x.id) < 0) out.push(x.id); });
+    return out;
+  }
   // 箱を消す（その箱が出てくる行すべて）。shortcut: layout の古い置き場所は残る（害はない）。同じ名前で足し直すと前の場所に出る
   function removeItem(text, doc, di, id) {
     var d = doc.diagrams[di], it = d && d.items[id];
     if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
-    var plan = {};
-    it.spans.forEach(function (sp) { (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); });
+    var plan = {}, ids = d.type === 'tree' ? subtree(d, id) : [id];   // 木は、下の箱も一緒に消す（残すと、ちがう親の下に入るため）
+    ids.forEach(function (k) { (d.items[k].spans || []).forEach(function (sp) { if (!sp.bad) (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); }); });
     return cutLines(text, d, plan);
   }
   // 線を消す（その線が書かれた所すべて）
@@ -880,6 +887,6 @@
     };
   }
 
-  var api = { setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

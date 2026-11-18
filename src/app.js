@@ -513,7 +513,7 @@
     return MARKS.map(function (m) {
       var on = it.marks.some(function (x) { return x.kind === m[0]; });
       return '<button type="button" class="act mark ' + m[0] + '" data-act="mark" data-v="' + m[0] + '" aria-pressed="' + on + '">' + m[1] + ' ' + m[2] + '</button>';
-    }).join('') + '<button type="button" class="act" data-act="link">線を引く</button><button type="button" class="act" data-act="del">この箱を消す</button>' +
+    }).join('') + (diag.type === 'tree' ? '' : '<button type="button" class="act" data-act="link">線を引く</button>') + '<button type="button" class="act" data-act="del">この箱を消す</button>' +
       (diag.type === 'lanes' && diag.lanes.length > 1 ? '<span class="lane-acts" role="group" aria-label="担当">担当：' + diag.lanes.map(function (l) {
         return '<button type="button" class="act" data-act="lane" data-v="' + esc(l) + '" aria-pressed="' + (it.lane === l) + '">' + esc(l) + '</button>';
       }).join('') + '</span>' : '');
@@ -528,8 +528,8 @@
     return true;
   }
   function deleteItem(d, i) {
-    var it = state.doc.diagrams[d].items[i];
-    if (!it || !window.confirm('箱「' + it.label + '」を消します。つながっている線も消えます（Ctrl+Z で戻せます）。よいですか？')) return;
+    var diag = state.doc.diagrams[d], it = diag.items[i], under = diag.type === 'tree' && it ? P.subtree(diag, i).length - 1 : 0;
+    if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + '（Ctrl+Z で戻せます）。よいですか？')) return;
     closePanel();
     editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消', '箱「' + it.label + '」を消しました');
   }

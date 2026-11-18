@@ -953,6 +953,9 @@ async function savePptx(T, md, tag) {
   ok('足す：箱は図の閉じの前に1行（最初の担当に入る。同じ名前は 2, 3…）。線は「A -> B」の1行', ab.text.split('\n')[5] === '[営業] 新しい箱' && ab2.name === '新しい箱2' && ae.split('\n')[5] === '[経理] 出荷 -> [営業] 受付' && edges(ae).includes('出荷>受付') && lanes(ae) === lanes(md) && ae.split('\n').length === md.split('\n').length + 1, JSON.stringify([ab.text.split('\n')[5], ae.split('\n')[5]]));
   const sl = P.setLane(md, d, 0, id(d, '確認'), '経理'), sl2 = P.setLane('~~~lanes\n受付 -> 確認 -> [経理] 出荷\n[営業] 見積\n~~~\n', P.parseDoc('~~~lanes\n受付 -> 確認 -> [経理] 出荷\n[営業] 見積\n~~~\n'), 0, 1, '営業');
   ok('担当を変える：その箱だけが別の帯に移り、同じ行のほかの箱の担当は変わらない', lanes(sl) === '受付/営業 確認/経理 出荷/経理' && edges(sl) === edges(md) && lanes(sl2) === '受付/経理 確認/営業 出荷/経理 見積/営業', lanes(sl) + ' | ' + lanes(sl2));
+  const tmd = '~~~tree 組織\n- 本部 !重要\n  - 営業部\n    - 一課\n  - 経理部\n- 支店\n~~~\n', td = P.parseDoc(tmd), tid = l => td.diagrams[0].items.find(i => i.label === l).id;
+  const tr1 = P.renameItem(tmd, td, 0, tid('営業部'), '販売部'), tr2 = P.removeItem(tmd, td, 0, tid('営業部')), tr3 = P.toggleMark(tmd, td, 0, tid('一課'), 'green'), tr4 = P.addBox(tmd, td, 0).text;
+  ok('木：名前を直す・印・足す（「- 新しい箱」）・消す（下の箱も一緒に。残りの親子は変わらない）。線は引けない', tr1.split('\n')[2] === '  - 販売部' && tr2 === '~~~tree 組織\n- 本部 !重要\n  - 経理部\n- 支店\n~~~\n' && tr3.split('\n')[3] === '    - 一課 +完了' && tr4.split('\n')[6] === '- 新しい箱' && P.parseDoc(tr2).diagrams[0].items.find(i => i.label === '経理部').parent === 0 && (() => { try { P.addEdge(tmd, td, 0, 0, 1); return false; } catch (e) { return true; } })(), JSON.stringify([tr1.split('\n')[2], tr2]));
   const crlf = '\uFEFF~~~flow\r\nA -> B -> C\r\n~~~\r\n', dc = P.parseDoc(crlf);
   ok('消す：BOM と CRLF をそのまま残す', P.removeItem(crlf, dc, 0, 1) === '\uFEFF~~~flow\r\nA\r\nC\r\n~~~\r\n');
 }
