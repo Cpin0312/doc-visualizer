@@ -1161,6 +1161,15 @@ async function savePptx(T, md, tag) {
   const ws = Buffer.from(await B.evalJs('window.__w') || []), ts = await B.evalJs('DocVisualizer.text()'), L0 = sjo.toString('latin1').split('\n'), L1 = ws.toString('latin1').split('\n');
   const same = L0.filter((l, k) => k !== 3).every(l => L1.includes(l)), ln3 = new TextDecoder('shift_jis').decode(Buffer.from(L1[3], 'latin1'));
   ok('保存：Shift_JIS の md は Shift_JIS のまま。直していない行（NEC の字 ED40 の行も）は元のバイトと同じ、直した行だけ変わり、CRLF も残る', /Shift_JIS/.test(meta) && sjo.includes(ed) && same && new TextDecoder('shift_jis').decode(ws) === ts && ln3 === '受付 -> 点検 -> 纊\r' && ws.includes(Buffer.from([0x0D, 0x0A])), JSON.stringify({ meta: meta.slice(0, 60), same, ln3 }));
+  // Mac などで打たれる字（〜 ‖ — ¢ £ ¬ −）は、Windows の同じ形の字へ寄せて Shift_JIS のまま書く（表せない字にしない）
+  await B.evalJs('window.__w = null; window.confirm = () => false');
+  await rename('点検', '点検〜‖—¢£¬−'); await clickAt('#save'); await sleep(600);
+  const wa = Buffer.from(await B.evalJs('window.__w') || []), errA = await B.evalJs(`document.getElementById('error').textContent`);
+  const fa = join(out, 'r8c_sjis_alias.md'); writeFileSync(fa, wa);
+  await pick(fa); await waitFor(`document.getElementById('status').textContent.includes('r8c_sjis_alias.md')`); await B.evalJs(fake);
+  const metaA = await B.evalJs(`document.getElementById('status').textContent`), boxA = await B.evalJs(`!!document.querySelector('#dg0 .item[aria-label="点検～∥―￠￡￢－"]')`);
+  ok('保存：〜 ‖ — ¢ £ ¬ − は Windows の字（8160・8161・815C・8191・8192・81CA・817C）に寄せて Shift_JIS のまま書き、開き直すと読める', wa.includes(Buffer.from('8160816181' + '5c819181928' + '1ca817c', 'hex')) && !errA && /Shift_JIS/.test(metaA) && boxA, JSON.stringify({ hex: wa.toString('hex').slice(0, 0), errA, metaA: metaA.slice(0, 50), boxA }));
+  await rename('点検～∥―￠￡￢－', '点検'); await B.evalJs('window.confirm = () => true');
   // 表せない字：やめると書かず、字と行を出す。UTF-8 を選ぶと UTF-8 で書く
   await rename('点検', '確認😀'); await B.evalJs('window.__w = null; window.confirm = () => false'); await clickAt('#save'); await sleep(500);
   const err = await B.evalJs(`document.getElementById('error').textContent`), wn = await B.evalJs('window.__w');

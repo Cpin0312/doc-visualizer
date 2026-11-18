@@ -1102,6 +1102,8 @@
     sjisMap = m;
     return m;
   }
+  // Mac などで打たれる字を、Windows（Shift_JIS）の同じ形の字へ寄せる：− 〜 ‖ — ¢ £ ¬
+  var SJIS_ALIAS = { 0x2212: '\uFF0D', 0x301C: '\uFF5E', 0x2016: '\u2225', 0x2014: '\u2015', 0x00A2: '\uFFE0', 0x00A3: '\uFFE1', 0x00AC: '\uFFE2' };
   function encodeSjis(line, no, bad, out) {
     var T = sjisTable();
     for (var ch of line) {
@@ -1110,7 +1112,7 @@
       else if (c >= 0xFF61 && c <= 0xFF9F) out.push(c - 0xFF61 + 0xA1);
       else if (c === 0xA5) out.push(0x5C);
       else if (c === 0x203E) out.push(0x7E);
-      else { var b = T.get(c === 0x2212 ? '\uFF0D' : ch); if (b) out.push(b[0], b[1]); else bad.push({ ch: ch, line: no }); }
+      else { var b = T.get(SJIS_ALIAS[c] || ch); if (b) out.push(b[0], b[1]); else bad.push({ ch: ch, line: no }); }
     }
   }
   // key：decodeBytes が返したもの。orig：読んだときのバイト（Shift_JIS は、同じ文字の行なら元のバイトを使う）
