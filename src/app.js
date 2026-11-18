@@ -502,7 +502,11 @@
     if (!P.MOVABLE[d.type]) return;
     var p0 = svgPoint(svg, e.clientX, e.clientY), lay = d.layout || {}, g, t = null;
     if (!p0) return;
-    if ((g = e.target.closest('.item'))) {
+    if ((g = e.target.closest('.sticky'))) {
+      // 付箋（R8e）：箱に付けたものは箱からのずれ、ほかは図の中の位置を layout に書く
+      var sn = d.stickies[+g.getAttribute('data-n')], sb = g.querySelector('.box').getBBox(), ob = sn.to != null && svg.querySelector('.item[data-i="' + sn.to + '"] .box'), o = ob ? ob.getBBox() : { x: 0, y: 0 };
+      t = { kind: 'note', pk: sn.pk, base: [sb.x - o.x, sb.y - o.y], free: !ob };
+    } else if ((g = e.target.closest('.item'))) {
       var it = d.items[+g.getAttribute('data-i')], bb = g.querySelector('.box').getBBox();
       var band = (g.getAttribute('data-band') || '').split(' ').map(Number);
       t = { kind: 'box', pk: it.pk, base: [bb.x, bb.y], w: bb.width, h: bb.height, band: band.length === 2 ? band : null };
@@ -516,11 +520,12 @@
     if (!t) return;
     t.i = i; t.p0 = p0; t.x0 = e.clientX; t.y0 = e.clientY; t.moving = false; t.W = +svg.getAttribute('data-w'); t.H = +svg.getAttribute('data-h');
     drag2 = t;
-    if (t.kind !== 'box') e.preventDefault();
+    if (t.kind !== 'box' && t.kind !== 'note') e.preventDefault();
   }
   function dragValue(t, svg, x, y) {
     var p = svgPoint(svg, x, y) || t.p0, dx = p[0] - t.p0[0], dy = p[1] - t.p0[1];
     if (t.kind === 'box') return { x: Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W - t.w))), y: Math.round(Math.max(t.band ? t.band[0] : 0, Math.min(t.base[1] + dy, (t.band ? t.band[1] : t.H) - t.h))) };
+    if (t.kind === 'note') return { x: Math.round(t.free ? Math.max(0, t.base[0] + dx) : t.base[0] + dx), y: Math.round(t.free ? Math.max(0, t.base[1] + dy) : t.base[1] + dy) };
     if (t.kind === 'label') return { label: [Math.round(t.base[0] + dx), Math.round(t.base[1] + dy)] };
     return { bend: [Math.round(Math.max(0, Math.min(t.base[0] + dx, t.W))), Math.round(Math.max(0, Math.min(t.base[1] + dy, t.H)))] };
   }

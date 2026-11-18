@@ -1258,6 +1258,21 @@ async function savePptx(T, md, tag) {
     await undo();
     ok('付箋（画面）：押すと色・直す・消すが出る。色を変える・2回押して文を直す・消すは、その行だけ変わり、Ctrl+Z で元どおり', c1 === 'note 承認 : 期限を確かめる @緑' && cur === '期限を確かめる' && e1 === 'note 承認 : 期限は月末 @ピンク' && d1 === mt.replace('note 全体の\\nメモ @黄\n', '') && (await T()) === mt, JSON.stringify([c1, cur, e1]));
   }
+  // 付箋を動かす：ドラッグで layout に位置が書かれ、箱に付けた付箋は箱を動かすと一緒に動く
+  {
+    const T = () => B.evalJs('DocVisualizer.text()'), undo = async () => { const mods = process.platform === 'darwin' ? 4 : 2; for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods }); await sleep(400); };
+    const drag = async (sel, dx, dy) => { const c = await B.evalJs(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`); await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c.x, y: c.y, button: 'left', buttons: 1, clickCount: 1 }); for (let k = 1; k <= 6; k++) await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c.x + dx * k / 6, y: c.y + dy * k / 6, button: 'left', buttons: 1 }); await sleep(80); await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c.x + dx, y: c.y + dy, button: 'left', buttons: 0, clickCount: 1 }); await sleep(500); };
+    const pos = sel => B.evalJs(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return [Math.round(b.x), Math.round(b.y)]; })()`);
+    await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(200);
+    const f0 = await pos('#dg0 .sticky[data-n="1"] .box');
+    await drag('#dg0 .sticky[data-n="1"] .box', 60, 0);
+    const f1 = await pos('#dg0 .sticky[data-n="1"] .box'), lt = await T();
+    const n0 = await pos('#dg0 .sticky[data-n="0"] .box'), b0 = await pos('#dg0 .item[aria-label="承認"] .box');
+    await drag('#dg0 .item[aria-label="承認"] .box', 0, 40);
+    const n1 = await pos('#dg0 .sticky[data-n="0"] .box'), b1 = await pos('#dg0 .item[aria-label="承認"] .box');
+    await undo(); await undo();
+    ok('付箋を動かす：ドラッグで付箋が動き、置き場所が layout に書かれる。箱に付けた付箋は、箱を動かすと一緒に動く。Ctrl+Z で元どおり', Math.abs(f1[0] - f0[0] - 60) < 6 && /"@全体のメモ":\{"x":/.test(lt) && Math.abs(b1[1] - b0[1]) > 10 && Math.abs((n1[1] - n0[1]) - (b1[1] - b0[1])) < 4 && Math.abs((n1[0] - n0[0]) - (b1[0] - b0[0])) < 4 && (await T()) === mt, JSON.stringify({ f0, f1, n0, n1, b0, b1 }));
+  }
   await clickAt('#mode'); await sleep(800);
   const e3 = await B.evalJs('DocVisualizer.mode()');
   if (e3 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }

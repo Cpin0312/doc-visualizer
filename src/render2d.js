@@ -848,7 +848,7 @@
     var W = +hm[1], H = +hm[2], maxX = W, maxY = H, fx = 12, fy = H + 12, rowH = 0, out = '', lay = diag.layout || {};
     list.forEach(function (n, k) {
       var z = noteSize(n, opts.fs), b = n.to != null ? boxOf(s, d, n.to) : null, x, y, p = lay[n.pk];
-      if (p && isFinite(p.x) && isFinite(p.y)) { x = p.x; y = p.y; }
+      if (p && isFinite(p.x) && isFinite(p.y)) { x = b ? b.x + p.x : Math.max(0, p.x); y = b ? b.y + p.y : Math.max(0, p.y); }   // 箱に付けた付箋の位置は、箱からのずれ（箱と一緒に動く）
       else if (b) { x = b.x + b.w - 14; y = Math.max(4, b.y - z.h + 10); }
       else { if (fx + z.w > Math.max(W, 320) && fx > 12) { fx = 12; fy += rowH + 12; rowH = 0; } x = fx; y = fy; fx += z.w + 12; rowH = Math.max(rowH, z.h); }
       maxX = Math.max(maxX, x + z.w + 10); maxY = Math.max(maxY, y + z.h + 10);
