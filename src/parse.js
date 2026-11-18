@@ -187,6 +187,9 @@
     }
     lines.forEach(function (ln) {
       var segs = ln.text.split(RE_ARROW);
+      // 行の中の位置（R8b-3：名前を直す・消すときに、その所だけを書きかえる）。矢印の所と、区切った各部分の始まり
+      var arrows = [], segAt = [0], reA = new RegExp(RE_ARROW.source, 'g'), am;
+      while ((am = reA.exec(ln.text))) { if (!am[0].length) { reA.lastIndex++; continue; } arrows.push([am.index, am.index + am[0].length]); segAt.push(am.index + am[0].length); }
       var edgeLabel = '';
       if (segs.length > 1) {
         var last = splitColon(segs[segs.length - 1], 2);
@@ -195,11 +198,16 @@
       }
       var lane = null, nodes = [];
       for (var i = 0; i < segs.length; i++) {
-        var src = [];
+        var src = [], from = segAt[i], laneSpan = null;
         var s = trim(takeSources(segs[i], src));
         if (withLanes) {
           var lm = RE_LANE.exec(s);
-          if (lm) { lane = laneOf(trim(lm[1])); s = trim(lm[2]); }
+          if (lm) {
+            lane = laneOf(trim(lm[1]));
+            var lt = ln.text.indexOf(trim(lm[1]), from);
+            if (lt >= 0) { laneSpan = { line: ln.no, start: lt, end: lt + trim(lm[1]).length }; from = ln.text.slice(lt).search(/[\]］】]/) + lt + 1; }
+            s = trim(lm[2]);
+          }
         }
         var sh = shapes ? shapeOf(s) : null;
         if (sh) s = sh.text;
@@ -213,7 +221,9 @@
           warn(ln.no, '矢印のない文の行なので飛ばした（箱を1つ置くなら「承認 !期限」のように名前だけ。説明は図の外の「## 箱の名前」の下へ）', 'skip');
           return;
         }
-        nodes.push({ label: tm.label, marks: tm.marks, sources: src, lane: lane, shape: sh && sh.shape });
+        var at = ln.text.indexOf(tm.label, from), segEnd = i < arrows.length ? arrows[i][0] : ln.text.length;
+        var span = at >= 0 && at + tm.label.length <= segEnd ? { line: ln.no, start: at, end: at + tm.label.length, seg: i, segs: segs.length } : { line: ln.no, bad: true, seg: i, segs: segs.length };
+        nodes.push({ label: tm.label, marks: tm.marks, sources: src, lane: lane, shape: sh && sh.shape, span: span, laneSpan: laneSpan });
       }
       if (withLanes && nodes.length && !nodes[0].lane) {
         // 行の先頭に担当がなければ、あとに出た担当か、最初の担当を使う
@@ -227,6 +237,8 @@
         var it = reg.get(n.label, ln.no);
         if (!it) return null;
         addMarks(it, n.marks, n.sources);
+        (it.spans = it.spans || []).push(n.span);
+        if (n.laneSpan) (it.laneSpans = it.laneSpans || []).push(n.laneSpan);
         if (withLanes && !it.lane) it.lane = n.lane;
         if (n.shape && !it.style.shape) it.style.shape = n.shape;
         return it;
@@ -235,8 +247,9 @@
         if (!its[e - 1] || !its[e]) continue;
         var key = its[e - 1].id + '>' + its[e].id;
         var lab = e === its.length - 1 ? edgeLabel : '';
-        if (edgeKey[key]) { if (lab && !edgeKey[key].label) edgeKey[key].label = lab; continue; }
-        edgeKey[key] = { id: 'e' + diag.edges.length, kind: 'line', from: its[e - 1].id, to: its[e].id, label: lab, line: ln.no, style: {} };
+        var occ = { line: ln.no, arrow: arrows[e - 1], seg: e - 1 };
+        if (edgeKey[key]) { if (lab && !edgeKey[key].label) edgeKey[key].label = lab; edgeKey[key].occ.push(occ); continue; }
+        edgeKey[key] = { id: 'e' + diag.edges.length, kind: 'line', from: its[e - 1].id, to: its[e].id, label: lab, line: ln.no, style: {}, occ: [occ] };
         diag.edges.push(edgeKey[key]);
       }
     });
