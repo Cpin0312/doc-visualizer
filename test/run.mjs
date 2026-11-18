@@ -1273,6 +1273,17 @@ async function savePptx(T, md, tag) {
     await undo(); await undo();
     ok('付箋を動かす：ドラッグで付箋が動き、置き場所が layout に書かれる。箱に付けた付箋は、箱を動かすと一緒に動く。Ctrl+Z で元どおり', Math.abs(f1[0] - f0[0] - 60) < 6 && /"@全体のメモ":\{"x":/.test(lt) && Math.abs(b1[1] - b0[1]) > 10 && Math.abs((n1[1] - n0[1]) - (b1[1] - b0[1])) < 4 && Math.abs((n1[0] - n0[0]) - (b1[0] - b0[0])) < 4 && (await T()) === mt, JSON.stringify({ f0, f1, n0, n1, b0, b1 }));
   }
+  // PDF（印刷のページ）・PowerPoint にも出る。隠すと出ない
+  {
+    const pr1 = await B.evalJs(`document.querySelectorAll('#print .sticky').length`);
+    await clickAt('#hideNotes'); await sleep(300);
+    const pr2 = await B.evalJs(`document.querySelectorAll('#print .sticky').length`);
+    await clickAt('#hideNotes'); await sleep(300);
+    const { rd } = await savePptx(B, ft, 'r8e_notes');
+    const all = rd ? rd.slides.flatMap(x => x.texts) : [];
+    ok('付箋（出す）：PDF のページと PowerPoint に付箋の文が入り、「付箋を隠す」の間は PDF に出ない', pr1 >= 4 && pr2 === 0 && all.includes('期限を確かめる') && all.includes('付箋だけ'), JSON.stringify({ pr1, pr2, n: all.length }));
+    await pick(ft); await waitFor(`document.getElementById('status').textContent.includes('r8e1_notes.md')`);
+  }
   await clickAt('#mode'); await sleep(800);
   const e3 = await B.evalJs('DocVisualizer.mode()');
   if (e3 === '3d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }

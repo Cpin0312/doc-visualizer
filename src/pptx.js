@@ -66,7 +66,7 @@
     var count = 0;
     var els = svg.querySelectorAll('rect, circle, line, path, text');
     // 箱・矢印の言葉は、ひとまとまりで同じスライドに（真ん中がある方）
-    function groupOf(el) { return el.closest('g.item, g.edge-label'); }
+    function groupOf(el) { return el.closest('g.item, g.edge-label, g.sticky'); }
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
       if (el.closest('defs')) continue;
