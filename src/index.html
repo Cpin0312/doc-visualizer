@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>資料を図にする（DocVisualizer）</title>
+<!-- DocVisualizer __VERSION__ ／ 完全オフライン：外へは何も読みこまず、何も送らない -->
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<header class="bar">
+  <h1 class="app-title">資料を図にする</h1>
+  <label class="btn primary" for="file" title="md ファイルを選ぶ（画面にドラッグ＆ドロップでもよい）">md を選ぶ</label>
+  <input id="file" type="file" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" hidden>
+  <select id="sample" class="btn" aria-label="見本を開く"><option value="">見本を開く…</option></select>
+  <span class="sep"></span>
+  <button id="mode" class="btn" type="button" disabled title="3D は次の版（R2）で入れる">3D</button>
+  <span class="group" role="group" aria-label="文字の大きさ">
+    <button class="btn fs" type="button" data-fs="13" aria-pressed="false">小</button>
+    <button class="btn fs" type="button" data-fs="15" aria-pressed="true">中</button>
+    <button class="btn fs" type="button" data-fs="18" aria-pressed="false">大</button>
+  </span>
+  <button id="present" class="btn" type="button" disabled title="発表は次の版（R2）で入れる">発表</button>
+  <span class="sep"></span>
+  <button id="pdf" class="btn" type="button" disabled>PDF</button>
+  <button id="pptx" class="btn" type="button" disabled title="PowerPoint は次の版（R3）で入れる">PowerPoint</button>
+  <button id="copyPrompt" class="btn" type="button" title="Copilot に貼る指示文をコピーする">Copilot 用の指示をコピー</button>
+</header>
+<div id="error" class="error" role="alert" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="secret" class="secret" hidden></div>
+<main id="main">
+  <section id="welcome" class="welcome">
+    <h2>md ファイルを選ぶか、ここにドラッグ＆ドロップしてください</h2>
+    <p>中身はこの画面の中だけで読みます。どこにも送らず、ブラウザにも残しません。</p>
+    <p>md の作り方：「Copilot 用の指示をコピー」を押して Copilot に貼り、職場の資料を渡すと、この形の md を作ってくれます。まずは「見本を開く」で試せます。</p>
+  </section>
+  <div id="doc" hidden>
+    <p id="status" class="status"></p>
+    <h1 id="title" class="doc-title"></h1>
+    <div id="cards" class="cards"></div>
+    <div id="diagrams"></div>
+    <section id="legend" class="legend" hidden></section>
+    <section id="warnings" class="warnings" hidden></section>
+    <section id="body" class="body-text" hidden></section>
+    <section id="guide" class="guide" hidden></section>
+  </div>
+</main>
+<aside id="panel" class="panel" hidden aria-live="polite">
+  <button id="panelClose" class="btn close" type="button" aria-label="閉じる">×</button>
+  <div id="panelBody"></div>
+</aside>
+<div id="drop" class="drop" hidden>ここに離すと読みこみます</div>
+<div id="print" aria-hidden="true"></div>
+<!--__SCRIPTS__-->
+</body>
+</html>
