@@ -300,7 +300,7 @@
       els.forEach(function (el) { used.add(el); });
       var sp = new T.Sprite(keep(new T.SpriteMaterial({ map: keep(texture(lr, els, null)), transparent: true })));
       sp.scale.set(lr.w * S, lr.h * S, 1);
-      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, diag.type === 'board' ? topAt(lr.x + lr.w / 2, lr.y + lr.h / 2) + 6 : (DEPTH[diag.type] || 16) + LIFT + 4));
+      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, diag.type === 'board' ? items.reduce(function (m, it) { return it ? Math.max(m, it.top) : m; }, 6) + 6 :   /* 言葉は箱の陰に隠れないよう、いちばん高い台より上 */ (DEPTH[diag.type] || 16) + LIFT + 4));
       sp.renderOrder = 5;
       rootG.add(sp);
     });

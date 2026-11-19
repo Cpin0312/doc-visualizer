@@ -476,11 +476,12 @@
   function board(diag, d, opts) {
     var fs = opts.fs, items = diag.items, pad = fs * 0.9, gap = fs * 0.7, hf = Math.max(11, Math.round(fs * 0.8));
     var LIMIT = fs * 90;   // 横に長すぎる段は折り返す
-    var kids = items.map(function () { return []; }), roots = [], M = [], B = [];
+    var kids = items.map(function () { return []; }), roots = [], M = [], B = [], parentOf = [];
     function asFrame(it) { return it.kind === 'frame' && it.depth <= BOARD_MAX_FRAME; }
     items.forEach(function (it) {
       var p = it.parent;
       while (p != null && items[p].depth > BOARD_MAX_FRAME) p = items[p].parent;   // 7段目からは6段目の枠に並べる
+      parentOf[it.id] = p;
       (p == null ? roots : kids[p]).push(it.id);
     });
     function marksW(it) { return it.marks.reduce(function (a, m) { return a + tw(m.text, Math.max(11, Math.round(fs * 0.78)), true) + 16; }, 0); }
@@ -545,9 +546,22 @@
       });
       if (chunk.length) flush();
     });
+    // 動かした所（R9d）：外の枠・箱は図の中の位置、枠の中のものは枠の左上からの差。動かすと中身もついてくる
+    var lay = diag.layout || {};
+    function shift(id, dx, dy) { B[id].x += dx; B[id].y += dy; kids[id].forEach(function (c) { shift(c, dx, dy); }); }
+    items.forEach(function (it) {
+      var p = lay[it.pk], b = B[it.id], par = parentOf[it.id];
+      if (!p || p.x == null || !b) return;
+      var nx = par == null ? Math.max(0, p.x) : B[par].x + Math.max(pad * 0.3, p.x), ny = par == null ? Math.max(0, p.y) : B[par].y + Math.max(pad * 0.8 + M[par].hh, p.y);
+      shift(it.id, nx - b.x, ny - b.y);
+    });
+    for (var v = items.length - 1; v >= 0; v--) {   // 枠は中身に合わせて広げる（中から外へ）
+      if (!B[v] || !asFrame(items[v])) continue;
+      kids[v].forEach(function (c) { B[v].w = Math.max(B[v].w, B[c].x + B[c].w + pad - B[v].x); B[v].h = Math.max(B[v].h, B[c].y + B[c].h + pad - B[v].y); });
+    }
     var W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; }).concat([200])) + 20, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; }).concat([40])) + 20;
     var body = '', E = boardEdges(diag, B, opts);
-    items.forEach(function (it) { if (asFrame(it)) body += drawFrame(d, it, B[it.id], M[it.id], opts); });   // 枠を先に（箱と入れ子にしない）
+    items.forEach(function (it) { B[it.id].p = parentOf[it.id]; if (asFrame(it)) body += drawFrame(d, it, B[it.id], M[it.id], opts); });   // 枠を先に（箱と入れ子にしない）
     body += E.paths;   // 線は枠の上・箱の下。言葉はいちばん上
     items.forEach(function (it) { if (!asFrame(it)) body += drawCard(d, it, B[it.id], M[it.id], opts); });
     body += E.labels;
@@ -573,9 +587,10 @@
     });
     return { paths: paths, labels: labels };
   }
+  function pAttr(b) { return b.p != null ? ' data-p="' + b.p + '"' : ''; }   // 入っている枠（動かすとき、枠からの差に直す）
   function drawFrame(d, it, b, m, opts) {
     var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it);
-    var hy = b.y + pad * 0.8, out = itemOpen(d, it).replace('class="item"', 'class="item frame"') +
+    var hy = b.y + pad * 0.8, out = itemOpen(d, it, pAttr(b)).replace('class="item"', 'class="item frame"') +
       '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="12" fill="' + FRAME_FILL[Math.min(it.depth, FRAME_FILL.length - 1)] + '" stroke="' + (k ? MARK_COLOR[k] : '#b8c7de') + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>' +
       textEl(m.head, b.x + pad, hy + m.head.length * fs * 1.3 / 2, fs, { anchor: 'start', bold: true });
     if (m.ds.length) out += textEl(m.ds, b.x + pad, hy + m.head.length * fs * 1.3 + m.ds.length * hf * 1.3 / 2, hf, { anchor: 'start', fill: C.sub });
@@ -584,7 +599,7 @@
   function drawCard(d, it, b, m, opts) {
     var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it), cell = !!it.across;
     var stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
-    var out = itemOpen(d, it) + '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>';
+    var out = itemOpen(d, it, pAttr(b)) + '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>';
     var top = b.y + (b.h - m.labH - m.dsH) / 2, tx = b.x + pad + m.numW, mid = cell && !m.numW && !m.tagW;
     if (m.numW) {
       var cr = fs * 0.72, cx = b.x + pad + cr, cy = b.y + b.h / 2;

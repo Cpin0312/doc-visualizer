@@ -139,6 +139,14 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       edgeBad.join(' / ') + ' ' + EG.length);
     const selfD = B(['[A]', '  x', 'x -> x : もう一度']).diagrams[0], svS = RC.DocRender.svg(selfD, 0, { fs: 15 });
     ok('図解（2D）：自分へ戻る線は右の小さな輪で描く', ends2(svS).length === 1 && /もう一度/.test(svS), svS.length);
+    // ---- R9d：図解を動かす（layout）。外の枠は図の中の位置、枠の中は枠の左上からの差。中身はついてくる・枠は広がる ----
+    const mdL = parts => ['# t', '~~~board 図', '[A] 外', '  x : 説明', '  [B]', '    y', '    z', '[C]', '  w', '~~~', '', '~~~layout', JSON.stringify({ v: 1, diagrams: [{ type: 'board', name: '図', parts }] }), '~~~'].join('\n');
+    const at2 = (parts) => { const dd = P.parseDoc(mdL(parts)), gg = dd.diagrams[0], R = rects(RC.DocRender.svg(gg, 0, { fs: 15 })), k = l => R.find(q => q.i === gg.items.find(i => (i.kind === 'frame' ? '[' + i.label + ']' : i.label) === l).id); return { gg, dd, k }; };
+    const base = at2({}), mv = at2({ '[a]': { x: 300, y: 260 }, 'z': { x: 30, y: 200 } }), neg = at2({ 'y': { x: -80, y: -80 } });
+    const dA = [mv.k('[A]').x - base.k('[A]').x, mv.k('[A]').y - base.k('[A]').y], dx2 = [mv.k('x').x - base.k('x').x, mv.k('x').y - base.k('x').y];
+    ok('図解（動かす）：外の枠は書いた位置へ・中身もついてくる。枠の中の箱は枠からの差で置き、枠はそれに合わせて広がる。枠の外や名前の上には出ない',
+      !mv.dd.warnings.length && mv.k('[A]').x === 300 && mv.k('[A]').y === 260 && eq(dA, dx2) && mv.k('z').x === mv.k('[B]').x + 30 && mv.k('z').y === mv.k('[B]').y + 200 && inR(mv.k('z'), mv.k('[B]')) && inR(mv.k('[B]'), mv.k('[A]')) && mv.k('[B]').h > base.k('[B]').h &&
+      inR(neg.k('y'), neg.k('[B]')) && neg.k('y').y > neg.k('[B]').y + 15, JSON.stringify({ A: mv.k('[A]'), B: mv.k('[B]'), z: mv.k('z'), dA, dx2, ny: neg.k('y'), nB: neg.k('[B]') }));
     const tdoc = P.parseDoc(P.addDiagram('# T\n', P.parseDoc('# T\n'), 'board'));
     ok('図解：「図を足す」のひな形が知らせなしで読め、描ける', tdoc.diagrams[0].type === 'board' && !tdoc.warnings.length && !layoutOk(tdoc.diagrams[0], RC.DocRender.svg(tdoc.diagrams[0], 0, { fs: 15 })).length);
   }
@@ -1604,6 +1612,30 @@ async function savePptx(T, md, tag) {
   await keyPress('Escape', 'Escape', 27);
   ok('図解（画面）：枠を押すと中の数、箱を押すと入っている枠・タグ・前の箱が出る',
     pf && pf.startsWith('変える前') && pf.includes('枠（中に 2 個）') && pb && pb.startsWith('申込.xlsx') && pb.includes('入っている枠：担当ごと') && pb.includes('タグ：営業') && pb.includes('前：受付'), JSON.stringify([pf, pb].map(t => (t || '').replace(/\n/g, ' ').slice(0, 90))));
+  // R9d：画面でドラッグ。外の枠は中身ごと動き、枠の中の箱は枠からの差で md に残る。Ctrl+Z 2回で元どおり
+  const boxAt0 = sel => B.evalJs(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; })()`);
+  const boxAt = sel => B.evalJs(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const b = e.getBoundingClientRect(), s = e.ownerSVGElement, k = b.width / e.getBBox().width; return { x: b.left, y: b.top, w: b.width, h: b.height, k, sx: e.getBBox().x, sy: e.getBBox().y }; })()`);
+  const dragBy = async (pt, dx, dy) => {
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let s = 1; s <= 6; s++) { await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x + dx * s / 6, y: pt.y + dy * s / 6, button: 'left', buttons: 1 }); await sleep(40); }
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x + dx, y: pt.y + dy, button: 'left', buttons: 0, clickCount: 1 }); await sleep(400);
+  };
+  const t0 = await B.evalJs('DocVisualizer.text()');
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(200);
+  const fr0 = await boxAt('#dg0 .item.frame[aria-label="やったこと"] .box'), kid0 = await boxAt('#dg0 .item[aria-label="台帳を分ける"] .box');
+  await dragBy({ x: fr0.x + 16, y: fr0.y + 10 }, 0, 120);
+  const fr1 = await boxAt('#dg0 .item.frame[aria-label="やったこと"] .box'), kid1 = await boxAt('#dg0 .item[aria-label="台帳を分ける"] .box');
+  const ap0 = await boxAt('#dg0 .item[aria-label="申込.xlsx"] .box');
+  await dragBy({ x: ap0.x + 10, y: ap0.y + ap0.h / 2 }, 0, 60);
+  const t2 = await B.evalJs('DocVisualizer.text()'), L2 = P.parseDoc(t2).layout, parts = L2 && L2.diagrams[0] && L2.diagrams[0].parts || {};
+  const ap1 = await boxAt('#dg0 .item[aria-label="申込.xlsx"] .box'), own = await boxAt('#dg0 .item.frame[aria-label="担当ごと"] .box');
+  const inside2 = own && ap1 && ap1.sx >= own.sx && ap1.sy >= own.sy && ap1.sx + ap1.w / ap1.k <= own.sx + own.w / own.k + 1 && ap1.sy + ap1.h / ap1.k <= own.sy + own.h / own.k + 1;
+  const mods2 = process.platform === 'darwin' ? 4 : 2;
+  for (let k = 0; k < 2; k++) { for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: mods2 }); await sleep(300); }
+  const t3 = await B.evalJs('DocVisualizer.text()');
+  ok('図解（動かす・画面）：外の枠をドラッグすると中身ごと動き、枠の中の箱は枠からの差で md に残り、枠の中にいる。Ctrl+Z 2回で md は元どおり',
+    Math.abs((fr1.sy - fr0.sy) - (kid1.sy - kid0.sy)) < 1 && fr1.sy - fr0.sy > 50 && parts['[やったこと]'] && parts['申込.xlsx'] && parts['申込.xlsx'].y < 200 && parts['[やったこと]'].y > 100 && inside2 && t3 === t0,
+    JSON.stringify({ d: [fr1.sy - fr0.sy, kid1.sy - kid0.sy], parts, inside2, back: t3 === t0 }));
   await B.evalJs('document.activeElement && document.activeElement.blur()');
   await keyPress('p', 'KeyP', 80); await keyPress('ArrowRight', 'ArrowRight', 39);
   const fitB = `(() => { const st = document.getElementById('pStage'), s = st.querySelector('svg.board'); if (!s) return null; const b = s.getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32 }; })()`;
@@ -1624,6 +1656,8 @@ async function savePptx(T, md, tag) {
     hit.push(h2 === lb ? '○' : lb + '→' + h2);
     await keyPress('Escape', 'Escape', 27);
   }
+  await shot('r9_board_3d_front', false);   // 目で見る用（test/out）。正面と、横へ回したところ
+  { const cv = await boxAt0('#dg0 .view3d canvas'); if (cv) { const c0 = { x: cv.x + cv.w / 2, y: cv.y + cv.h / 2 }; await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: c0.x - 200, y: c0.y + 150, button: 'left', buttons: 1, clickCount: 1 }); for (let s = 1; s <= 8; s++) { await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: c0.x - 200 + 25 * s, y: c0.y + 150 - 12 * s, button: 'left', buttons: 1 }); await sleep(40); } await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: c0.x, y: c0.y + 54, button: 'left', buttons: 0, clickCount: 1 }); await sleep(500); await shot('r9_board_3d_turned', false); await keyPress('Escape', 'Escape', 27); } }
   ok('図解（3D）：描け（真っ黒でない）、枠の中の箱を押すと枠ではなくその箱が開く', notBlack(px3) && hit.every(h => h === '○'), JSON.stringify(px3).slice(0, 60) + ' ' + hit.join(' '));
   await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
   // R9c：PowerPoint は枠も箱も別々の直せる図形、線は矢じりつきの線

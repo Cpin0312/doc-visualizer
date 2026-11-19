@@ -268,7 +268,18 @@
     return true;
   }
   // 図 i の部品 pk の配置を変える（patch が null なら、その図の配置を全部消す）
+  // 図解（R9d）：枠の中のものは、枠の左上からの差で残す（枠を動かすと中身もついてくる）。来るのは図の中の位置
+  function boardRel(i, pk, v) {
+    var d = state.doc.diagrams[i];
+    if (!d || d.type !== 'board' || !v || v.x == null) return v;
+    var it = d.items.filter(function (x) { return x.pk === pk; })[0], svg = $('dg' + i).querySelector('.svg-wrap svg'), g = it && svg && svg.querySelector('.item[data-i="' + it.id + '"]');
+    var pb = g && g.hasAttribute('data-p') && svg.querySelector('.item[data-i="' + g.getAttribute('data-p') + '"] .box');
+    if (!pb) return v;
+    var bb = pb.getBBox();
+    return Object.assign({}, v, { x: Math.round(v.x - bb.x), y: Math.round(v.y - bb.y) });
+  }
   function setLayout(i, pk, patch, merge) {
+    patch = boardRel(i, pk, patch);
     var doc = state.doc, d = doc.diagrams[i];
     var obj = doc.layout ? JSON.parse(JSON.stringify(doc.layout)) : { v: 1, diagrams: [] };
     var k = d.layoutIndex;
@@ -531,7 +542,7 @@
   }
   function previewDrag(t, v) {
     var d = state.doc.diagrams[t.i], keep = d.layout, tmp = JSON.parse(JSON.stringify(keep || {}));
-    tmp[t.pk] = Object.assign(tmp[t.pk] || {}, v);
+    tmp[t.pk] = Object.assign(tmp[t.pk] || {}, t.kind === 'box' ? boardRel(t.i, t.pk, v) : v);
     d.layout = tmp;
     try { redrawDiagram(t.i, true); } finally { d.layout = keep; }
   }
