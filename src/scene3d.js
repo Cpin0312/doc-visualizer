@@ -139,7 +139,9 @@
   }
 
   var BEVEL = 1.2, SHADOW_H = 0.5, LIFT = BEVEL + 1.1;   // 箱の底（LIFT − BEVEL = 1.1）は影（0.5）より上
-  var DEPTH = { flowchart: 20, flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14 };
+  var DEPTH = { flowchart: 20, flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14, board: 14 };
+  var FRAME_D = 6;   // 図解の枠は浅い台。中の箱は、枠の台の上に積む
+  function boardBase(diag, i) { var it = diag.type === 'board' && diag.items[i]; return it ? Math.min(it.depth, 6) * (FRAME_D + BEVEL * 2 + 1) : 0; }
   var CHARTS = { chart: 1, pie: 1, donut: 1, line: 1, hbar: 1, stacked: 1 };
   // 円グラフの扇は「M x y L x y … Z」の多角形。中心からの点に直す
   function polyOf(el) {
@@ -198,10 +200,10 @@
         });
         segs.forEach(function (el) { used.add(el); });
       } else {
-        regions = [{ r: br, poly: poly, depth: DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
+        regions = [{ r: br, poly: poly, depth: g.classList.contains('frame') ? FRAME_D : DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
       }
       used.add(box);
-      var group = new T.Group(), it = { i: i, group: group, center: null, top: 0, meshes: [], mats: [] };
+      var group = new T.Group(), it = { i: i, group: group, center: null, top: 0, meshes: [], mats: [] }, base = boardBase(diag, i);
       regions.forEach(function (R) {
         var r = R.r, d = R.depth;
         var face = R.solid ? [] : mine.filter(function (el) { return el !== box && inside(anchorPoint(el), r); });
@@ -218,7 +220,7 @@
         var mesh = new T.Mesh(geo, [capMat, sideMat]);
         // 箱は板から少し浮かせる：角の丸み（bevel）が板の下にもぐり、影の面が箱の側面を切ると、
         // 大きく回したときにその交わりが縞・階段になる。板 0 → 影 SHADOW_H → 箱の底 の順に、どの面も交わらない
-        var c = P(r.x + r.w / 2, r.y + r.h / 2, LIFT);
+        var c = P(r.x + r.w / 2, r.y + r.h / 2, LIFT + base);
         mesh.position.copy(c);
         orient(mesh);
         mesh.userData.item = i;
@@ -228,7 +230,7 @@
           var tex = keep(texture(r, face, R.poly ? null : (R.fill || '#ffffff')));   // ひし形などは、形の外を透かす
           var fm = keep(new T.MeshBasicMaterial({ map: tex, transparent: true }));
           var plane = new T.Mesh(keep(new T.PlaneGeometry(r.w * S, r.h * S)), fm);
-          plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, LIFT + d + BEVEL + 0.4));   // 箱の上の面（丸みの分を含む）より少し上
+          plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, LIFT + base + d + BEVEL + 0.4));   // 箱の上の面（丸みの分を含む）より少し上
           orient(plane);
           plane.userData.item = i;
           group.add(plane);
@@ -239,7 +241,7 @@
         sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, SHADOW_H) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, SHADOW_H));
         orient(sh);
         group.add(sh);
-        it.top = Math.max(it.top, LIFT + d);
+        it.top = Math.max(it.top, LIFT + base + d);
       });
       // 扇の囲みの真ん中や点の平均は、扇の外（ドーナツの穴など）に出ることがある。2D が書いた扇の真ん中の角の点を使う
       var mid = box.getAttribute('data-cx') ? [+box.getAttribute('data-cx'), +box.getAttribute('data-cy')] : poly && poly.length ? poly.reduce(function (a, p) { return [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length]; }, [0, 0]) : [br.x + br.w / 2, br.y + br.h / 2];
@@ -262,12 +264,14 @@
       items[i] = it;
     });
 
+    // 図解：その点の下でいちばん高い台の上（線が枠の台にもぐらない）
+    function topAt(x, y) { var t = 6; items.forEach(function (it) { if (it && it.box && inside({ x: x, y: y }, it.box)) t = Math.max(t, it.top); }); return t; }
     // 矢印 → 管と、流れる光
     var flows = [];
     Array.prototype.forEach.call(svg.querySelectorAll('path.edge'), function (p, k) {
       used.add(p);
       var len = p.getTotalLength(), n = Math.max(8, Math.min(60, Math.round(len / 12))), pts = [];
-      for (var j = 0; j <= n; j++) { var q = p.getPointAtLength(len * j / n); pts.push(P(q.x, q.y, ground ? 5 : 6)); }
+      for (var j = 0; j <= n; j++) { var q = p.getPointAtLength(len * j / n); pts.push(P(q.x, q.y, diag.type === 'board' ? topAt(q.x, q.y) + 3 : ground ? 5 : 6)); }
       var curve = new T.CatmullRomCurve3(pts);
       var tube = new T.Mesh(keep(new T.TubeGeometry(curve, n * 2, 1.6 * S, 8, false)), keep(new T.MeshStandardMaterial({ color: 0x8a9bb5, roughness: 0.4 })));
       rootG.add(tube);
@@ -296,7 +300,7 @@
       els.forEach(function (el) { used.add(el); });
       var sp = new T.Sprite(keep(new T.SpriteMaterial({ map: keep(texture(lr, els, null)), transparent: true })));
       sp.scale.set(lr.w * S, lr.h * S, 1);
-      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, (DEPTH[diag.type] || 16) + LIFT + 4));
+      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, diag.type === 'board' ? topAt(lr.x + lr.w / 2, lr.y + lr.h / 2) + 6 : (DEPTH[diag.type] || 16) + LIFT + 4));
       sp.renderOrder = 5;
       rootG.add(sp);
     });

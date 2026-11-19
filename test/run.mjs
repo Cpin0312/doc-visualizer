@@ -1611,6 +1611,26 @@ async function savePptx(T, md, tag) {
   const fb2 = await B.evalJs(fitB);
   await keyPress('Escape', 'Escape', 27);
   ok('図解（発表）：図解が枠いっぱいに収まる', fb2 && (Math.abs(fb2.w - fb2.cw) <= 2 || Math.abs(fb2.h - fb2.ch) <= 2) && fb2.w <= fb2.cw + 2 && fb2.h <= fb2.ch + 2, JSON.stringify(fb2));
+  // R9c：3D は枠を浅い台に、中の箱をその上に積む。2つの枠の中の箱を押すと、その箱が開く（枠ではなく）
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '3d'`);
+  await B.evalJs(`document.getElementById('dg0').scrollIntoView({ block: 'center' })`); await sleep(500);
+  const px3 = await B.evalJs(pixelCheck(`document.querySelector('#dg0 .view3d canvas')`)).catch(e => ({ err: e.message }));
+  const hit = [];
+  for (const lb of ['申込.xlsx', '受付', '台帳を分ける']) {
+    const id = P.parseDoc(mb).diagrams[0].items.find(x => x.label === lb).id, pt = await B.evalJs(`DocVisualizer.where3d(0, ${id})`).catch(() => null);
+    if (!pt) { hit.push(lb + '?'); continue; }
+    for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: pt.x, y: pt.y, button: 'left', clickCount: 1 });
+    const h2 = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').querySelector('h2').textContent`, 1500);
+    hit.push(h2 === lb ? '○' : lb + '→' + h2);
+    await keyPress('Escape', 'Escape', 27);
+  }
+  ok('図解（3D）：描け（真っ黒でない）、枠の中の箱を押すと枠ではなくその箱が開く', notBlack(px3) && hit.every(h => h === '○'), JSON.stringify(px3).slice(0, 60) + ' ' + hit.join(' '));
+  await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`);
+  // R9c：PowerPoint は枠も箱も別々の直せる図形、線は矢じりつきの線
+  const { rd: rb } = await savePptx(B, fb, 'r9_board');
+  const sl = rb ? rb.slides.find(x => x.texts.includes('申込.xlsx')) : null;
+  ok('図解（PowerPoint）：枠の名前・箱の名前・タグ・番号・線の言葉が別々の図形で、図形の数が部品と線の数より多い',
+    !!sl && ['変える前', '台帳', '申込.xlsx', '営業', '1', '毎回ぜんぶ見る', '合う台帳だけ見る'].every(t => sl.texts.includes(t)) && sl.geo >= 18 + 3, sl ? JSON.stringify({ geo: sl.geo, texts: sl.texts.slice(0, 12) }) : 'なし');
   if (m0 !== '2d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '${m0}'`); }
 }
 
