@@ -162,6 +162,16 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
         [d1, d2, d3, d4].every(x => !x.warnings.length && x.diagrams[0].edges.length === 3),
         JSON.stringify([L1.slice(3, 11), L3.slice(6, 11), r4.split('\n').slice(10, 14), Object.keys(parts4), [d1, d2, d3, d4].map(x => x.warnings.map(w => w.msg))]));
     }
+    // ---- 付箋の行も名前を直す・箱を消すと付箋は図に残す（どの種類でも、共通の1か所） ----
+    {
+      const fm = ['# t', '~~~flow', 'A -> B', 'note A : 期限を見る @黄', 'note B : 確認 @水色', '~~~'].join('\n'), fd = P.parseDoc(fm);
+      const f1 = P.renameItem(fm, fd, 0, 0, 'C'), fd1 = P.parseDoc(f1), f2 = P.removeItem(f1, fd1, 0, 1), fd2 = P.parseDoc(f2);
+      const bm = ['# t', '~~~board', '[A]', '  x', 'note [A] : 枠のメモ @黄', '~~~'].join('\n'), bd = P.parseDoc(bm), b1 = P.renameItem(bm, bd, 0, 0, 'B'), bd1 = P.parseDoc(b1);
+      ok('付箋（名前を直す・消す）：名前を直すと付箋の行も直って箱に付いたまま。箱を消すと付箋は「名前 :」を外して図に残る。図解の枠でも同じ',
+        f1.split('\n')[3] === 'note C : 期限を見る @黄' && fd1.diagrams[0].stickies[0].to === 0 && f2.split('\n').includes('note 確認 @水色') && fd2.diagrams[0].stickies.length === 2 && fd2.diagrams[0].stickies[1].to == null &&
+        P.notesTo(fd1.diagrams[0], [1]).length === 1 && b1.split('\n')[4] === 'note [B] : 枠のメモ @黄' && bd1.diagrams[0].stickies[0].to === 0,
+        JSON.stringify([f1.split('\n')[3], f2.split('\n'), b1.split('\n')[4]]));
+    }
     const tdoc = P.parseDoc(P.addDiagram('# T\n', P.parseDoc('# T\n'), 'board'));
     ok('図解：「図を足す」のひな形が知らせなしで読め、描ける', tdoc.diagrams[0].type === 'board' && !tdoc.warnings.length && !layoutOk(tdoc.diagrams[0], RC.DocRender.svg(tdoc.diagrams[0], 0, { fs: 15 })).length);
   }

@@ -742,9 +742,10 @@
   }
   function deleteItem(d, i) {
     var diag = state.doc.diagrams[d], it = diag.items[i], under = diag.type === 'tree' && it ? P.subtree(diag, i).length - 1 : 0;
-    if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + '（Ctrl+Z で戻せます）。よいですか？')) return;
+    var nn = it ? P.notesTo(diag, diag.type === 'tree' ? P.subtree(diag, i) : [i]).length : 0, nt = nn ? '付けていた付箋 ' + nn + ' 枚は、箱から外して図に残します' : '';
+    if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + (nt ? '。' + nt : '') + '（Ctrl+Z で戻せます）。よいですか？')) return;
     closePanel();
-    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました');
+    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました' + (nt ? '（' + nt.replace('します', 'しました') + '）' : ''));
   }
   function deleteEdge(d, pk) {
     var diag = state.doc.diagrams[d], e = diag.edges.filter(function (x) { return x.pk === pk; })[0];

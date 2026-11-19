@@ -822,6 +822,16 @@
     obj.diagrams[d.layoutIndex].parts = out;
     return obj;
   }
+  // 箱に付けた付箋の行（note 名前 : 文 @色）。名前を直すときは名前を直し、箱を消すときは「名前 :」を外して図に残す（付箋の文は消さない）
+  var RE_NOTE_TO = /^([ \t\u3000]*note[ \t\u3000]+)(.+?)([ \t\u3000]*[:：][ \t\u3000]*)/i;
+  function notesTo(d, ids) { return (d.stickies || []).filter(function (n) { return n.to != null && ids.indexOf(n.to) >= 0; }); }
+  function fixNoteLines(t, d, ids, newName) {
+    notesTo(d, ids).forEach(function (n) {
+      var L = t.lines[n.line - 1];
+      if (L == null || !RE_NOTE_TO.test(L)) return;
+      t.lines[n.line - 1] = L.replace(RE_NOTE_TO, function (all, head, nm, sep) { return newName == null ? head : head + newName + sep; });
+    });
+  }
   function renameItem(text, doc, di, id, name) {
     var d = doc.diagrams[di], it = d && d.items[id], nn = safeName(name);
     if (!it) throw new Error('箱が見つからない');
@@ -831,6 +841,7 @@
     if (!it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の名前の場所が md の中で分からない');
     var t = splitText(text);
     replaceSpans(t, it.spans.map(function (sp) { return { line: sp.line, start: sp.start, end: sp.end, text: nn }; }));
+    fixNoteLines(t, d, [id], it.kind === 'frame' ? '[' + nn + ']' : nn);   // 付箋が箱から外れないように
     // 説明の見出し「## 名前」も直す
     doc.notes.forEach(function (n) {
       if (n.key !== it.key && !(it.kind === 'frame' && n.key === it.key.slice(1, -1))) return;   // 図解の枠は「## 枠の名前」
@@ -1018,7 +1029,8 @@
     if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
     var plan = {}, ids = d.type === 'tree' ? subtree(d, id) : [id];   // 木は、下の箱も一緒に消す（残すと、ちがう親の下に入るため）
     ids.forEach(function (k) { (d.items[k].spans || []).forEach(function (sp) { if (!sp.bad) (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); }); });
-    var keys = ids.map(function (k) { return d.items[k].key; });
+    var keys = ids.map(function (k) { return d.items[k].key; }), t0 = splitText(text);
+    fixNoteLines(t0, d, ids, null); text = joinText(t0);   // 付けていた付箋は図に残す（行の数は変えないので、場所はずれない）
     // その箱の置き場所・形と、その箱につながる線の置き場所も消す（残すと、同じ名前を足したとき前の場所に出る）
     return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').some(function (x) { return keys.indexOf(nk(x.replace(/#\d+$/, ''))) >= 0; }); });
   }
@@ -1280,6 +1292,6 @@
     };
   }
 
-  var api = { addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { notesTo: notesTo, addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);
