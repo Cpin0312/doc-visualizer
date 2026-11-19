@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import vm from 'node:vm';
 import { rmSync } from 'node:fs';
 import { launch, sleep } from './cdp.mjs';
 
@@ -91,6 +92,38 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     ok('図解（読み）：200 を超えたら先頭 200 だけ・種類は図解・ほかの種類には変えない',
       many.diagrams[0].items.length === 200 && many.warnings.some(w => /11 個を省いた/.test(w.msg)) && P.check(['# t', '~~~図解', '[A]', '  b', '~~~'].join('\n')).diagrams[0].typeLabel === '図解' &&
       eq(P.typeChoices(['# t', '~~~board', '[A]', '  b', '~~~'].join('\n'), P.parseDoc(['# t', '~~~board', '[A]', '  b', '~~~'].join('\n')), 0), []), JSON.stringify(many.warnings.map(w => w.msg)));
+    // ---- R9b-1：図解の 2D（node で SVG を作って、箱の場所を数で確かめる） ----
+    const RC = {}; vm.createContext(RC); vm.runInContext(readFileSync(join(root, 'src', 'render2d.js'), 'utf8'), RC);
+    const rects = svg => [...svg.matchAll(/<g class="item( frame)?" data-d="\d+" data-i="(\d+)"[^>]*><rect class="box" x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)]
+      .map(m => ({ frame: !!m[1], i: +m[2], x: +m[3], y: +m[4], w: +m[5], h: +m[6], at: m.index }));
+    const inR = (a, b) => a.x >= b.x - 0.5 && a.y >= b.y - 0.5 && a.x + a.w <= b.x + b.w + 0.5 && a.y + a.h <= b.y + b.h + 0.5;
+    const over = (a, b) => a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 && b.y < a.y + a.h - 0.5;
+    const layoutOk = (g, svg) => {
+      const R = rects(svg), byI = Object.fromEntries(R.map(q => [q.i, q])), bad = [];
+      if (R.length !== g.items.length) bad.push('数 ' + R.length + '/' + g.items.length);
+      const lastFrame = Math.max(-1, ...R.filter(q => q.frame).map(q => q.at)), firstBox = Math.min(Infinity, ...R.filter(q => !q.frame).map(q => q.at));
+      if (lastFrame > firstBox) bad.push('枠が箱の後ろ');
+      g.items.forEach(it => { let p = it.parent; while (p != null && g.items[p].depth > 5) p = g.items[p].parent; if (p != null && !inR(byI[it.id], byI[p])) bad.push(it.label + ' が枠の外'); });
+      const sib = R.filter(a => R.some(b => a !== b && over(a, b) && !inR(a, b) && !inR(b, a)));
+      if (sib.length) bad.push('重なり ' + sib.map(q => g.items[q.i].label).join());
+      return bad;
+    };
+    const sv = RC.DocRender.svg(g, 0, { fs: 15 }), sv20 = RC.DocRender.svg(g, 0, { fs: 20 });
+    ok('図解（2D）：見本の枠と箱が全部描かれ、中身は枠の中・重ならない・枠を先に描く（字の大きさ 15 と 20）',
+      !layoutOk(g, sv).length && !layoutOk(g, sv20).length && /class="diagram board"/.test(sv) && (sv.match(/class="item frame"/g) || []).length === 6 && /class="num"/.test(sv) && /class="tag"/.test(sv) && /class="mark mark-red"/.test(sv),
+      layoutOk(g, sv).concat(layoutOk(g, sv20)).join(' / '));
+    const R1 = rects(sv), at = k => R1.find(q => q.i === by(k).id);
+    ok('図解（2D）：外の枠は横に並び、--- で次の段。「a | b」は横に並ぶ',
+      at('[変える前]').y === at('[やったこと]').y && at('[やったこと]').x > at('[変える前]').x + at('[変える前]').w && at('[効果]').y > at('[変える前]').y + at('[変える前]').h &&
+      at('申込').y === at('見積').y && at('見積').x > at('申込').x, JSON.stringify(['[変える前]', '[やったこと]', '[効果]', '申込', '見積'].map(k => at(k))));
+    const deepMd = B(Array.from({ length: 9 }, (_, i) => '  '.repeat(i) + '[枠' + i + ']').concat(['                  底']));
+    const gd = deepMd.diagrams[0], svd = RC.DocRender.svg(gd, 0, { fs: 15 });
+    ok('図解（2D）：7段より深い枠は6段目の枠の中にまとめて描き、知らせる（md はそのまま）',
+      (svd.match(/class="item frame"/g) || []).length === 6 && !layoutOk(gd, svd).length && deepMd.warnings.some(w => w.kind === 'fix' && /7段より深い/.test(w.msg)),
+      layoutOk(gd, svd).join() + ' ' + JSON.stringify(deepMd.warnings.map(w => w.msg)));
+    const wideMd = B(Array.from({ length: 24 }, (_, i) => '[とても長い名前の枠その' + i + ']\n  中の箱 : 説明の文'));
+    const gwd = wideMd.diagrams[0], svw = RC.DocRender.svg(gwd, 0, { fs: 15 }), ww = +/data-w="(\d+)"/.exec(svw)[1];
+    ok('図解（2D）：横に長すぎる段は折り返す（幅は字の 90 文字ほどまで）・重ならない', ww <= 15 * 90 + 400 && !layoutOk(gwd, svw).length, ww + ' ' + layoutOk(gwd, svw).join());
   }
   const none = P.parseDoc('# 図なし\n本文だけ');
   ok('読みとり：図のない md でも止まらない', none.title === '図なし' && none.diagrams.length === 0 && none.body.length === 1);

@@ -390,6 +390,8 @@
       });
       prev = { frame: false, ind: ind };
     });
+    var deep = diag.items.filter(function (it) { return it.kind === 'frame' && it.depth > 5; })[0];
+    if (deep) warn(deep.line, '7段より深い枠は、6段目の枠の中にまとめて出した（md はそのまま）', 'fix');
     // 2回目：線。同じ名前がいくつかあるときは「[枠] 名前」→ もう一方の端と同じいちばん外の枠 → はじめのもの
     var items = diag.items, edgeKey = {};
     function rootOf(it) { while (it.parent != null) it = items[it.parent]; return it; }

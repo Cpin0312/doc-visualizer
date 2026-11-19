@@ -470,6 +470,113 @@
     return wrapSvg(W, H, body, 'tree');
   }
 
+  // ---- 図解 board（R9b-1）：いちばん外の枠は横に並べ、--- で次の段。枠の中は上から下、「a | b」は横 ----
+  var FRAME_FILL = ['#f4f7fc', '#e9f0f9', '#dfe8f5', '#d5e1f1', '#cbdaee', '#c1d3ea'];
+  var BOARD_MAX_FRAME = 5;   // 枠として描く深さ（0〜5 の6段。深い所は parse が知らせる）
+  function board(diag, d, opts) {
+    var fs = opts.fs, items = diag.items, pad = fs * 0.9, gap = fs * 0.7, hf = Math.max(11, Math.round(fs * 0.8));
+    var LIMIT = fs * 90;   // 横に長すぎる段は折り返す
+    var kids = items.map(function () { return []; }), roots = [], M = [], B = [];
+    function asFrame(it) { return it.kind === 'frame' && it.depth <= BOARD_MAX_FRAME; }
+    items.forEach(function (it) {
+      var p = it.parent;
+      while (p != null && items[p].depth > BOARD_MAX_FRAME) p = items[p].parent;   // 7段目からは6段目の枠に並べる
+      (p == null ? roots : kids[p]).push(it.id);
+    });
+    function marksW(it) { return it.marks.reduce(function (a, m) { return a + tw(m.text, Math.max(11, Math.round(fs * 0.78)), true) + 16; }, 0); }
+    function markGap(ids) { return ids.some(function (id) { return items[id].marks.length; }) ? fs * 1.2 : 0; }
+    function linesOf(list) {
+      var out = [];
+      list.forEach(function (id) { var c = items[id].cells, last = out[out.length - 1]; if (c && last && last.cells === c) last.ids.push(id); else out.push({ cells: c, ids: [id] }); });
+      return out;
+    }
+    function mBox(it) {
+      var cell = !!it.cells, lab = wrap(it.label, fs, fs * (cell ? 8 : 16), 3, it.kind === 'frame'), ds = it.desc ? wrap(it.desc, hf, fs * 16, 3) : [];
+      var numW = it.kind === 'step' ? fs * 2 : 0, tagW = it.tag ? tw(it.tag, hf, true) + hf * 1.2 + pad * 0.6 : 0;
+      var labH = lab.length * fs * 1.3, dsH = ds.length ? ds.length * hf * 1.3 + fs * 0.2 : 0;
+      return { lab: lab, ds: ds, labH: labH, dsH: dsH, numW: numW, tagW: tagW,
+        w: Math.max(Math.max(textW(lab, fs, it.kind === 'frame'), textW(ds, hf)) + pad * 2 + numW + tagW, fs * 4, marksW(it)),
+        h: Math.max(labH + dsH + pad * 1.2, it.kind === 'step' ? fs * 2.3 : 0) };
+    }
+    function mFrame(it) {
+      var head = wrap(it.label, fs, fs * 24, 2, true), ds = it.desc ? wrap(it.desc, hf, fs * 24, 2) : [];
+      var hh = head.length * fs * 1.3 + (ds.length ? ds.length * hf * 1.3 : 0) + pad * 0.6;
+      var L = linesOf(kids[it.id]);
+      L.forEach(function (l) {
+        l.ids.forEach(measure);
+        l.w = l.ids.reduce(function (a, id) { return a + M[id].w; }, 0) + gap * (l.ids.length - 1);
+        l.h = Math.max.apply(null, l.ids.map(function (id) { return M[id].h; }));
+        l.top = markGap(l.ids);
+      });
+      var inner = Math.max.apply(null, [0].concat(L.map(function (l) { return l.w; })));
+      return { frame: true, head: head, ds: ds, hh: hh, L: L,
+        w: Math.max(inner, textW(head, fs, true), textW(ds, hf), marksW(it)) + pad * 2,
+        h: pad * 0.8 + hh + L.reduce(function (a, l) { return a + l.top + l.h; }, 0) + gap * Math.max(0, L.length - 1) + pad };
+    }
+    function measure(id) { M[id] = asFrame(items[id]) ? mFrame(items[id]) : mBox(items[id]); }
+    // 置く：枠の中の1つだけの行は枠の幅いっぱい、「a | b」の行は余りを分ける
+    function put(id, x, y, w) {
+      var m = M[id];
+      B[id] = { x: x, y: y, w: w, h: m.h };
+      if (!m.frame) return;
+      var cy = y + pad * 0.8 + m.hh, iw = w - pad * 2;
+      m.L.forEach(function (l, li) {
+        cy += l.top;
+        if (!l.cells) put(l.ids[0], x + pad, cy, iw);
+        else {
+          var extra = (iw - l.w) / l.ids.length, cx = x + pad;
+          l.ids.forEach(function (cid) { put(cid, cx, cy, M[cid].w + extra); cx += M[cid].w + extra + gap; });
+        }
+        cy += l.h + (li < m.L.length - 1 ? gap : 0);
+      });
+    }
+    var rows = [];
+    roots.forEach(function (id) { var rw = items[id].row || 0; (rows[rw] = rows[rw] || []).push(id); });
+    var y = 20;
+    rows.forEach(function (ids) {
+      if (!ids) return;
+      var x = 20, lineH = 0, top = 0;
+      ids.forEach(measure);
+      var chunk = [];
+      function flush() { top = markGap(chunk.map(function (c) { return c.id; })); chunk.forEach(function (c) { put(c.id, c.x, y + top, M[c.id].w); }); y += top + lineH + fs * 3; chunk = []; x = 20; lineH = 0; }
+      ids.forEach(function (id) {
+        if (chunk.length && x + M[id].w > 20 + LIMIT) flush();
+        chunk.push({ id: id, x: x }); x += M[id].w + fs * 2.5; lineH = Math.max(lineH, M[id].h);
+      });
+      if (chunk.length) flush();
+    });
+    var W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; }).concat([200])) + 20, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; }).concat([40])) + 20;
+    var body = '';
+    items.forEach(function (it) { if (asFrame(it)) body += drawFrame(d, it, B[it.id], M[it.id], opts); });   // 枠を先に（箱と入れ子にしない）
+    items.forEach(function (it) { if (!asFrame(it)) body += drawCard(d, it, B[it.id], M[it.id], opts); });
+    return wrapSvg(W, H, body, 'board');
+  }
+  function drawFrame(d, it, b, m, opts) {
+    var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it);
+    var hy = b.y + pad * 0.8, out = itemOpen(d, it).replace('class="item"', 'class="item frame"') +
+      '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="12" fill="' + FRAME_FILL[Math.min(it.depth, FRAME_FILL.length - 1)] + '" stroke="' + (k ? MARK_COLOR[k] : '#b8c7de') + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>' +
+      textEl(m.head, b.x + pad, hy + m.head.length * fs * 1.3 / 2, fs, { anchor: 'start', bold: true });
+    if (m.ds.length) out += textEl(m.ds, b.x + pad, hy + m.head.length * fs * 1.3 + m.ds.length * hf * 1.3 / 2, hf, { anchor: 'start', fill: C.sub });
+    return out + (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') + badges(it, b.x + b.w, b.y - 3, fs, true) + '</g>';
+  }
+  function drawCard(d, it, b, m, opts) {
+    var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it), cell = !!it.cells;
+    var stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
+    var out = itemOpen(d, it) + '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>';
+    var top = b.y + (b.h - m.labH - m.dsH) / 2, tx = b.x + pad + m.numW, mid = cell && !m.numW && !m.tagW;
+    if (m.numW) {
+      var cr = fs * 0.72, cx = b.x + pad + cr, cy = b.y + b.h / 2;
+      out += '<circle class="num" cx="' + r(cx) + '" cy="' + r(cy) + '" r="' + r(cr) + '" fill="' + C.accent + '"/>' + textEl([String(it.num)], cx, cy, Math.round(fs * 0.85), { bold: true, fill: '#fff' });
+    }
+    out += textEl(m.lab, mid ? b.x + b.w / 2 : tx, top + m.labH / 2, fs, { anchor: mid ? 'middle' : 'start', bold: it.kind === 'frame' });
+    if (m.ds.length) out += textEl(m.ds, mid ? b.x + b.w / 2 : tx, top + m.labH + fs * 0.2 + (m.dsH - fs * 0.2) / 2, hf, { anchor: mid ? 'middle' : 'start', fill: C.sub });
+    if (it.tag) {
+      var pw = m.tagW - pad * 0.6, ph = hf * 1.5, px = b.x + b.w - pad * 0.6 - pw, py = b.y + (b.h - ph) / 2;
+      out += '<g class="tag"><rect x="' + r(px) + '" y="' + r(py) + '" width="' + r(pw) + '" height="' + r(ph) + '" rx="' + r(ph / 2) + '" fill="' + C.head + '"/>' + textEl([it.tag], px + pw / 2, py + ph / 2, hf, { fill: C.sub, bold: true }) + '</g>';
+    }
+    return out + (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') + badges(it, b.x + b.w, b.y - 3, fs, true) + '</g>';
+  }
+
   // ---- 数字（棒グラフ） ----
   function niceStep(range) {
     var raw = range / 5, p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p;
@@ -885,7 +992,7 @@
       case 'stacked': return series(diag, d, opts, true);
       case 'kpi': return kpi(diag, d, opts);
       case 'compare': return compare(diag, d, opts);
-      case 'board': return wrapSvg(360, 40, '<text x="12" y="26" font-size="14" fill="' + C.sub + '">図解はまだ描けません（次の版で描きます）</text>', 'board-wip');   // shortcut: R9b-1 で本物に置きかえる
+      case 'board': return board(diag, d, opts);
     }
     return '';
   }
