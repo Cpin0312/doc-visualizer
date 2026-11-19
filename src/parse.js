@@ -617,14 +617,16 @@
       var ln = lines[i], t = ln.text;
       var fm = RE_FENCE.exec(t);
       if (fm) {
-        var ch = fm[1][0], flen = fm[1].length, inner = [], closed = false, j = i + 1;
+        var ch = fm[1][0], flen = fm[1].length, inner = [], closed = false, j = i + 1, nextOpen = false;
         for (; j < lines.length; j++) {
           var cm = RE_FENCE.exec(lines[j].text);
           if (cm && cm[1][0] === ch && cm[1].length >= flen && !trim(cm[2])) { closed = true; break; }
+          // 閉じ忘れ：同じ長さ以上の囲みで、図の種類か layout が付いた行は、次の図の開きとみなす（中に書き方の例を書くときは、外の囲みを1つ長く ~~~~ にする）
+          if (cm && cm[1][0] === ch && cm[1].length >= flen) { var ci = fenceInfo(cm[2]); if (ci.type || nk(ci.word) === 'layout') { nextOpen = true; break; } }
           inner.push(lines[j]);
         }
         var info = fenceInfo(fm[2]);
-        if (!closed) { warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、最後までを中身とみなした', 'fix'); (doc.unsafe = doc.unsafe || []).push(ln.no + ' 行目の「' + fm[1] + '」に閉じがない'); }
+        if (!closed) { warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、' + (nextOpen ? '次の図の開き（' + lines[j].no + ' 行目）の前までを中身とみなした' : '最後までを中身とみなした'), 'fix'); (doc.unsafe = doc.unsafe || []).push(ln.no + ' 行目の「' + fm[1] + '」に閉じがない'); }
         if (nk(info.word) === 'layout') {
           if (doc.layoutAt) warn(ln.no, '配置（layout）が2つ以上あるので、はじめの1つだけを使った', 'skip');
           else { doc.layoutAt = { start: ln.no, end: closed ? lines[j].no : null }; doc.layoutSrc = inner.map(function (x) { return x.text; }).join('\n'); }
@@ -656,7 +658,7 @@
           cur.lines.push({ code: inner.map(function (x) { return x.text; }), no: ln.no });
         }
         seenStructure = true;
-        i = closed ? j : lines.length;
+        i = closed ? j : nextOpen ? j - 1 : lines.length;   // 次の図の開きは、その図として読み直す
         continue;
       }
       var hm = /^[ \t\u3000]{0,3}(#{1,6})[ \t\u3000]+(.*?)[ \t\u3000#]*$/.exec(t);

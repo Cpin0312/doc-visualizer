@@ -57,7 +57,7 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 .badge.red { background: var(--red); } .badge.yellow { background: var(--yellow); } .badge.green { background: var(--green); }
 .error { position: sticky; top: 51px; z-index: 19; background: var(--red); color: #fff; padding: 8px 16px; font-weight: bold; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 40; background: #1f2a37; color: #fff; padding: 10px 18px; border-radius: 10px; max-width: 90vw; }
-.secret { position: fixed; left: 14px; bottom: 14px; z-index: 25; border: 2px solid var(--red); color: var(--red); background: #fff; font-weight: bold; padding: 2px 12px; border-radius: 6px; pointer-events: none; }
+.secret { position: fixed; left: 14px; bottom: 14px; z-index: 25; border: 2px solid var(--red); color: var(--red); background: #fff; font-weight: bold; padding: 2px 12px; border-radius: 6px; cursor: text;   /* 2回押して直す（R8d） */ }
 .drop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(59, 111, 216, .15); border: 4px dashed var(--accent); font-size: 1.6rem; font-weight: bold; color: var(--accent); pointer-events: none; }
 .glnote { margin: 2px 0 0; font-size: 0.85rem; color: #8a5a00; background: #fff4d6; border-radius: 6px; padding: 2px 10px; display: inline-block; }
 .v3scroll { display: none; overflow-x: auto; border-radius: 10px; }

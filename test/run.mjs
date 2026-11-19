@@ -1720,6 +1720,32 @@ async function savePptx(T, md, tag) {
   if (m0 !== '2d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '${m0}'`); }
 }
 
+// 割り込みの直し：真ん中の図の閉じを消すと、次の図の開きの前までを中身とし、鍵をかける。左で直すと戻る。社外秘の印は2回押しで直せる
+{
+  const good = ['# 閉じの試し', '', '> 社外秘：関係者限り', '', '~~~flow 一', 'A -> B', '~~~', '', '~~~flow 二', 'C -> D', '~~~', '', '~~~flow 三', 'E -> F', '~~~', ''].join('\n');
+  const bad = good.replace('C -> D\n~~~\n', 'C -> D\n'), pd = P.parseDoc(bad);
+  ok('閉じ忘れ（読み）：真ん中の図の閉じがなくても、次の図は次の図として読み、鍵をかける。外の囲みを長くした書き方の例は止めない',
+    pd.diagrams.map(g => g.name).join() === '一,二,三' && pd.unsafe && pd.unsafe.length === 1 && !P.parseDoc('# t\n~~~~text\n~~~flow 例\nA -> B\n~~~\n~~~~\n').unsafe, JSON.stringify([pd.diagrams.map(g => g.name), pd.unsafe]));
+  const fb3 = join(out, 'unclosed_mid.md'); writeFileSync(fb3, bad);
+  await pick(fb3); await waitFor(`document.getElementById('status').textContent.includes('unclosed_mid.md')`);
+  if ((await B.evalJs('DocVisualizer.mode()')) !== '2d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const lk = await B.evalJs(`!document.getElementById('lockbar').hidden && document.body.classList.contains('locked')`);
+  const c4 = await B.evalJs(`(() => { const e = document.querySelector('#dg2 .item .box'); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + 10, y: b.top + b.height / 2 }; })()`);
+  for (const n of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: c4.x, y: c4.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: n });
+  await sleep(300);
+  const noInput = await B.evalJs(`!document.querySelector('input.rename')`), same = (await B.evalJs('DocVisualizer.text()')) === bad;
+  await B.evalJs(`document.getElementById('editMd').click()`); await sleep(300);
+  await B.evalJs(`(() => { const ta = document.querySelector('#srcPane textarea'); ta.value = ${JSON.stringify(good)}; ta.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const back = await waitFor(`document.getElementById('lockbar').hidden && !document.body.classList.contains('locked')`, 3000);
+  await B.evalJs(`document.getElementById('editMd').click()`); await sleep(300);
+  ok('閉じ忘れ（画面）：真ん中の図の閉じを消すと鍵がかかり、右の箱を2回押しても md は変わらない。左で直すと鍵が外れる', lk && noInput && same && back, JSON.stringify({ lk, noInput, same, back }));
+  const sc = await B.evalJs(`(() => { const e = document.getElementById('secret'); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, pe: getComputedStyle(e).pointerEvents }; })()`);
+  for (const n of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: sc.x, y: sc.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: n });
+  const sv2 = await waitFor(`document.querySelector('input.rename') && document.querySelector('input.rename').value`, 2000);
+  if (sv2) { await B.evalJs(`document.querySelector('input.rename').value = '社内だけ'`); await keyPress('Enter', 'Enter', 13); await sleep(400); }
+  ok('社外秘の印：2回押すと直せて、md のその行が変わる', sv2 === '関係者限り' && P.parseDoc(await B.evalJs('DocVisualizer.text()')).secret === '社内だけ', JSON.stringify({ pe: sc.pe, sv2 }));
+}
+
 // 確かめ役の md（verify/md があれば、読むだけ。直さない）：落ちず、エラーを出さない
 if (existsSync(join(root, 'verify', 'md'))) {
   for (const f of readdirSync(join(root, 'verify', 'md')).sort()) {
