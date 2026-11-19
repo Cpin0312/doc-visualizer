@@ -56,6 +56,42 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   ok('読みとり：輪になる矢印も止まらない', loop.diagrams[0].edges.length === 4);
   const same = P.parseDoc('```flow\n受付 -> 確認\n受付 -> 返事\n```');
   ok('読みとり：同じ名前の箱は1つにまとめる', same.diagrams[0].items.length === 3);
+  // ---- R9a：図解 board の読み ----
+  {
+    const B = (body, nl = '\n') => P.parseDoc(['# t', '~~~board 図', ...body, '~~~'].join(nl));
+    const lab = (g, it) => it == null ? null : g.items[it].kind === 'frame' ? '[' + g.items[it].label + ']' : g.items[it].label;
+    const sample = B(['[変える前] 1か所に全部', '  受付 : 電話とメール', '  [台帳] 1,200 件', '    申込 | 問い合わせ | 苦情 | 見積', '[やったこと]', '  #1 台帳を分ける', '  #2 担当ごとの箱を作る',
+      '[変えた後] 本体＋担当ごとの台帳', '  受付 : 電話とメール', '  [担当ごと]', '    申込.xlsx @営業', '    問い合わせ.xlsx @窓口', '---', '[効果] 試した結果', '  1件あたり -40% : 12分 → 7分', '  取りこぼし 0件 : 3か月で', '  増えた手間は1つ : 担当を選ぶ !代償',
+      '受付 -> 台帳 : 毎回ぜんぶ見る', '[変える前] -> [変えた後]', '受付 => 申込.xlsx : 合う台帳だけ見る']);
+    const g = sample.diagrams[0], by = k => g.items.find(i => i.pk === k);
+    const shape = g.items.map(i => i.kind[0]).join('');
+    ok('図解（読み）：見本の枠・箱・横の箱・札・タグ・印・段が全部読め、知らせが出ない',
+      g.type === 'board' && !sample.warnings.length && shape === 'fbfbbbbfssfbfbbfbbb' && by('[台帳]').parent === by('[変える前]').id && by('申込').parent === by('[台帳]').id && by('申込').depth === 2 && by('申込').cells && by('申込').cells === by('見積').cells &&
+      by('台帳を分ける').num === 1 && by('申込.xlsx').tag === '営業' && by('増えた手間は1つ').marks[0].kind === 'red' && by('増えた手間は1つ').desc === '担当を選ぶ' && by('[効果]').row === 1 && by('[変える前]').row === 0 && by('1件あたり-40%').desc === '12分 → 7分',
+      shape + ' ' + JSON.stringify(sample.warnings));
+    ok('図解（読み）：線は3本。同じ名前の「受付」は、もう一方の端と同じ外の枠のものを選び、=> は強調',
+      eq(g.edges.map(e => [g.items[e.from].pk, g.items[e.to].pk, e.label, e.strong]), [['受付', '[台帳]', '毎回ぜんぶ見る', false], ['[変える前]', '[変えた後]', '', false], ['受付#2', '申込.xlsx', '合う台帳だけ見る', true]]),
+      JSON.stringify(g.edges.map(e => [g.items[e.from].pk, g.items[e.to].pk, e.label, e.strong])));
+    const odd = B(['[A]', '  x', ' y', '[B]', '  z', '    w', '\tt', '　u']);
+    const go = odd.diagrams[0], pa = k => lab(go, go.items.find(i => i.label === k).parent);
+    ok('図解（読み）：字下げのずれ・箱の下の字下げは、近い枠に入れて知らせる。タブと全角空白1つは空白2つ',
+      pa('y') === '[A]' && pa('w') === '[B]' && pa('t') === '[B]' && pa('u') === '[B]' && odd.warnings.filter(w => w.kind === 'fix').length === 2 && odd.warnings.some(w => /字下げがずれていた/.test(w.msg)) && odd.warnings.some(w => /箱の下/.test(w.msg)),
+      JSON.stringify(odd.warnings.map(w => w.msg)) + ' ' + ['y', 'w', 't', 'u'].map(pa).join());
+    const amb = B(['[A]', '  x', '[B]', '  x', '[C]', '  y', 'x -> y', '[B] x -> y : 選んだ', 'x -> 無い', '-> y', '> 吹き出し']);
+    const ga = amb.diagrams[0], ends = ga.edges.map(e => lab(ga, ga.items[e.from].parent) + lab(ga, e.from) + '>' + lab(ga, e.to));
+    ok('図解（読み）：決められない名前ははじめのものにして知らせ、「[枠] 名前」で選べる。端がない行と「> 文」は飛ばして知らせる',
+      eq(ends, ['[A]x>y', '[B]x>y']) && amb.warnings.some(w => w.kind === 'fix' && /2 つあり/.test(w.msg) && /\[A\]/.test(w.msg)) && amb.warnings.some(w => w.kind === 'skip' && /「無い」が図にない/.test(w.msg)) &&
+      amb.warnings.filter(w => w.kind === 'skip').length === 3, JSON.stringify(ends) + ' ' + JSON.stringify(amb.warnings.map(w => w.msg)));
+    const wide = B(['［窓口］ 受け付ける', '  ＃１ 聞く ｜ ① 書く ＠係', '  x', 'x -> ［窓口］', 'x → x', 'note ［窓口］ : 枠のメモ @黄', 'note x : 箱のメモ @水色'], '\r\n');
+    const gw = wide.diagrams[0];
+    ok('図解（読み）：全角のかっこ・｜・＃・①・＠・→ と CRLF でも読め、付箋は枠にも箱にも付く',
+      !wide.warnings.length && gw.items.map(i => i.kind + (i.num || '') + i.label + (i.tag || '')).join() === 'frame窓口,step1聞く,step1書く係,boxx' && gw.edges.length === 2 && lab(gw, gw.edges[0].to) === '[窓口]' &&
+      gw.stickies[0].to === 0 && gw.stickies[1].to === 3, JSON.stringify(wide.warnings) + ' ' + gw.items.map(i => i.kind + (i.num || '') + i.label + (i.tag || '')).join() + ' ' + JSON.stringify(gw.stickies.map(n => n.to)));
+    const many = B(['[大]', ...Array.from({ length: 210 }, (_, i) => '  箱' + i)]);
+    ok('図解（読み）：200 を超えたら先頭 200 だけ・種類は図解・ほかの種類には変えない',
+      many.diagrams[0].items.length === 200 && many.warnings.some(w => /11 個を省いた/.test(w.msg)) && P.check(['# t', '~~~図解', '[A]', '  b', '~~~'].join('\n')).diagrams[0].typeLabel === '図解' &&
+      eq(P.typeChoices(['# t', '~~~board', '[A]', '  b', '~~~'].join('\n'), P.parseDoc(['# t', '~~~board', '[A]', '  b', '~~~'].join('\n')), 0), []), JSON.stringify(many.warnings.map(w => w.msg)));
+  }
   const none = P.parseDoc('# 図なし\n本文だけ');
   ok('読みとり：図のない md でも止まらない', none.title === '図なし' && none.diagrams.length === 0 && none.body.length === 1);
   const unk = P.parseDoc('```mermaid\ngraph TD\n```');

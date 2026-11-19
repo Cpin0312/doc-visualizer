@@ -885,6 +885,7 @@
       case 'stacked': return series(diag, d, opts, true);
       case 'kpi': return kpi(diag, d, opts);
       case 'compare': return compare(diag, d, opts);
+      case 'board': return wrapSvg(360, 40, '<text x="12" y="26" font-size="14" fill="' + C.sub + '">図解はまだ描けません（次の版で描きます）</text>', 'board-wip');   // shortcut: R9b-1 で本物に置きかえる
     }
     return '';
   }

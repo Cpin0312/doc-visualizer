@@ -24,7 +24,8 @@
     hbar: { label: '横棒', names: ['hbar', '横棒', '横棒グラフ'] },
     stacked: { label: '積み上げ', names: ['stacked', '積み上げ', '積み上げ棒', '積み上げグラフ'] },
     kpi: { label: '大事な数字', names: ['kpi', '大事な数字', '指標', '数値'] },
-    compare: { label: '比べる', names: ['compare', '比べる', '比較', '表'] }
+    compare: { label: '比べる', names: ['compare', '比べる', '比較', '表'] },
+    board: { label: '図解', names: ['board', '図解', 'ボード', 'まとめ図'] }
   };
   var TYPE_OF = {};
   Object.keys(TYPES).forEach(function (t) { TYPES[t].names.forEach(function (n) { TYPE_OF[nk(n)] = t; }); });
@@ -332,6 +333,106 @@
     reg.finish(lines.length ? lines[lines.length - 1].no : 0);
   }
 
+  // 図解 board（R9a）。字下げで入れ子にする枠・箱・横の箱・番号の札・タグ・段・線
+  //   [名前] 説明 ＝枠 / 名前 : 説明 ＝箱 / a | b ＝横の箱 / #1 文 ＝札 / … @タグ / --- ＝次の段 / A -> B : 言葉（=> は強調）
+  var RE_FRAME = /^[\[［【]([^\]］】]+)[\]］】][\s　]*([\s\S]*)$/;
+  var RE_STEP = /^(?:[#＃][\s　]*([0-9０-９]+)|([①-⑳]))[\s　]*([\s\S]+)$/;
+  var RE_ROWBREAK = /^(?:-{3,}|ー{3,}|—{3,}|―{3,}|─{3,})$/;
+  var RE_TAG = /[\s　][@＠]([^\s@＠]+)$/;
+  function parseBoard(diag, lines, warn) {
+    var reg = Registry(diag, warn), stack = [], row = 0, prev = null, edgeLines = [], group = 0;
+    diag.edges = [];
+    function indOf(t) { var m = /^[ \t　]*/.exec(t)[0], n = 0; for (var i = 0; i < m.length; i++) n += m[i] === ' ' ? 1 : 2; return n; }
+    function spanOf(ln, label, from) { var at = ln.text.indexOf(label, from); return at >= 0 ? { line: ln.no, start: at, end: at + label.length, seg: 0, segs: 1 } : { line: ln.no, bad: true, seg: 0, segs: 1 }; }
+    function shown(it) { return it.kind === 'frame' ? '[' + it.label + ']' : it.label; }
+    function place(it, ln, label, from, top) {
+      it.parent = top ? top.it.id : null; it.depth = stack.length; it.row = row;
+      var sp = spanOf(ln, label, from); it.spans = [sp];
+      return sp.bad ? from : sp.end;
+    }
+    // 1回目：枠と箱を置く（線の行は、名前が全部そろってから2回目で読む）
+    lines.forEach(function (ln) {
+      var ind = indOf(ln.text), body = trim(ln.text);
+      if (ind === 0 && RE_ROWBREAK.test(body)) { row++; stack = []; prev = null; return; }
+      if (/^[>＞]/.test(body)) { warn(ln.no, '吹き出し（> 文）はまだ読めないので飛ばした', 'skip'); return; }
+      if (RE_ARROW.test(splitColon(body, 2)[0])) { edgeLines.push(ln); return; }
+      while (stack.length && stack[stack.length - 1].ind >= ind) stack.pop();
+      var top = stack[stack.length - 1] || null;
+      if (prev && !prev.frame && ind > prev.ind) warn(ln.no, '箱の下を字下げしても中には入らないので、' + (top ? '「' + shown(top.it) + '」の中に' : '外に') + '並べた', 'fix');
+      else if (top && top.childInd != null && top.childInd !== ind) warn(ln.no, '字下げがずれていたので「' + shown(top.it) + '」の中に入れた', 'fix');
+      else if (!top && ind > 0 && !prev) warn(ln.no, '字下げしているが、入る枠がないので外に置いた', 'fix');
+      if (top && top.childInd == null) top.childInd = ind;
+      var src = [], s = trim(takeSources(body, src)).replace(/^[-*・][\s　]+/, '');
+      var fm = RE_FRAME.exec(s);
+      if (fm && trim(fm[1])) {
+        var lab = trim(fm[1]), tm = takeMarks(fm[2]), fr = reg.get(lab, ln.no, false);
+        if (!fr) return;
+        fr.kind = 'frame'; fr.key = '[' + fr.key + ']'; fr.desc = tm.label;   // 枠の名前は箱と分ける（付箋は「[枠] : 文」で付く）
+        addMarks(fr, tm.marks, src);
+        place(fr, ln, lab, 0, top);
+        stack.push({ ind: ind, it: fr });
+        prev = { frame: true, ind: ind };
+        return;
+      }
+      var parts = s.split(/[\s　]*[|｜][\s　]*/), g = parts.length > 1 ? ++group : null, from = 0;
+      parts.forEach(function (p, pi) {
+        var st = RE_STEP.exec(p), num = null;
+        if (st) { num = st[1] ? +nfkc(st[1]) : st[2].charCodeAt(0) - 0x245f; p = st[3]; }
+        var tm = takeMarks(p), lab = tm.label, tag = null, tg = RE_TAG.exec(lab);
+        if (tg) { tag = tg[1]; lab = trim(lab.slice(0, tg.index)); }
+        var cs = splitColon(lab, 2);
+        if (!cs[0]) { warn(ln.no, '箱の名前がないので飛ばした', 'skip'); return; }
+        var it = reg.get(cs[0], ln.no, false);
+        if (!it) return;
+        it.kind = num ? 'step' : 'box'; it.num = num; it.desc = cs[1] || ''; it.tag = tag; it.cells = g;
+        addMarks(it, tm.marks, pi ? [] : src);   // 出どころは行の最初の箱に
+        from = place(it, ln, cs[0], from, top);
+      });
+      prev = { frame: false, ind: ind };
+    });
+    // 2回目：線。同じ名前がいくつかあるときは「[枠] 名前」→ もう一方の端と同じいちばん外の枠 → はじめのもの
+    var items = diag.items, edgeKey = {};
+    function rootOf(it) { while (it.parent != null) it = items[it.parent]; return it; }
+    function inside(it, fr) { for (var x = it; x; x = x.parent != null ? items[x.parent] : null) if (x.id === fr.id) return true; return false; }
+    function ends(seg) {
+      var t = takeMarks(trim(takeSources(seg, []))).label, fm = RE_FRAME.exec(t);
+      if (fm) {
+        var frames = items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(fm[1]) + ']'; }), rest = trim(fm[2]);
+        if (!rest) return { name: t, list: frames };
+        return { name: t, list: items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(rest) && frames.some(function (f) { return inside(it, f); }); }) };
+      }
+      var boxes = items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(t); });
+      return { name: t, list: boxes.length ? boxes : items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(t) + ']'; }) };
+    }
+    edgeLines.forEach(function (ln) {
+      var body = trim(ln.text), cs = splitColon(body, 2), head = cs[0], label = cs[1] || '';
+      var reA = new RegExp(RE_ARROW.source, 'g'), arrows = [], strong = [], am, off = ln.text.indexOf(body);
+      while ((am = reA.exec(head))) { if (!am[0].length) { reA.lastIndex++; continue; } arrows.push([off + am.index, off + am.index + am[0].length]); strong.push(/[=＝⇒]/.test(am[0])); }
+      var es = head.split(RE_ARROW).map(ends), miss = es.filter(function (e) { return !e.list.length; })[0];
+      if (miss) { warn(ln.no, miss.name ? '線の端「' + miss.name + '」が図にないので、この行を飛ばした' : '矢印の前か後ろに名前がないので、この行を飛ばした', 'skip'); return; }
+      var pick = es.map(function (e) { return e.list.length === 1 ? e.list[0] : null; });
+      for (var pass = 0; pass < 2; pass++) pick.forEach(function (p, i) {
+        var nb = pick[i - 1] || pick[i + 1];
+        if (p || !nb) return;
+        var same = es[i].list.filter(function (c) { return rootOf(c).id === rootOf(nb).id; });
+        if (same.length === 1) pick[i] = same[0];
+      });
+      pick.forEach(function (p, i) {
+        if (p) return;
+        pick[i] = es[i].list[0];
+        var r = rootOf(pick[i]);
+        warn(ln.no, '「' + es[i].name + '」が ' + es[i].list.length + ' つあり、どれか決められないので' + (r === pick[i] ? 'はじめのもの' : '「' + shown(r) + '」の中のもの') + 'にした（「[枠] 名前」と書くと選べる）', 'fix');
+      });
+      for (var e = 1; e < pick.length; e++) {
+        var key = pick[e - 1].id + '>' + pick[e].id, lab = e === pick.length - 1 ? label : '', occ = { line: ln.no, arrow: arrows[e - 1], seg: e - 1 };
+        if (edgeKey[key]) { if (lab && !edgeKey[key].label) edgeKey[key].label = lab; edgeKey[key].occ.push(occ); continue; }
+        edgeKey[key] = { id: 'e' + diag.edges.length, kind: 'line', from: pick[e - 1].id, to: pick[e].id, label: lab, strong: strong[e - 1], line: ln.no, style: {}, occ: [occ] };
+        diag.edges.push(edgeKey[key]);
+      }
+    });
+    reg.finish(lines.length ? lines[lines.length - 1].no : 0);
+  }
+
   function parseChart(diag, lines, warn) {
     var um = /^([\s\S]*?)[\s\u3000]*[（(]([^()（）]+)[)）][\s\u3000]*$/.exec(diag.name);
     if (um && trim(um[2])) { diag.unit = trim(um[2]); diag.name = trim(um[1]); } else diag.unit = '';
@@ -536,7 +637,8 @@
              line: function () { parseSeries(diag, body, warn); },
              stacked: function () { parseSeries(diag, body, warn); },
              kpi: function () { parseKpi(diag, body, warn); },
-             compare: function () { parseCompare(diag, body, warn); } })[info.type]();
+             compare: function () { parseCompare(diag, body, warn); },
+             board: function () { parseBoard(diag, body, warn); } })[info.type]();
           diag.stickies = readStickies(diag, noteLines, warn);
           if (!diag.items.length && !diag.stickies.length) warn(ln.no, '図「' + (diag.name || TYPES[diag.type].label) + '」に読める行がないので出さなかった', 'skip');
           else doc.diagrams.push(diag);
