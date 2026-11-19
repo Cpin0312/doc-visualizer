@@ -741,9 +741,10 @@
     return true;
   }
   function deleteItem(d, i) {
-    var diag = state.doc.diagrams[d], it = diag.items[i], under = diag.type === 'tree' && it ? P.subtree(diag, i).length - 1 : 0;
-    var nn = it ? P.notesTo(diag, diag.type === 'tree' ? P.subtree(diag, i) : [i]).length : 0, nt = nn ? '付けていた付箋 ' + nn + ' 枚は、箱から外して図に残します' : '';
-    if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + (nt ? '。' + nt : '') + '（Ctrl+Z で戻せます）。よいですか？')) return;
+    var diag = state.doc.diagrams[d], it = diag.items[i], ids = !it ? [] : diag.type === 'tree' ? P.subtree(diag, i) : diag.type === 'board' ? P.boardDesc(diag, i) : [i], under = ids.length - 1;
+    var nn = it ? P.notesTo(diag, ids).length : 0, nt = nn ? '付けていた付箋 ' + nn + ' 枚は、箱から外して図に残します' : '';
+    var what = diag.type === 'tree' ? 'その下の ' + under + ' 個の箱も消えます' : '中の ' + under + ' 個の箱と、つながっている線も消えます';
+    if (!it || !window.confirm((it.kind === 'frame' ? '枠「' : '箱「') + it.label + '」を消します。' + (under ? what : 'つながっている線も消えます') + (nt ? '。' + nt : '') + '（Ctrl+Z で戻せます）。よいですか？')) return;
     closePanel();
     editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました' + (nt ? '（' + nt.replace('します', 'しました') + '）' : ''));
   }
@@ -1292,8 +1293,9 @@
     if (mb) { diagramAct(+mb.getAttribute('data-d'), mb.getAttribute('data-dg')); return; }
     var nb = e.target.closest && e.target.closest('.add-box');
     if (nb) {
-      var nd = +nb.getAttribute('data-d'), r;
-      try { r = P.addBox(state.text, state.doc, nd, state.sel && state.sel.d === nd ? state.sel.i : null); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
+      var nd = +nb.getAttribute('data-d'), r, sel0 = state.sel && state.sel.d === nd ? state.sel.i : null;
+      closePanel();
+      try { r = P.addBox(state.text, state.doc, nd, sel0); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
       applyText(r.text, true);
       var ni = state.doc.diagrams[nd].items.filter(function (x) { return x.label === r.name; })[0];
       if (ni) startRename(nd, ni.id, true);   // すぐ名前を入れられるように
@@ -1306,7 +1308,8 @@
   document.addEventListener('pointerdown', function (e) {
     if ($('panel').hidden || present.on) return;
     var t = e.target;
-    if ($('panel').contains(t) || (t.closest && (t.closest('.item') || t.closest('.view3d')))) return;
+    // 「＋ 箱」は選んだ枠に足すので、押した時点では選びを消さない（足すときに閉じる）
+    if ($('panel').contains(t) || (t.closest && (t.closest('.item') || t.closest('.view3d') || (t.closest('.add-box') && !t.closest('.add-note'))))) return;
     closePanel();
   }, true);
   window.addEventListener('resize', function () { if (!$('panel').hidden) placePanel(); });

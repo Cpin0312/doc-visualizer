@@ -868,7 +868,7 @@
   // 行を切る：plan = { 行番号: { drop: [消す箱の番号], brk: [この番号の箱の後ろの矢印を消す] } }
   // 残りは「続いている所ごと」の行に分ける（つながりを勝手に作らない）
   function cutLines(text, d, plan) {
-    var t = splitText(text);
+    var t = splitText(text), gone = {};
     Object.keys(plan).map(Number).sort(function (a, b) { return b - a; }).forEach(function (no) {
       var L = t.lines[no - 1], reA = new RegExp(RE_ARROW.source, 'g'), am, cuts = [];
       while ((am = reA.exec(L))) { if (!am[0].length) { reA.lastIndex++; continue; } cuts.push([am.index, am.index + am[0].length]); }
@@ -882,6 +882,15 @@
         if (brk.indexOf(q) >= 0) { runs.push(cur); cur = []; }
       }
       if (cur.length) runs.push(cur);
+      // 名前だけ残る区切り（[q]）は、その箱がほかの所（消していない行・この行の残る所）にもう出ていれば足さない（足すと箱が増える。図解では枠の外に出る）。
+      // 担当・印など名前のほかに何か書いてあれば残す。図解の線の行は箱を決めないので、いつも外す
+      var seen = function (it, q, kept) { return (it.spans || []).some(function (sp) { return !sp.bad && !gone[sp.line + ':' + sp.seg] && (plan[sp.line] && (plan[sp.line].drop || []).indexOf(sp.seg) >= 0 ? false : sp.line !== no || (sp.seg !== q && kept.some(function (r) { return r.indexOf(sp.seg) >= 0; }))); }); };
+      for (var ri = runs.length - 1; ri >= 0; ri--) {
+        if (runs[ri].length !== 1) continue;
+        var q1 = runs[ri][0], here = d.items.filter(function (it) { return (it.spans || []).some(function (sp) { return sp.line === no && sp.seg === q1; }); }), kept = runs.filter(function (r, k) { return k !== ri; });
+        var bare = d.type === 'board' || (here.length === 1 && trim(splitColon(segs[q1], 2)[0]) === here[0].label);
+        if (bare && here.length && here.every(function (it) { return seen(it, q1, kept); })) { gone[no + ':' + q1] = true; runs.splice(ri, 1); }
+      }
       runs.forEach(function (run) {
         var parts = run.map(function (q) { return segs[q]; });
         // 線の言葉は行の最後の矢印のもの。その矢印が消える（最後の1つだけ残る）ときは外す
@@ -1182,17 +1191,20 @@
     var body = String(n.text).replace(/\r\n?/g, '\n').replace(/^\s+|\s+$/g, '').replace(/\n/g, '\\n');
     if (!body) throw new Error('付箋の文が空');
     if (!NOTE_WORD[n.color]) throw new Error('知らない色');
-    return 'note ' + (n.to != null ? d.items[n.to].label + ' : ' : '') + body + ' @' + NOTE_WORD[n.color];
+    var it = n.to != null ? d.items[n.to] : null;   // 図解の枠は [名前] で書く（線の端と同じ）
+    return 'note ' + (it ? (it.kind === 'frame' ? '[' + it.label + ']' : it.label) + ' : ' : '') + body + ' @' + NOTE_WORD[n.color];
   }
-  function checkNote(text, di, line, want) {
+  function checkNote(text, di, line, want, d) {
     var nd = parseDoc(text).diagrams[di], got = nd && (nd.stickies || []).filter(function (x) { return x.line === line; })[0];
+    var other = got && d && want.to != null && got.to != null && nd.items[got.to].pk !== d.items[want.to].pk;   // 同じ名前のほかの箱に付いてしまう
+    if (other) throw new Error('同じ名前の箱があり、どちらに付けるか決められない（名前を直してから付けてください）');
     if (!got || got.text !== want.text.replace(/^\s+|\s+$/g, '') || got.color !== want.color || (got.to == null) !== (want.to == null)) throw new Error('付箋の行が読み直せない形になる（文の「:」や「@」を見直してください）');
     return text;
   }
   function addSticky(text, doc, di, n) {
     var d = blockOf(doc, di), t = splitText(text);
     t.lines.splice(d.end - 1, 0, noteLine(d, n));
-    return checkNote(joinText(t), di, d.end, n);
+    return checkNote(joinText(t), di, d.end, n, d);
   }
   function setSticky(text, doc, di, k, patch) {
     var d = doc.diagrams[di], n = d && d.stickies && d.stickies[k];
@@ -1200,7 +1212,7 @@
     var nn = { text: patch.text != null ? patch.text : n.text, color: patch.color || n.color, to: n.to }, t = splitText(text);
     var ind = /^[ \t\u3000]*/.exec(t.lines[n.line - 1])[0];
     t.lines[n.line - 1] = ind + noteLine(d, nn);
-    var out = checkNote(joinText(t), di, n.line, nn), nd = parseDoc(out), m = nd.diagrams[di].stickies.filter(function (x) { return x.line === n.line; })[0];
+    var out = checkNote(joinText(t), di, n.line, nn, d), nd = parseDoc(out), m = nd.diagrams[di].stickies.filter(function (x) { return x.line === n.line; })[0];
     if (m.pk === n.pk || !doc.layout || d.layoutIndex == null) return out;
     var obj = JSON.parse(JSON.stringify(doc.layout)), P = obj.diagrams[d.layoutIndex].parts || {};   // 文を直したら、置き場所の鍵も新しい文へ
     if (P[n.pk]) { P[m.pk] = P[n.pk]; delete P[n.pk]; }
@@ -1339,6 +1351,6 @@
     };
   }
 
-  var api = { notesTo: notesTo, addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { notesTo: notesTo, addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, boardDesc: boardDesc, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);

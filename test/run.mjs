@@ -1087,7 +1087,7 @@ async function savePptx(T, md, tag) {
   const edges = t => { const d = P.parseDoc(t).diagrams[0]; return d.edges.map(e => d.items[e.from].label + '>' + d.items[e.to].label + (e.label ? ':' + e.label : '')).join(' '); };
   let d = D();
   const del = P.removeItem(md, d, 0, id(d, '確認'));
-  ok('消す：箱を消すと、その箱の所で行が分かれ（つながりを作らない）、消えた線の言葉も消える。説明（## 確認）は残る', del === ['# x', '~~~lanes 帯', '[営業] 受付 !急ぎ', '[経理] 出荷', '受付', '~~~', '', '## 確認', 'メモ', ''].join('\n') && edges(del) === '', JSON.stringify(del));
+  ok('消す：箱を消すと、その箱の所で行が分かれ（つながりを作らない）、消えた線の言葉も消える。ほかの行にもある名前だけの行は残さない。説明（## 確認）は残る', del === ['# x', '~~~lanes 帯', '[営業] 受付 !急ぎ', '[経理] 出荷', '~~~', '', '## 確認', 'メモ', ''].join('\n') && edges(del) === '', JSON.stringify(del));
   const e1 = d.diagrams[0].edges.find(e => d.diagrams[0].items[e.from].label === '確認').id;
   const de = P.removeEdge(md, d, 0, e1);
   ok('消す：線を消すと、その矢印の所で行が分かれ、担当は書き足して変わらない', edges(de) === '受付>確認:差し戻し' && lanes(de) === lanes(md) && de.split('\n')[2] === '[営業] 受付 !急ぎ -> 確認' && de.split('\n')[3] === '[経理] 出荷', JSON.stringify(de.split('\n').slice(2, 5)));
@@ -1687,6 +1687,64 @@ async function savePptx(T, md, tag) {
     for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: process.platform === 'darwin' ? 4 : 2 }); await sleep(300);
     ok('図解（名前を直す・画面）：箱を2回押して直すと、md の箱の行と線の行が直り、Ctrl+Z で元どおり',
       got === '申込.xlsx' && tB.includes('    申込2.xlsx @営業') && tB.includes('受付 => 申込2.xlsx : 合う台帳だけ見る') && (await B.evalJs('DocVisualizer.text()')) === tA, JSON.stringify({ got, has: tB.includes('申込2.xlsx') }));
+  }
+  // R9 の × の直し（B-13・15・17・19）：本物のマウスで
+  {
+    // B-15 の根っこ：線を消すとき、端の箱がほかの行にもう出ていれば、名前だけの行を足さない（flow も同じ決め方）
+    const fl = t => P.parseDoc(t), rmE = (t, k) => { const d = fl(t); return P.removeEdge(t, d, 0, d.diagrams[0].edges[k].id); };
+    const f1 = rmE('~~~flow\na -> b\nb -> c\n~~~\n', 0), f2 = rmE('~~~flow\na -> b\n~~~\n', 0), f3 = rmE('~~~flow\na -> b -> c\nc -> d\n~~~\n', 1);
+    ok('線を消す：端の箱がほかの行にあれば名前だけの行を足さず、ほかになければ残す（flow）',
+      f1 === '~~~flow\na\nb -> c\n~~~\n' && f2 === '~~~flow\na\nb\n~~~\n' && f3 === '~~~flow\na -> b\nc -> d\n~~~\n', JSON.stringify([f1, f2, f3]));
+    const mouse = async (x, y, button = 'left') => { for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x, y, button, buttons: type === 'mousePressed' ? (button === 'right' ? 2 : 1) : 0, clickCount: 1 }); await sleep(250); };
+    const frameAt = name => B.evalJs(`(() => { const e = document.querySelector('#dg0 .item.frame[aria-label=${JSON.stringify(name)}] .box'); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + 16, y: b.top + 10 }; })()`);
+    const ptOf = sel => B.evalJs(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    const undo = async () => { for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: process.platform === 'darwin' ? 4 : 2 }); await sleep(300); };
+    const tA = await B.evalJs('DocVisualizer.text()'), nA = tA.split('\n').length;
+    await B.evalJs(`document.activeElement && document.activeElement.blur(); window.__cm = null; window.confirm = m => { window.__cm = m; return true; }`);
+    // B-15：線の言葉を右クリック →「この線を消す」
+    const lb = await B.evalJs(`(() => { const e = [...document.querySelectorAll('#dg0 .edge-label')].filter(x => x.textContent.includes('合う台帳だけ見る'))[0]; if (!e) return null; e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; })()`);
+    await mouse(lb.x, lb.y, 'right');
+    const pe = await waitFor(`!document.getElementById('panel').hidden && document.querySelector('#panel [data-act=del-edge]') && document.getElementById('panelBody').innerText`, 2000).catch(() => null);
+    const de = await ptOf('#panel [data-act=del-edge]'); if (de) await mouse(de.x, de.y); await sleep(300);
+    const t15 = await B.evalJs('DocVisualizer.text()'), d15 = P.parseDoc(t15).diagrams[0];
+    await undo();
+    ok('図解 B-15：線を右クリックで消すと、その行だけ消え、箱は増えない（部品 18・線 2）。Ctrl+Z で戻る',
+      pe && !t15.includes('合う台帳だけ見る') && t15.split('\n').length === nA - 1 && d15.items.length === 18 && d15.edges.length === 2 && !/^受付$|^申込\.xlsx$/m.test(t15) && (await B.evalJs('DocVisualizer.text()')) === tA,
+      JSON.stringify({ pe: !!pe, n: [nA, t15.split('\n').length], items: d15.items.length, edges: d15.edges.length }));
+    // B-13：枠をマウスで選んで、図の上の「＋ 箱」をマウスで押す → その枠の中に足す
+    let fp = await frameAt('担当ごと'); await mouse(fp.x, fp.y);
+    const open13 = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText.startsWith('担当ごと')`, 2000).catch(() => false);
+    const ab = await ptOf('#dg0 .add-box:not(.add-note)'); await mouse(ab.x, ab.y);
+    await waitFor(`document.querySelector('input.rename')`, 2000).catch(() => {});
+    const t13 = await B.evalJs('DocVisualizer.text()'), L13 = t13.split('\n'), at13 = L13.indexOf('    新しい箱');
+    await keyPress('Escape', 'Escape', 27); await sleep(300);
+    const back13 = (await B.evalJs('DocVisualizer.text()')) === tA || (await undo(), (await B.evalJs('DocVisualizer.text()')) === tA);
+    ok('図解 B-13：枠をマウスで選んで「＋ 箱」をマウスで押すと、その枠の中（問い合わせ.xlsx の下）に足し、Esc で残らない',
+      open13 && at13 > 0 && L13[at13 - 1] === '    問い合わせ.xlsx @窓口' && back13, JSON.stringify({ open13, line: L13[at13 - 1], at13, back13 }));
+    // B-17：枠を消す確かめの文に中身の数（いいえで止める）
+    await B.evalJs(`window.confirm = m => { window.__cm = m; return false; }`);
+    fp = await frameAt('担当ごと'); await mouse(fp.x, fp.y);
+    let dl = await ptOf('#panel [data-act=del]'); if (dl) await mouse(dl.x, dl.y);
+    const cm1 = await B.evalJs('window.__cm');
+    await keyPress('Escape', 'Escape', 27);
+    fp = await frameAt('変える前'); await mouse(fp.x, fp.y);
+    dl = await ptOf('#panel [data-act=del]'); if (dl) await mouse(dl.x, dl.y);
+    const cm2 = await B.evalJs('window.__cm');
+    await keyPress('Escape', 'Escape', 27);
+    ok('図解 B-17：枠を消す確かめの文に中身の数が出る（担当ごと 2 個・変える前 6 個）。いいえなら md は変わらない',
+      cm1 && cm1.startsWith('枠「担当ごと」') && cm1.includes('中の 2 個の箱') && cm2 && cm2.includes('中の 6 個の箱') && (await B.evalJs('DocVisualizer.text()')) === tA, JSON.stringify([cm1, cm2]));
+    // B-19：枠に「＋ 付箋」→ note [台帳] : … と書き、枠に付く
+    fp = await frameAt('台帳'); await mouse(fp.x, fp.y);
+    const na = await ptOf('#panel [data-act=note-add]'); if (na) await mouse(na.x, na.y);
+    await waitFor(`document.querySelector('textarea.rename')`, 2000).catch(() => {});
+    await B.evalJs(`document.querySelector('textarea.rename').value = '枠の付箋の試し'`);
+    for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: process.platform === 'darwin' ? 4 : 2 }); await sleep(400);
+    const t19 = await B.evalJs('DocVisualizer.text()'), d19 = P.parseDoc(t19).diagrams[0], s19 = (d19.stickies || []).filter(n => n.text === '枠の付箋の試し')[0];
+    const err19 = await B.evalJs(`document.getElementById('error').hidden ? '' : document.getElementById('error').textContent`);
+    await undo();
+    ok('図解 B-19：枠に「＋ 付箋」で付けると note [台帳] : … と書かれ、枠に付く。Ctrl+Z で戻る',
+      t19.includes('note [台帳] : 枠の付箋の試し @黄') && s19 && d19.items[s19.to] && d19.items[s19.to].label === '台帳' && !err19 && (await B.evalJs('DocVisualizer.text()')) === tA, JSON.stringify({ has: t19.includes('note [台帳]'), to: s19 && s19.to, err19 }));
+    await B.evalJs(`window.confirm = () => true; document.getElementById('error').hidden = true`);
   }
   await B.evalJs('document.activeElement && document.activeElement.blur()');
   await keyPress('p', 'KeyP', 80); await keyPress('ArrowRight', 'ArrowRight', 39);
