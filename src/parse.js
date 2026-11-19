@@ -384,7 +384,7 @@
         if (!cs[0]) { warn(ln.no, '箱の名前がないので飛ばした', 'skip'); return; }
         var it = reg.get(cs[0], ln.no, false);
         if (!it) return;
-        it.kind = num ? 'step' : 'box'; it.num = num; it.desc = cs[1] || ''; it.tag = tag; it.cells = g;
+        it.kind = num ? 'step' : 'box'; it.num = num; it.desc = cs[1] || ''; it.tag = tag; it.across = g;
         addMarks(it, tm.marks, pi ? [] : src);   // 出どころは行の最初の箱に
         from = place(it, ln, cs[0], from, top);
       });
@@ -1079,7 +1079,8 @@
     tree: ['- 大きな分け方', '  - 小さな分け方1', '  - 小さな分け方2'], chart: ['4月 : 100', '5月 : 120', '6月 : 90'],
     hbar: ['A : 30', 'B : 50', 'C : 20'], pie: ['A : 50', 'B : 30', 'C : 20'], donut: ['A : 50', 'B : 30', 'C : 20'],
     line: ['系列 : 受付, 完了', '4月 : 10, 8', '5月 : 12, 11', '6月 : 15, 13'], stacked: ['系列 : 紙, Web', '1〜3月 : 8, 2', '4〜6月 : 6, 5'],
-    kpi: ['売上 : 1,000万円 : 前年比 +5%', '件数 : 42件 : 先月より +3'], compare: ['| 項目 | 案A | 案B |', '|---|---|---|', '| 値段 | ○ | △ |', '| 早さ | △ | ○ |']
+    kpi: ['売上 : 1,000万円 : 前年比 +5%', '件数 : 42件 : 先月より +3'],
+    board: ['[前] いまのやり方', '  受付 : 電話とメール', '[後] 新しいやり方', '  受付 : Web', '  #1 台帳を分ける', '[前] -> [後] : 変える'], compare: ['| 項目 | 案A | 案B |', '|---|---|---|', '| 値段 | ○ | △ |', '| 早さ | △ | ○ |']
   };
   function addDiagram(text, doc, type) {
     if (!TEMPLATE[type]) throw new Error('知らない種類');

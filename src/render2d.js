@@ -487,11 +487,11 @@
     function markGap(ids) { return ids.some(function (id) { return items[id].marks.length; }) ? fs * 1.2 : 0; }
     function linesOf(list) {
       var out = [];
-      list.forEach(function (id) { var c = items[id].cells, last = out[out.length - 1]; if (c && last && last.cells === c) last.ids.push(id); else out.push({ cells: c, ids: [id] }); });
+      list.forEach(function (id) { var c = items[id].across, last = out[out.length - 1]; if (c && last && last.across === c) last.ids.push(id); else out.push({ across: c, ids: [id] }); });
       return out;
     }
     function mBox(it) {
-      var cell = !!it.cells, lab = wrap(it.label, fs, fs * (cell ? 8 : 16), 3, it.kind === 'frame'), ds = it.desc ? wrap(it.desc, hf, fs * 16, 3) : [];
+      var cell = !!it.across, lab = wrap(it.label, fs, fs * (cell ? 8 : 16), 3, it.kind === 'frame'), ds = it.desc ? wrap(it.desc, hf, fs * 16, 3) : [];
       var numW = it.kind === 'step' ? fs * 2 : 0, tagW = it.tag ? tw(it.tag, hf, true) + hf * 1.2 + pad * 0.6 : 0;
       var labH = lab.length * fs * 1.3, dsH = ds.length ? ds.length * hf * 1.3 + fs * 0.2 : 0;
       return { lab: lab, ds: ds, labH: labH, dsH: dsH, numW: numW, tagW: tagW,
@@ -522,7 +522,7 @@
       var cy = y + pad * 0.8 + m.hh, iw = w - pad * 2;
       m.L.forEach(function (l, li) {
         cy += l.top;
-        if (!l.cells) put(l.ids[0], x + pad, cy, iw);
+        if (!l.across) put(l.ids[0], x + pad, cy, iw);
         else {
           var extra = (iw - l.w) / l.ids.length, cx = x + pad;
           l.ids.forEach(function (cid) { put(cid, cx, cy, M[cid].w + extra); cx += M[cid].w + extra + gap; });
@@ -546,10 +546,32 @@
       if (chunk.length) flush();
     });
     var W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; }).concat([200])) + 20, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; }).concat([40])) + 20;
-    var body = '';
+    var body = '', E = boardEdges(diag, B, opts);
     items.forEach(function (it) { if (asFrame(it)) body += drawFrame(d, it, B[it.id], M[it.id], opts); });   // 枠を先に（箱と入れ子にしない）
+    body += E.paths;   // 線は枠の上・箱の下。言葉はいちばん上
     items.forEach(function (it) { if (!asFrame(it)) body += drawCard(d, it, B[it.id], M[it.id], opts); });
+    body += E.labels;
     return wrapSvg(W, H, body, 'board');
+  }
+  // 線：ふちからふちへ。=> は強調の色で太く。自分へ戻る線は右に小さな輪
+  function boardEdges(diag, B, opts) {
+    var paths = '', labels = '', fs = Math.max(11, Math.round(opts.fs * 0.85)), strongId = ARW + '-s';
+    if (diag.edges.some(function (e) { return e.strong; })) paths += '<defs><marker id="' + strongId + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="' + C.accent + '"/></marker></defs>';
+    diag.edges.forEach(function (e) {
+      var a = B[e.from], b = B[e.to], lay = edgeLay(diag, e.pk), p;
+      if (!a || !b) return;
+      if (e.from === e.to) {
+        var x = a.x + a.w, y1 = a.y + a.h * 0.3, y2 = a.y + a.h * 0.7, k = opts.fs * 2;
+        p = { d: 'M' + r(x) + ' ' + r(y1) + ' C' + r(x + k) + ' ' + r(y1 - k / 2) + ' ' + r(x + k) + ' ' + r(y2 + k / 2) + ' ' + r(x + 2) + ' ' + r(y2), mx: x + k * 0.8, my: (y1 + y2) / 2 };
+      } else p = lay.route ? routeEdge(lay.route, a, b, opts.fs) : freeEdge(a, b, lay.bend, hasReverse(diag, e) ? opts.fs * 1.6 : 0);
+      var at = e.strong ? ' stroke="' + C.accent + '" stroke-width="3"' : ' stroke="' + C.edge + '" stroke-width="2"', ea = edgeAttrs(lay, true);
+      if (e.strong) ea = ea.replace(new RegExp('url\\(#' + ARW + '\\)', 'g'), 'url(#' + strongId + ')');
+      paths += '<path class="edge' + (e.strong ? ' strong' : '') + '"' + ekAttr(e.pk) + ' d="' + p.d + '" fill="none"' + at + ea + '/>';
+      // 縦の線の言葉は線の右へ（枠の名前は左寄せなので隠さない）
+      var side = !lay.label && e.from !== e.to && Math.abs(b.y + b.h / 2 - a.y - a.h / 2) > Math.abs(b.x + b.w / 2 - a.x - a.w / 2) ? tw(e.label || '', fs) / 2 + 12 : 0;
+      if (e.label) labels += edgeLabel(e.label, p.mx + side + (lay.label ? lay.label[0] : 0), p.my + (lay.label ? lay.label[1] : 0), fs, e.pk);
+    });
+    return { paths: paths, labels: labels };
   }
   function drawFrame(d, it, b, m, opts) {
     var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it);
@@ -560,7 +582,7 @@
     return out + (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') + badges(it, b.x + b.w, b.y - 3, fs, true) + '</g>';
   }
   function drawCard(d, it, b, m, opts) {
-    var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it), cell = !!it.cells;
+    var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it), cell = !!it.across;
     var stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
     var out = itemOpen(d, it) + '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>';
     var top = b.y + (b.h - m.labH - m.dsH) / 2, tx = b.x + pad + m.numW, mid = cell && !m.numW && !m.tagW;

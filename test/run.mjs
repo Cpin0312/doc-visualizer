@@ -67,7 +67,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const g = sample.diagrams[0], by = k => g.items.find(i => i.pk === k);
     const shape = g.items.map(i => i.kind[0]).join('');
     ok('図解（読み）：見本の枠・箱・横の箱・札・タグ・印・段が全部読め、知らせが出ない',
-      g.type === 'board' && !sample.warnings.length && shape === 'fbfbbbbfssfbfbbfbbb' && by('[台帳]').parent === by('[変える前]').id && by('申込').parent === by('[台帳]').id && by('申込').depth === 2 && by('申込').cells && by('申込').cells === by('見積').cells &&
+      g.type === 'board' && !sample.warnings.length && shape === 'fbfbbbbfssfbfbbfbbb' && by('[台帳]').parent === by('[変える前]').id && by('申込').parent === by('[台帳]').id && by('申込').depth === 2 && by('申込').across && by('申込').across === by('見積').across &&
       by('台帳を分ける').num === 1 && by('申込.xlsx').tag === '営業' && by('増えた手間は1つ').marks[0].kind === 'red' && by('増えた手間は1つ').desc === '担当を選ぶ' && by('[効果]').row === 1 && by('[変える前]').row === 0 && by('1件あたり-40%').desc === '12分 → 7分',
       shape + ' ' + JSON.stringify(sample.warnings));
     ok('図解（読み）：線は3本。同じ名前の「受付」は、もう一方の端と同じ外の枠のものを選び、=> は強調',
@@ -124,6 +124,23 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const wideMd = B(Array.from({ length: 24 }, (_, i) => '[とても長い名前の枠その' + i + ']\n  中の箱 : 説明の文'));
     const gwd = wideMd.diagrams[0], svw = RC.DocRender.svg(gwd, 0, { fs: 15 }), ww = +/data-w="(\d+)"/.exec(svw)[1];
     ok('図解（2D）：横に長すぎる段は折り返す（幅は字の 90 文字ほどまで）・重ならない', ww <= 15 * 90 + 400 && !layoutOk(gwd, svw).length, ww + ' ' + layoutOk(gwd, svw).join());
+    // ---- R9b-2：図解の線（ふちからふち・強調・言葉・自分へ戻る線） ----
+    const ends2 = (svg) => [...svg.matchAll(/<path class="edge( strong)?" data-ek="([^"]+)" d="M([\d.-]+) ([\d.-]+) [LC]([^"]*)" fill="none"([^/]*)\/>/g)].map(m => {
+      const nums = m[5].trim().split(/\s+/).map(Number); return { strong: !!m[1], pk: m[2].replace(/&gt;/g, ">"), s: [+m[3], +m[4]], e: [nums[nums.length - 2], nums[nums.length - 1]], attrs: m[6] };
+    });
+    const near = (pt, q, k) => pt[0] >= q.x - k && pt[0] <= q.x + q.w + k && pt[1] >= q.y - k && pt[1] <= q.y + q.h + k;
+    const onRim = (pt, q) => near(pt, q, 3) && !(pt[0] > q.x + 3 && pt[0] < q.x + q.w - 3 && pt[1] > q.y + 3 && pt[1] < q.y + q.h - 3);
+    const EG = ends2(sv), RB = Object.fromEntries(rects(sv).map(q => [q.i, q]));
+    const edgeBad = g.edges.map((e, k) => { const x = EG.find(z => z.pk === e.pk); return !x ? e.pk + ' なし' : (!onRim(x.s, RB[e.from]) || !onRim(x.e, RB[e.to])) ? e.pk + ' 端がふちにない ' + JSON.stringify([x.s, x.e]) : ''; }).filter(Boolean);
+    const strongE = EG.find(z => z.strong);
+    ok('図解（2D）：線は3本とも箱か枠のふちからふちへ。=> は強調の色・太さ・矢じり、言葉は3本のうち2本',
+      EG.length === 3 && !edgeBad.length && strongE && strongE.pk === '受付#2>申込.xlsx' && /stroke-width="3"/.test(strongE.attrs) && /marker-end="url\(#arw-\d+-s\)"/.test(strongE.attrs) && /<marker id="arw-\d+-s"/.test(sv) &&
+      (sv.match(/class="edge-label"/g) || []).length === 2 && sv.indexOf('class="edge') > sv.lastIndexOf('class="item frame"') && sv.indexOf('class="edge') < sv.indexOf('<g class="item" '),
+      edgeBad.join(' / ') + ' ' + EG.length);
+    const selfD = B(['[A]', '  x', 'x -> x : もう一度']).diagrams[0], svS = RC.DocRender.svg(selfD, 0, { fs: 15 });
+    ok('図解（2D）：自分へ戻る線は右の小さな輪で描く', ends2(svS).length === 1 && /もう一度/.test(svS), svS.length);
+    const tdoc = P.parseDoc(P.addDiagram('# T\n', P.parseDoc('# T\n'), 'board'));
+    ok('図解：「図を足す」のひな形が知らせなしで読め、描ける', tdoc.diagrams[0].type === 'board' && !tdoc.warnings.length && !layoutOk(tdoc.diagrams[0], RC.DocRender.svg(tdoc.diagrams[0], 0, { fs: 15 })).length);
   }
   const none = P.parseDoc('# 図なし\n本文だけ');
   ok('読みとり：図のない md でも止まらない', none.title === '図なし' && none.diagrams.length === 0 && none.body.length === 1);
@@ -1565,6 +1582,36 @@ async function savePptx(T, md, tag) {
   const band = await waitFor(`!document.getElementById('error').hidden && document.getElementById('error').textContent`, 20000);
   await B.evalJs(`URL.createObjectURL = window.__cou; document.getElementById('error').hidden = true`);
   ok('PowerPoint：保存できないときは赤い帯で理由を出し、PDF を案内する', band && band.includes('止められた') && band.includes('PDF') && (await B.evalJs(`getComputedStyle(document.getElementById('error')).backgroundColor`)) !== 'rgba(0, 0, 0, 0)', band);
+}
+
+// R9b-2：図解 board を画面で。押すと枠・箱の詳しい窓、発表で枠いっぱい
+{
+  const mb = ['# 図解の試し', '', '~~~board 新しい受付のしくみ', '[変える前] 1か所に全部', '  受付 : 電話とメール', '  [台帳] 1,200 件', '    申込 | 問い合わせ | 苦情 | 見積', '[やったこと]', '  #1 台帳を分ける', '  #2 担当ごとの箱を作る',
+    '[変えた後] 本体＋担当ごとの台帳', '  受付 : 電話とメール', '  [担当ごと]', '    申込.xlsx @営業', '    問い合わせ.xlsx @窓口', '---', '[効果] 試した結果', '  1件あたり -40% : 12分 → 7分', '  増えた手間は1つ : 担当を選ぶ !代償',
+    '受付 -> 台帳 : 毎回ぜんぶ見る', '[変える前] -> [変えた後]', '受付 => 申込.xlsx : 合う台帳だけ見る', '~~~', ''].join('\n'), fb = join(out, 'r9_board.md'); writeFileSync(fb, mb);
+  await pick(fb); await waitFor(`document.getElementById('status').textContent.includes('r9_board.md')`);
+  const m0 = await B.evalJs('DocVisualizer.mode()');
+  if (m0 !== '2d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '2d'`); }
+  const seen = await B.evalJs(`({ svg: !!document.querySelector('#dg0 svg.board'), frames: document.querySelectorAll('#dg0 .item.frame').length, items: document.querySelectorAll('#dg0 .item').length, edges: document.querySelectorAll('#dg0 path.edge').length, warn: document.getElementById('warnings').hidden ? 0 : document.querySelectorAll('#warnings li').length })`);
+  ok('図解（画面）：2D で枠 6・部品 18・線 3 が出て、知らせが出ない', seen.svg && seen.frames === 6 && seen.items === 18 && seen.edges === 3 && !seen.warn, JSON.stringify(seen));
+  // 枠は、名前の所（左上）を押す（まん中は中の箱に当たる）
+  const c = await B.evalJs(`(() => { const e = document.querySelector('#dg0 .item.frame[aria-label="変える前"] .box'); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + 16, y: b.top + 10 }; })()`);
+  for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: c.x, y: c.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });
+  const pf = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
+  await keyPress('Escape', 'Escape', 27);
+  await clickAt('#dg0 .item[aria-label="申込.xlsx"] .box');
+  const pb = await waitFor(`!document.getElementById('panel').hidden && document.getElementById('panelBody').innerText`);
+  await keyPress('Escape', 'Escape', 27);
+  ok('図解（画面）：枠を押すと中の数、箱を押すと入っている枠・タグ・前の箱が出る',
+    pf && pf.startsWith('変える前') && pf.includes('枠（中に 2 個）') && pb && pb.startsWith('申込.xlsx') && pb.includes('入っている枠：担当ごと') && pb.includes('タグ：営業') && pb.includes('前：受付'), JSON.stringify([pf, pb].map(t => (t || '').replace(/\n/g, ' ').slice(0, 90))));
+  await B.evalJs('document.activeElement && document.activeElement.blur()');
+  await keyPress('p', 'KeyP', 80); await keyPress('ArrowRight', 'ArrowRight', 39);
+  const fitB = `(() => { const st = document.getElementById('pStage'), s = st.querySelector('svg.board'); if (!s) return null; const b = s.getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32 }; })()`;
+  await waitFor(`(() => { const f = ${fitB}; return f && (Math.abs(f.w - f.cw) <= 2 || Math.abs(f.h - f.ch) <= 2); })()`, 2000).catch(() => {});
+  const fb2 = await B.evalJs(fitB);
+  await keyPress('Escape', 'Escape', 27);
+  ok('図解（発表）：図解が枠いっぱいに収まる', fb2 && (Math.abs(fb2.w - fb2.cw) <= 2 || Math.abs(fb2.h - fb2.ch) <= 2) && fb2.w <= fb2.cw + 2 && fb2.h <= fb2.ch + 2, JSON.stringify(fb2));
+  if (m0 !== '2d') { await clickAt('#mode'); await waitFor(`DocVisualizer.mode() === '${m0}'`); }
 }
 
 // 確かめ役の md（verify/md があれば、読むだけ。直さない）：落ちず、エラーを出さない

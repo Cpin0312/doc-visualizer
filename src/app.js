@@ -673,7 +673,7 @@
     if (g) g.classList.add('sel');
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(k === d ? i : null); redraw(k); } });
     state.sel = { d: d, i: i }; state.selEdge = null;
-    var n = noteFor(it.key), h = '<h2>' + esc(it.label) + '</h2>';
+    var n = noteFor(it.key) || (it.kind === 'frame' ? noteFor(it.key.slice(1, -1)) : null), h = '<h2>' + esc(it.label) + '</h2>';   // 図解の枠は「## 枠の名前」の説明も使う
     h += it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('');
     var extra = [];
     if (it.dateText) extra.push('日付：' + esc(it.dateText) + (it.end ? '（' + esc(it.end) + ' まで）' : ''));
@@ -685,6 +685,13 @@
     }
     if (it.lane) extra.push('担当：' + esc(it.lane));
     if (diag.type === 'flowchart') extra.push('形：' + ({ terminal: '端（はじめ・終わり）', decision: '判断', subprocess: '別の手順', io: '入力・出力', process: '処理' })[it.style.shape]);
+    if (diag.type === 'board') {
+      if (it.kind === 'frame') extra.push('枠（中に ' + diag.items.filter(function (x) { return x.parent === it.id; }).length + ' 個）');
+      if (it.parent != null) extra.push('入っている枠：' + esc(diag.items[it.parent].label));
+      if (it.kind === 'step') extra.push('番号：' + it.num);
+      if (it.desc) extra.push('説明：' + esc(it.desc));
+      if (it.tag) extra.push('タグ：' + esc(it.tag));
+    }
     if (it.cells) extra.push(diag.options.map(function (o, j) { return esc(o) + '：' + esc(it.cells[j].text || '－'); }).join('<br>'));
     if (diag.edges) {
       var outs = diag.edges.filter(function (e) { return e.from === it.id; }).map(function (e) { return esc(diag.items[e.to].label) + (e.label ? '（' + esc(e.label) + '）' : ''); });
