@@ -65,7 +65,7 @@ pre { background: #f2f4f8; padding: 8px 10px; border-radius: 8px; overflow-x: au
 .badge.red { background: var(--red); } .badge.yellow { background: var(--yellow); } .badge.green { background: var(--green); }
 .error { position: sticky; top: 51px; z-index: 19; background: var(--red); color: #fff; padding: 8px 16px; font-weight: bold; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 40; background: #1f2a37; color: #fff; padding: 10px 18px; border-radius: 10px; max-width: 90vw; }
-.secret { position: fixed; left: 14px; bottom: 14px; z-index: 25; border: 2px solid var(--red); color: var(--red); background: #fff; font-weight: bold; padding: 2px 12px; border-radius: 6px; pointer-events: none; }
+.secret { position: fixed; left: 14px; bottom: 14px; z-index: 25; border: 2px solid var(--red); color: var(--red); background: #fff; font-weight: bold; padding: 2px 12px; border-radius: 6px; cursor: text;   /* 2回押して直す（R8d） */ }
 .drop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(59, 111, 216, .15); border: 4px dashed var(--accent); font-size: 1.6rem; font-weight: bold; color: var(--accent); pointer-events: none; }
 .glnote { margin: 2px 0 0; font-size: 0.85rem; color: #8a5a00; background: #fff4d6; border-radius: 6px; padding: 2px 10px; display: inline-block; }
 .v3scroll { display: none; overflow-x: auto; border-radius: 10px; }
@@ -388,7 +388,7 @@ window.THREE=Object.freeze({"ACESFilmicToneMapping":et,"AddEquation":y,"AddOpera
 
 ;
 window.DV_SAMPLES = [{"name":"01_flow.md","title":"flow：注文を受けてから送るまで（架空の例）","text":"# 注文を受けてから送るまで（架空の例）\n> ひとことで：注文は「受付 → 確認 → 見積 → 承認 → 発送」の5つで進む\n> 結論：見積は3日以内に出す。承認は課長まで\n> すること：差し戻しの理由を毎回書きのこす\n> 社外秘：社外秘\n\n```flow 注文の流れ\n受付 -> 確認 -> 見積\n見積 -> 承認 : OK\n見積 -> 受付 : 差し戻し\n承認 -> 発送 +完了\n承認 !期限\n確認 ?在庫\n```\n\n## 受付\nお客様から電話かメールで受ける。受けた日を台帳に書く。\n[元：注文の手順（架空）2ページ]\n\n## 見積\n在庫と値段を見て、3日以内に出す。\n- 値引きは 5% まで\n- それより大きい値引きは課長に相談\n[元：注文の手順（架空）4ページ]\n\n## 承認\n課長が見て OK を出す。期限は見積から2日。\n"},{"name":"02_lanes.md","title":"lanes：経費の精算（架空の例）","text":"# 経費の精算（架空の例）\n> ひとことで：申請者が出して、上長と経理の2回の確認で振り込まれる\n> すること：領収書は月末までに出す\n\n```lanes 精算の担当\n[申請者] 申請 -> [上長] 確認 -> [経理] 点検 -> 振込 +完了\n[上長] 確認 -> [申請者] 申請 : 差し戻し\n[経理] 点検 !月末締め\n```\n\n## 点検\n領収書と金額が合っているかを見る。\n[元：経費のきまり（架空）第3条]\n"},{"name":"03_timeline.md","title":"timeline：新しい道具を入れる日程（架空の例）","text":"# 新しい道具を入れる日程（架空の例）\n> ひとことで：12月に説明会、1月から使い始める\n> 結論：説明会の申しこみは 11/30 まで\n\n```timeline 入れるまでの日程\n2026-11-30 申しこみ締め切り !期限\n2026-12-03 説明会\n2026-12-07〜2026-12-18 試しに使う\n2026-12-25 ふりかえり ?日程調整\n2027-01-05 使い始め +開始\n```\n\n## 説明会\n会議室Aで 14 時から。オンラインでも見られる。\n[元：お知らせメール（架空）]\n"},{"name":"04_tree.md","title":"tree：問い合わせが多い理由（架空の例）","text":"# 問い合わせが多い理由（架空の例）\n> ひとことで：問い合わせの半分は「使い方が分からない」から\n\n```tree 理由の分けかた\n- 問い合わせが多い\n  - 使い方が分からない\n    - 説明書が古い !問題\n    - 画面が分かりにくい\n  - 動かない\n    - 設定のまちがい\n    - 本当の故障 ?確認中\n  - そのほか\n```\n\n## 説明書が古い\n最後に直したのが2年前。画面が変わっている。\n[元：問い合わせの記録（架空）]\n"},{"name":"05_chart.md","title":"chart：問い合わせの件数（架空の例）","text":"# 問い合わせの件数（架空の例）\n> ひとことで：7月から減っている\n\n```chart 月ごとの問い合わせ（件）\n4月 : 1,200\n5月 : 1,350\n6月 : 1,480 !いちばん多い\n7月 : 1,100\n8月 : 920 +目標達成\n```\n\n## 6月\n新しい画面を出した月。問い合わせが増えた。\n[元：月の報告（架空）6月号]\n"},{"name":"06_kpi.md","title":"kpi：今月の数字（架空の例）","text":"# 今月の数字（架空の例）\n> ひとことで：売上は伸び、解約は減った\n\n```kpi 今月の大事な数字\n売上 : 1,200万円 : 前年比 +8%\n新しいお客様 : 42社 : 先月より +5\n解約率 : 2.1% : 前年比 ▲0.3pt\n問い合わせ : 920件 : 先月より -180 !確認\n```\n\n## 売上\n大きな注文が2件あった。\n[元：月の報告（架空）]\n"},{"name":"07_compare.md","title":"compare：3つの案をくらべる（架空の例）","text":"# 3つの案をくらべる（架空の例）\n> 結論：案Bにする\n\n```compare 道具の案\n| 項目 | 案A | 案B | 案C |\n|---|---|---|---|\n| 値段 | × 高い | ◎ 安い | ○ ふつう |\n| 使いやすさ | ○ | ○ | △ 慣れが要る |\n| 入れるまでの日数 | 3か月 | ◎ 1か月 | 2か月 |\n| 支え（サポート） | ○ 電話あり | △ メールだけ | × なし |\n```\n\n## 値段\n1年あたりの費用で比べた。\n[元：見積の比較表（架空）]\n"},{"name":"08_copilot_wrapped.md","title":"copilot_wrapped：新しい受付のしくみ（架空の例・Copilot の出し方）","text":"はい、資料をこのフォーマットにまとめました。\n```markdown\n# 新しい受付のしくみ（架空の例・Copilot の出し方）\n> ひとことで：受付を1つの窓口にまとめ、3か月で切りかえる\n> 結論：12月に説明会、1月から使う\n> すること：各課は担当者を1人決める\n> 社外秘：関係者限り\n\n~~~flow 受付の流れ\n受付 -> 振り分け -> 対応 -> 完了 +完了\n振り分け -> 受付 : 情報不足\n対応 !期限\n~~~\n\n~~~lanes 担当ごと\n[窓口] 受付 -> [各課] 対応 -> [窓口] 返事\n~~~\n\n~~~timeline 日程\n2026-12-03 説明会\n2027-01-05 使い始め !期限\n~~~\n\n~~~tree 窓口の分け方\n- 窓口\n  - 電話\n  - メール\n  - 対面\n~~~\n\n~~~chart 月の受付（件）\n10月 : 300\n11月 : 340\n12月 : 410\n~~~\n\n~~~kpi 目ざす数字\n返事まで : 2日 : いまは 4日\n満足度 : 85% : 前年比 +5%\n~~~\n\n~~~compare 窓口の案\n| 項目 | いまのまま | 1つにまとめる |\n|---|---|---|\n| 手間 | × 多い | ◎ 少ない |\n| 費用 | ○ なし | △ 少しかかる |\n~~~\n\n## 受付\n電話・メール・対面のどれで来ても、同じ台帳に書く。\n[元：受付の見直し案（架空）3ページ]\n\n## 振り分け\n内容を見て、担当の課に回す。\n[元：受付の見直し案（架空）5ページ]\n```\nほかに直したいところがあれば教えてください。\n"},{"name":"09_mistakes.md","title":"mistakes：わざとまちがえた見本（架空の例）","text":"# わざとまちがえた見本（架空の例）\n> ひとことで：書きまちがいがあっても、読める所は図になる\n\n```流れ　手続き\n申しこみ　→　確認　⇒　受付\n確認 ー> 返事：OK\n-> だれもいない\n受付 ！急ぎ\n```\n\n```日程\n2026/12/1　説明会\n12/15 締め切り ！期限\n2026-13-40 ない日\nあした 何か\n```\n\n```数字 件数（件）\n１月 ： １２０\n2月 : 1.2万\n3月 : たくさん\n```\n\n```比べる\n| 項目 | 案A | 案B |\n| 値段 | ○ | × | 余り |\n```\n\n```mermaid\ngraph TD; A-->B\n```\n"},{"name":"10_no_diagram.md","title":"no_diagram：図のない資料（架空の例）","text":"# 図のない資料（架空の例）\n> ひとことで：図の書き方がない md は、文だけを整えて出す\n\n## 背景\nいまの手順は紙で回している。\n\n## 進め方\n1. まず現状を調べる\n2. 次に案を作る\n3. 最後に決める\n\n| 項目 | 内容 |\n|---|---|\n| 期間 | 3か月 |\n| 人数 | 4人 |\n"},{"name":"11_graphs.md","title":"graphs：いろいろなグラフ（架空の例）","text":"# いろいろなグラフ（架空の例）\n> ひとことで：円・ドーナツ・折れ線・横棒・積み上げの見本\n\n```pie 問い合わせの入口（件）\n電話 : 420\nメール : 310 [元：窓口の記録（架空）10月]\nWeb フォーム : 260\n窓口 : 90 ?確認\n```\n\n```donut 経費の内訳（万円）\n交通費 : 120\n会議費 : 45\n消耗品 : 80\nその他 : 25\n```\n\n```line 月ごとの受付と完了（件）\n系列 : 受付, 完了\n4月 : 120, 95\n5月 : 135, 120\n6月 : 160, 130 !期限\n7月 : 140, -\n8月 : 110, 125 +完了\n```\n\n```hbar 部署ごとの申請（件）\n営業部 : 58\n経理部 : 21\n情報システム部 : 37\n総務部 : 12\n```\n\n```stacked 四半期ごとの申請（件）\n系列 : 紙, Web\n1〜3月 : 80, 20\n4〜6月 : 60, 45\n7〜9月 : 35, 70\n```\n\n## 電話\nいちばん多い入口。昼休みの前後に集まる。\n[元：窓口の記録（架空）10月]\n\n## 6月\n受付が最も多かった月。完了が追いつかなかった。\n"},{"name":"12_flowchart.md","title":"flowchart：注文を出すまで（架空の例）","text":"# 注文を出すまで（架空の例）\n> ひとことで：在庫があれば出荷、なければ発注してから出荷する\n\n```flowchart 注文の処理\n(開始) -> /注文を受ける/ -> \u003c在庫ある?>\n\u003c在庫ある?> -> 出荷する : はい\n\u003c在庫ある?> -> [[発注する]] : いいえ\n発注する -> 入荷を待つ !期限\n入荷を待つ -> 在庫ある?\n出荷する -> (終わり)\n```\n\n## 発注する\n仕入れ先に発注する。手順は別の資料にある。\n[元：仕入れの手順（架空）3ページ]\n\n## 入荷を待つ\nふつうは3日。遅れるときは、お客様に連絡する。\n"}];
-window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」にまとめる係です。このあと渡す資料を、下のフォーマットの md にしてください。\n\n## まもること\n- 資料に書いてあることだけを書く。推測で足さない。分からないところは「?確認」の印をつける。\n- 数字・日付・名前は、資料のとおりに書く（丸めない・言いかえない）。\n- 箱や数字には、なるべく出どころを書く：`[元：資料の名前 ページ]`\n- 文で長く説明するより、図にできるところは図にする。図は1つの md にいくつ書いてもよい。\n\n## フォーマット\n1行目に題名、次に「ひとことで・結論・すること」（資料にあれば）。社外秘などの取り扱いがあれば書く。\n\n```\n# 題名\n> ひとことで：…\n> 結論：…\n> すること：…\n> 社外秘：社外秘\n```\n\n図は、コードブロックの1行目に「図の種類 図の名前」を書き、中に図の行を書く。\n\n| 種類 | いつ使う | 書き方 |\n|---|---|---|\n| flow | 手順・流れ | `受付 -> 確認 -> 見積`、矢印の言葉は `見積 -> 承認 : OK` |\n| flowchart | 分かれ道のある手順（フローチャート） | `(開始) -> /注文を受ける/ -> \u003c在庫ある?>`、`\u003c在庫ある?> -> 出荷 : はい`、`\u003c在庫ある?> -> [[発注する]] : いいえ`。`(…)` はじめと終わり・`\u003c…>` 判断・`[[…]]` 別の手順・`/…/` 入力と出力・ふつうの名前は処理 |\n| lanes | 担当ごとの流れ | `[営業] 受付 -> [経理] 請求` |\n| timeline | 日程・期限 | `2026-12-01 説明会`、期間は `2026-12-07〜2026-12-18 試行` |\n| tree | 分けかた・組織・原因 | 字下げ（スペース2つ）と `-` で親子 |\n| chart | 数字の比べ（棒グラフ） | `4月 : 120`、単位は図の名前の後ろに `（件）` |\n| pie | 割合（円グラフ） | `電話 : 420`。割合は自動で計算する |\n| donut | 割合（ドーナツ。まん中に合計） | pie と同じ |\n| line | 移りかわり（折れ線） | 1行目に `系列 : 受付, 完了`、そのあと `4月 : 120, 95`。系列の区切りは「, 」（コンマとスペース）。桁区切りは `1,200` のようにスペースなし。ない数字は `-` |\n| hbar | 名前が長い数字の比べ（横棒） | chart と同じ |\n| stacked | 内訳つきの比べ（積み上げ棒） | line と同じ |\n| kpi | 大事な数字 | `売上 : 1,200万円 : 前年比 +8%` |\n| compare | 案や選択肢の比べ | 表（`|` 区切り）。1行目が案の名前。よい所に ◎○、悪い所に ×、まあまあは △ |\n\nflow と lanes で矢印のない行は、箱を1つだけ置くときに使う（`承認 !期限` のように、名前と印だけ）。文は図の中に書かない（図にならずに飛ばされる）。\n\n印（箱の名前の後ろに、スペースをあけて）：`!期限` `!問題`（赤）、`?確認`（黄）、`+完了`（緑）\n\n付箋（図の中に、気づいたこと・メモを貼る。どの図にも書ける）：`note 文 @黄`。箱に付けるなら `note 承認 : 期限を確かめる @ピンク`。色は 黄・ピンク・水色・緑。行の終わりは必ず `@色`。改行は `\\n` と書く。資料に書いてあるメモだけを付箋にする。\n\n箱の説明は、図の外に「## 箱の名前」の見出しを作り、その下に書く。出どころもそこに書いてよい。\n\n## 例\n~~~flow 注文の流れ\n受付 -> 確認 -> 見積\n見積 -> 承認 : OK\n見積 -> 受付 : 差し戻し\n承認 !期限\n~~~\n\n## 受付\nお客様から電話かメールで受ける。\n[元：注文の手順 2ページ]\n\n## 出し方\n- 全体を1つの ```markdown のコードブロックに入れる。中の図のコードブロックは ~~~ で書く。\n- 前後のあいさつ文は短く。\n";
+window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」にまとめる係です。このあと渡す資料を、下のフォーマットの md にしてください。\n\n## まもること\n- 資料に書いてあることだけを書く。推測で足さない。分からないところは「?確認」の印をつける。\n- 数字・日付・名前は、資料のとおりに書く（丸めない・言いかえない）。\n- 箱や数字には、なるべく出どころを書く：`[元：資料の名前 ページ]`\n- 文で長く説明するより、図にできるところは図にする。図は1つの md にいくつ書いてもよい。\n\n## フォーマット\n1行目に題名、次に「ひとことで・結論・すること」（資料にあれば）。社外秘などの取り扱いがあれば書く。\n\n```\n# 題名\n> ひとことで：…\n> 結論：…\n> すること：…\n> 社外秘：社外秘\n```\n\n図は、コードブロックの1行目に「図の種類 図の名前」を書き、中に図の行を書く。\n\n| 種類 | いつ使う | 書き方 |\n|---|---|---|\n| flow | 手順・流れ | `受付 -> 確認 -> 見積`、矢印の言葉は `見積 -> 承認 : OK` |\n| flowchart | 分かれ道のある手順（フローチャート） | `(開始) -> /注文を受ける/ -> \u003c在庫ある?>`、`\u003c在庫ある?> -> 出荷 : はい`、`\u003c在庫ある?> -> [[発注する]] : いいえ`。`(…)` はじめと終わり・`\u003c…>` 判断・`[[…]]` 別の手順・`/…/` 入力と出力・ふつうの名前は処理 |\n| lanes | 担当ごとの流れ | `[営業] 受付 -> [経理] 請求` |\n| timeline | 日程・期限 | `2026-12-01 説明会`、期間は `2026-12-07〜2026-12-18 試行` |\n| tree | 分けかた・組織・原因 | 字下げ（スペース2つ）と `-` で親子 |\n| chart | 数字の比べ（棒グラフ） | `4月 : 120`、単位は図の名前の後ろに `（件）` |\n| pie | 割合（円グラフ） | `電話 : 420`。割合は自動で計算する |\n| donut | 割合（ドーナツ。まん中に合計） | pie と同じ |\n| line | 移りかわり（折れ線） | 1行目に `系列 : 受付, 完了`、そのあと `4月 : 120, 95`。系列の区切りは「, 」（コンマとスペース）。桁区切りは `1,200` のようにスペースなし。ない数字は `-` |\n| hbar | 名前が長い数字の比べ（横棒） | chart と同じ |\n| stacked | 内訳つきの比べ（積み上げ棒） | line と同じ |\n| kpi | 大事な数字 | `売上 : 1,200万円 : 前年比 +8%` |\n| compare | 案や選択肢の比べ | 表（`|` 区切り）。1行目が案の名前。よい所に ◎○、悪い所に ×、まあまあは △ |\n| board | 図解（変える前と後・しくみのまとめ。枠の中に箱） | `[変える前] 説明` が枠。字下げ（スペース2つ）した行がその枠の中（枠の中に枠も書ける）。`受付 : 電話とメール` が箱と小さな説明。`申込 \\| 問い合わせ` は横に並ぶ箱。`#1 台帳を分ける` は番号の札。行の終わりの `@営業` は右のタグ。`---` だけの行で次の段。線は字下げなしで `受付 -> 台帳 : 言葉`、強調は `=>`、枠どうしは `[変える前] -> [変えた後]`。同じ名前が2つあるときは `[変えた後] 受付` と枠を付ける |\n\nflow と lanes で矢印のない行は、箱を1つだけ置くときに使う（`承認 !期限` のように、名前と印だけ）。文は図の中に書かない（図にならずに飛ばされる）。\n\n印（箱の名前の後ろに、スペースをあけて）：`!期限` `!問題`（赤）、`?確認`（黄）、`+完了`（緑）\n\n付箋（図の中に、気づいたこと・メモを貼る。どの図にも書ける）：`note 文 @黄`。箱に付けるなら `note 承認 : 期限を確かめる @ピンク`（board の枠なら `note [変える前] : 文 @黄`）。色は 黄・ピンク・水色・緑。行の終わりは必ず `@色`。改行は `\\n` と書く。資料に書いてあるメモだけを付箋にする。\n\n箱の説明は、図の外に「## 箱の名前」の見出しを作り、その下に書く。出どころもそこに書いてよい。\n\n## 例\n~~~flow 注文の流れ\n受付 -> 確認 -> 見積\n見積 -> 承認 : OK\n見積 -> 受付 : 差し戻し\n承認 !期限\n~~~\n\n## 受付\nお客様から電話かメールで受ける。\n[元：注文の手順 2ページ]\n\n## 出し方\n- 全体を1つの ```markdown のコードブロックに入れる。中の図のコードブロックは ~~~ で書く。\n- 前後のあいさつ文は短く。\n";
 ;
 /* DocVisualizer の読みとり（画面と試験（node）の両方が使う。ここだけが正本）
  * 使い方：ブラウザでは window.DocParse、node では require('./src/parse.js')
@@ -416,7 +416,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     hbar: { label: '横棒', names: ['hbar', '横棒', '横棒グラフ'] },
     stacked: { label: '積み上げ', names: ['stacked', '積み上げ', '積み上げ棒', '積み上げグラフ'] },
     kpi: { label: '大事な数字', names: ['kpi', '大事な数字', '指標', '数値'] },
-    compare: { label: '比べる', names: ['compare', '比べる', '比較', '表'] }
+    compare: { label: '比べる', names: ['compare', '比べる', '比較', '表'] },
+    board: { label: '図解', names: ['board', '図解', 'ボード', 'まとめ図'] }
   };
   var TYPE_OF = {};
   Object.keys(TYPES).forEach(function (t) { TYPES[t].names.forEach(function (n) { TYPE_OF[nk(n)] = t; }); });
@@ -724,6 +725,115 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     reg.finish(lines.length ? lines[lines.length - 1].no : 0);
   }
 
+  // 図解 board（R9a）。字下げで入れ子にする枠・箱・横の箱・番号の札・タグ・段・線
+  //   [名前] 説明 ＝枠 / 名前 : 説明 ＝箱 / a | b ＝横の箱 / #1 文 ＝札 / … @タグ / --- ＝次の段 / A -> B : 言葉（=> は強調）
+  var RE_FRAME = /^[\[［【]([^\]］】]+)[\]］】][\s　]*([\s\S]*)$/;
+  var RE_STEP = /^(?:[#＃][\s　]*([0-9０-９]+)|([①-⑳]))[\s　]*([\s\S]+)$/;
+  var RE_ROWBREAK = /^(?:-{3,}|ー{3,}|—{3,}|―{3,}|─{3,})$/;
+  var RE_TAG = /[\s　][@＠]([^\s@＠]+)$/;
+  function parseBoard(diag, lines, warn) {
+    var reg = Registry(diag, warn), stack = [], row = 0, prev = null, edgeLines = [], group = 0;
+    diag.edges = [];
+    function indOf(t) { var m = /^[ \t　]*/.exec(t)[0], n = 0; for (var i = 0; i < m.length; i++) n += m[i] === ' ' ? 1 : 2; return n; }
+    function spanOf(ln, label, from) { var at = ln.text.indexOf(label, from); return at >= 0 ? { line: ln.no, start: at, end: at + label.length, seg: 0, segs: 1 } : { line: ln.no, bad: true, seg: 0, segs: 1 }; }
+    function shown(it) { return it.kind === 'frame' ? '[' + it.label + ']' : it.label; }
+    function place(it, ln, label, from, top) {
+      it.parent = top ? top.it.id : null; it.depth = stack.length; it.row = row;
+      var sp = spanOf(ln, label, from); it.spans = [sp];
+      return sp.bad ? from : sp.end;
+    }
+    // 1回目：枠と箱を置く（線の行は、名前が全部そろってから2回目で読む）
+    lines.forEach(function (ln) {
+      var ind = indOf(ln.text), body = trim(ln.text);
+      if (ind === 0 && RE_ROWBREAK.test(body)) { row++; stack = []; prev = null; return; }
+      if (/^[>＞]/.test(body)) { warn(ln.no, '吹き出し（> 文）はまだ読めないので飛ばした', 'skip'); return; }
+      if (RE_ARROW.test(splitColon(body, 2)[0])) { edgeLines.push(ln); return; }
+      while (stack.length && stack[stack.length - 1].ind >= ind) stack.pop();
+      var top = stack[stack.length - 1] || null;
+      if (prev && !prev.frame && ind > prev.ind) warn(ln.no, '箱の下を字下げしても中には入らないので、' + (top ? '「' + shown(top.it) + '」の中に' : '外に') + '並べた', 'fix');
+      else if (top && top.childInd != null && top.childInd !== ind) warn(ln.no, '字下げがずれていたので「' + shown(top.it) + '」の中に入れた', 'fix');
+      else if (!top && ind > 0 && !prev) warn(ln.no, '字下げしているが、入る枠がないので外に置いた', 'fix');
+      if (top && top.childInd == null) top.childInd = ind;
+      var src = [], s = trim(takeSources(body, src)).replace(/^[-*・][\s　]+/, '');
+      var fm = RE_FRAME.exec(s);
+      if (fm && trim(fm[1])) {
+        var lab = trim(fm[1]), tm = takeMarks(fm[2]), fr = reg.get(lab, ln.no, false);
+        if (!fr) return;
+        fr.kind = 'frame'; fr.key = '[' + fr.key + ']'; fr.desc = tm.label;   // 枠の名前は箱と分ける（付箋は「[枠] : 文」で付く）
+        addMarks(fr, tm.marks, src);
+        place(fr, ln, lab, 0, top);
+        stack.push({ ind: ind, it: fr });
+        prev = { frame: true, ind: ind };
+        return;
+      }
+      var parts = s.split(/[\s　]*[|｜][\s　]*/), g = parts.length > 1 ? ++group : null, from = 0;
+      parts.forEach(function (p, pi) {
+        var st = RE_STEP.exec(p), num = null;
+        if (st) { num = st[1] ? +nfkc(st[1]) : st[2].charCodeAt(0) - 0x245f; p = st[3]; }
+        var tm = takeMarks(p), lab = tm.label, tag = null, tg = RE_TAG.exec(lab);
+        if (tg) { tag = tg[1]; lab = trim(lab.slice(0, tg.index)); }
+        var cs = splitColon(lab, 2);
+        if (!cs[0]) { warn(ln.no, '箱の名前がないので飛ばした', 'skip'); return; }
+        var it = reg.get(cs[0], ln.no, false);
+        if (!it) return;
+        it.kind = num ? 'step' : 'box'; it.num = num; it.desc = cs[1] || ''; it.tag = tag; it.across = g;
+        addMarks(it, tm.marks, pi ? [] : src);   // 出どころは行の最初の箱に
+        from = place(it, ln, cs[0], from, top);
+      });
+      prev = { frame: false, ind: ind };
+    });
+    var deep = diag.items.filter(function (it) { return it.kind === 'frame' && it.depth > 5; })[0];
+    if (deep) warn(deep.line, '7段より深い枠は、6段目の枠の中にまとめて出した（md はそのまま）', 'fix');
+    // 2回目：線。同じ名前がいくつかあるときは「[枠] 名前」→ もう一方の端と同じいちばん外の枠 → はじめのもの
+    var items = diag.items, edgeKey = {};
+    function rootOf(it) { while (it.parent != null) it = items[it.parent]; return it; }
+    function inside(it, fr) { for (var x = it; x; x = x.parent != null ? items[x.parent] : null) if (x.id === fr.id) return true; return false; }
+    function ends(seg) {
+      var t = takeMarks(trim(takeSources(seg, []))).label, fm = RE_FRAME.exec(t);
+      if (fm) {
+        var frames = items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(fm[1]) + ']'; }), rest = trim(fm[2]);
+        if (!rest) return { name: t, list: frames, word: trim(fm[1]) };
+        return { name: t, list: items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(rest) && frames.some(function (f) { return inside(it, f); }); }), word: rest, qword: trim(fm[1]), frames: frames };
+      }
+      var boxes = items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(t); });
+      return { name: t, word: t, list: boxes.length ? boxes : items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(t) + ']'; }) };
+    }
+    edgeLines.forEach(function (ln) {
+      var body = trim(ln.text), cs = splitColon(body, 2), head = cs[0], label = cs[1] || '';
+      var reA = new RegExp(RE_ARROW.source, 'g'), arrows = [], strong = [], am, off = ln.text.indexOf(body);
+      while ((am = reA.exec(head))) { if (!am[0].length) { reA.lastIndex++; continue; } arrows.push([off + am.index, off + am.index + am[0].length]); strong.push(/[=＝⇒]/.test(am[0])); }
+      var es = head.split(RE_ARROW).map(ends), miss = es.filter(function (e) { return !e.list.length; })[0];
+      if (miss) { warn(ln.no, miss.name ? '線の端「' + miss.name + '」が図にないので、この行を飛ばした' : '矢印の前か後ろに名前がないので、この行を飛ばした', 'skip'); return; }
+      var pick = es.map(function (e) { return e.list.length === 1 ? e.list[0] : null; });
+      for (var pass = 0; pass < 2; pass++) pick.forEach(function (p, i) {
+        var nb = pick[i - 1] || pick[i + 1];
+        if (p || !nb) return;
+        var same = es[i].list.filter(function (c) { return rootOf(c).id === rootOf(nb).id; });
+        if (same.length === 1) pick[i] = same[0];
+      });
+      pick.forEach(function (p, i) {
+        if (p) return;
+        pick[i] = es[i].list[0];
+        var r = rootOf(pick[i]);
+        warn(ln.no, '「' + es[i].name + '」が ' + es[i].list.length + ' つあり、どれか決められないので' + (r === pick[i] ? 'はじめのもの' : '「' + shown(r) + '」の中のもの') + 'にした（「[枠] 名前」と書くと選べる）', 'fix');
+      });
+      // 線の行の中の名前の場所（R9e：名前を直すと、線の行の名前も直る）
+      pick.forEach(function (it, i) {
+        var a = i ? arrows[i - 1][1] : off, b = i < arrows.length ? arrows[i][0] : off + head.length, from = a;
+        function put(x, w) { var at = ln.text.indexOf(w, from); if (at < 0 || at + w.length > b) return; (x.spans = x.spans || []).push({ line: ln.no, start: at, end: at + w.length, seg: i, segs: pick.length, edge: true }); from = at + w.length; }
+        if (es[i].qword) { var f = es[i].frames.filter(function (q) { return inside(it, q); })[0]; if (f) put(f, es[i].qword); }
+        if (es[i].word) put(it, es[i].word);
+      });
+      for (var e = 1; e < pick.length; e++) {
+        var key = pick[e - 1].id + '>' + pick[e].id, lab = e === pick.length - 1 ? label : '', occ = { line: ln.no, arrow: arrows[e - 1], seg: e - 1 };
+        if (edgeKey[key]) { if (lab && !edgeKey[key].label) edgeKey[key].label = lab; edgeKey[key].occ.push(occ); continue; }
+        edgeKey[key] = { id: 'e' + diag.edges.length, kind: 'line', from: pick[e - 1].id, to: pick[e].id, label: lab, strong: strong[e - 1], line: ln.no, style: {}, occ: [occ] };
+        diag.edges.push(edgeKey[key]);
+      }
+    });
+    reg.finish(lines.length ? lines[lines.length - 1].no : 0);
+  }
+
   function parseChart(diag, lines, warn) {
     var um = /^([\s\S]*?)[\s\u3000]*[（(]([^()（）]+)[)）][\s\u3000]*$/.exec(diag.name);
     if (um && trim(um[2])) { diag.unit = trim(um[2]); diag.name = trim(um[1]); } else diag.unit = '';
@@ -899,14 +1009,16 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       var ln = lines[i], t = ln.text;
       var fm = RE_FENCE.exec(t);
       if (fm) {
-        var ch = fm[1][0], flen = fm[1].length, inner = [], closed = false, j = i + 1;
+        var ch = fm[1][0], flen = fm[1].length, inner = [], closed = false, j = i + 1, nextOpen = false;
         for (; j < lines.length; j++) {
           var cm = RE_FENCE.exec(lines[j].text);
           if (cm && cm[1][0] === ch && cm[1].length >= flen && !trim(cm[2])) { closed = true; break; }
+          // 閉じ忘れ：同じ長さ以上の囲みで、図の種類か layout が付いた行は、次の図の開きとみなす（中に書き方の例を書くときは、外の囲みを1つ長く ~~~~ にする）
+          if (cm && cm[1][0] === ch && cm[1].length >= flen) { var ci = fenceInfo(cm[2]); if (ci.type || nk(ci.word) === 'layout') { nextOpen = true; break; } }
           inner.push(lines[j]);
         }
         var info = fenceInfo(fm[2]);
-        if (!closed) { warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、最後までを中身とみなした', 'fix'); (doc.unsafe = doc.unsafe || []).push(ln.no + ' 行目の「' + fm[1] + '」に閉じがない'); }
+        if (!closed) { warn(ln.no, '図やコードの終わり（' + fm[1] + '）がないので、' + (nextOpen ? '次の図の開き（' + lines[j].no + ' 行目）の前までを中身とみなした' : '最後までを中身とみなした'), 'fix'); (doc.unsafe = doc.unsafe || []).push(ln.no + ' 行目の「' + fm[1] + '」に閉じがない'); }
         if (nk(info.word) === 'layout') {
           if (doc.layoutAt) warn(ln.no, '配置（layout）が2つ以上あるので、はじめの1つだけを使った', 'skip');
           else { doc.layoutAt = { start: ln.no, end: closed ? lines[j].no : null }; doc.layoutSrc = inner.map(function (x) { return x.text; }).join('\n'); }
@@ -928,7 +1040,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
              line: function () { parseSeries(diag, body, warn); },
              stacked: function () { parseSeries(diag, body, warn); },
              kpi: function () { parseKpi(diag, body, warn); },
-             compare: function () { parseCompare(diag, body, warn); } })[info.type]();
+             compare: function () { parseCompare(diag, body, warn); },
+             board: function () { parseBoard(diag, body, warn); } })[info.type]();
           diag.stickies = readStickies(diag, noteLines, warn);
           if (!diag.items.length && !diag.stickies.length) warn(ln.no, '図「' + (diag.name || TYPES[diag.type].label) + '」に読める行がないので出さなかった', 'skip');
           else doc.diagrams.push(diag);
@@ -937,7 +1050,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
           cur.lines.push({ code: inner.map(function (x) { return x.text; }), no: ln.no });
         }
         seenStructure = true;
-        i = closed ? j : lines.length;
+        i = closed ? j : nextOpen ? j - 1 : lines.length;   // 次の図の開きは、その図として読み直す
         continue;
       }
       var hm = /^[ \t\u3000]{0,3}(#{1,6})[ \t\u3000]+(.*?)[ \t\u3000#]*$/.exec(t);
@@ -971,7 +1084,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     }
     // 見出しの名前が箱の名前と同じなら、その箱の説明にする。違えば本文
     var keys = {};
-    doc.diagrams.forEach(function (d) { d.items.forEach(function (it) { keys[it.key] = true; }); });
+    doc.diagrams.forEach(function (d) { d.items.forEach(function (it) { keys[it.key] = true; if (it.kind === 'frame') keys[it.key.slice(1, -1)] = true; }); });   // 図解の枠は「## 枠の名前」で説明
     sections.forEach(function (s) {
       var textLines = [], srcs = [];
       s.lines.forEach(function (l) {
@@ -1007,7 +1120,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       (d.edges || []).forEach(function (e) { var b = d.items[e.from].pk + '>' + d.items[e.to].pk, n = eseen[b] = (eseen[b] || 0) + 1; e.pk = n > 1 ? b + '#' + n : b; });
     });
   }
-  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, timeline: 1, kpi: 1 };
+  var MOVABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, timeline: 1, kpi: 1, board: 1 };
   // 形・色などの値（R8b-2）。決まった値だけを使う
   var oneOf = function (list) { return function (v) { return list.indexOf(v) >= 0; }; };
   var STYLE_OK = {
@@ -1103,6 +1216,16 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     obj.diagrams[d.layoutIndex].parts = out;
     return obj;
   }
+  // 箱に付けた付箋の行（note 名前 : 文 @色）。名前を直すときは名前を直し、箱を消すときは「名前 :」を外して図に残す（付箋の文は消さない）
+  var RE_NOTE_TO = /^([ \t\u3000]*note[ \t\u3000]+)(.+?)([ \t\u3000]*[:：][ \t\u3000]*)/i;
+  function notesTo(d, ids) { return (d.stickies || []).filter(function (n) { return n.to != null && ids.indexOf(n.to) >= 0; }); }
+  function fixNoteLines(t, d, ids, newName) {
+    notesTo(d, ids).forEach(function (n) {
+      var L = t.lines[n.line - 1];
+      if (L == null || !RE_NOTE_TO.test(L)) return;
+      t.lines[n.line - 1] = L.replace(RE_NOTE_TO, function (all, head, nm, sep) { return newName == null ? head : head + newName + sep; });
+    });
+  }
   function renameItem(text, doc, di, id, name) {
     var d = doc.diagrams[di], it = d && d.items[id], nn = safeName(name);
     if (!it) throw new Error('箱が見つからない');
@@ -1112,14 +1235,25 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (!it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の名前の場所が md の中で分からない');
     var t = splitText(text);
     replaceSpans(t, it.spans.map(function (sp) { return { line: sp.line, start: sp.start, end: sp.end, text: nn }; }));
+    fixNoteLines(t, d, [id], it.kind === 'frame' ? '[' + nn + ']' : nn);   // 付箋が箱から外れないように
     // 説明の見出し「## 名前」も直す
     doc.notes.forEach(function (n) {
-      if (n.key !== it.key) return;
+      if (n.key !== it.key && !(it.kind === 'frame' && n.key === it.key.slice(1, -1))) return;   // 図解の枠は「## 枠の名前」
       var L = t.lines[n.line - 1], m = /^([ \t\u3000]{0,3}#{1,6}[ \t\u3000]+)(.*?)([ \t\u3000#]*)$/.exec(L || '');
       if (m) t.lines[n.line - 1] = m[1] + nn + m[3];
     });
     var out = joinText(t);
-    if (doc.layout && d.layoutIndex != null) out = writeLayout(out, doc, renameLayoutKeys(JSON.parse(JSON.stringify(doc.layout)), d, it.pk.replace(/#\d+$/, ''), nk(nn)));
+    if (doc.layout && d.layoutIndex != null && d.type === 'board') {
+      // 図解は同じ名前の箱が別々にあり、番号（#2）が直したあとでずれる。読み直して、同じ順番の部品どうしで名前を付けかえる
+      var nd = parseDoc(out).diagrams[di], map = {}, obj = JSON.parse(JSON.stringify(doc.layout)), L = obj.diagrams[d.layoutIndex], parts = {};
+      if (nd && nd.items.length === d.items.length) {
+        d.items.forEach(function (x, k) { map[x.pk] = nd.items[k].pk; });
+        Object.keys((L && L.parts) || {}).forEach(function (k) { parts[k.split('>').map(function (x) { return map[x] || x; }).join('>')] = L.parts[k]; });
+        L.parts = parts;
+        return writeLayout(out, doc, obj);
+      }
+    }
+    if (doc.layout && d.layoutIndex != null) out = writeLayout(out, doc, renameLayoutKeys(JSON.parse(JSON.stringify(doc.layout)), d, it.pk.replace(/#\d+$/, ''), it.kind === 'frame' ? '[' + nk(nn) + ']' : nk(nn)));
     return out;
   }
 
@@ -1163,8 +1297,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (!has) {
       var mt = trim(label || '') || MARK_DEFAULT[kind], bad = badInName(mt).concat(/[\s\u3000]/.test(mt) ? ['空白'] : []);
       if (bad.length) throw new Error('印の言葉に ' + bad.join(' ') + ' は使えません');
-      var sp0 = it.spans[0];
-      replaceSpans(t, [{ line: sp0.line, start: sp0.end, end: sp0.end, text: ' ' + sym + mt }]);
+      var sp0 = it.spans[0], at0 = it.kind === 'frame' ? t.lines[sp0.line - 1].replace(/[\s\u3000]+$/, '').length : sp0.end;   // 図解の枠は行の終わり（] の外）に
+      replaceSpans(t, [{ line: sp0.line, start: at0, end: at0, text: ' ' + sym + mt }]);
       return joinText(t);
     }
     it.spans.slice().sort(function (a, b) { return b.line - a.line || b.start - a.start; }).forEach(function (sp) {
@@ -1179,20 +1313,63 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     });
     return joinText(t);
   }
-  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1, tree: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
+  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1, tree: 1, board: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
   // 図の閉じの行のすぐ前に1行足す
   function appendLine(text, d, line) {
     var t = splitText(text);
     if (d.end) t.lines.splice(d.end - 1, 0, line); else t.lines.push(line);
     return joinText(t);
   }
+  // ---- 図解の編集（R9e-2）：箱を足す・線を引く・消す ----
+  function boardDesc(d, id) { var out = [id]; d.items.forEach(function (x) { if (x.parent != null && out.indexOf(x.parent) >= 0 && out.indexOf(x.id) < 0) out.push(x.id); }); return out; }
+  function ownLine(it) { var sp = (it.spans || []).filter(function (q) { return !q.edge && !q.bad; })[0]; return sp ? sp.line : null; }
+  function boardAddBox(text, doc, di, fid, name) {
+    var d = doc.diagrams[di], t = splitText(text), fr = fid != null && d.items[fid] && d.items[fid].kind === 'frame' ? d.items[fid] : null;
+    if (!fr) fr = d.items.filter(function (x) { return x.kind === 'frame' && x.parent == null; }).pop() || null;
+    if (!fr) { t.lines.splice(d.end - 1, 0, name); return joinText(t); }
+    var ids = boardDesc(d, fr.id), last = Math.max.apply(null, ids.map(function (k) { return ownLine(d.items[k]) || 0; }));
+    var kid = d.items.filter(function (x) { return x.parent === fr.id; })[0], ind = kid ? /^[ \t　]*/.exec(t.lines[ownLine(kid) - 1])[0] : /^[ \t　]*/.exec(t.lines[ownLine(fr) - 1])[0] + '  ';
+    t.lines.splice(last, 0, ind + name);
+    return joinText(t);
+  }
+  function boardRef(d, it) {
+    if (it.kind === 'frame') return '[' + it.label + ']';
+    var same = d.items.filter(function (x) { return x.kind !== 'frame' && x.key === it.key; }).length;
+    return same > 1 && it.parent != null ? '[' + d.items[it.parent].label + '] ' + it.label : it.label;
+  }
+  function boardAddEdge(text, doc, di, from, to) {
+    var d = doc.diagrams[di], a = d.items[from], b = d.items[to], out = appendLine(text, d, boardRef(d, a) + ' -> ' + boardRef(d, b));
+    var nd = parseDoc(out).diagrams[di], ok2 = nd && nd.edges.some(function (e) { return nd.items[e.from].pk === a.pk && nd.items[e.to].pk === b.pk; });
+    if (!ok2) throw new Error('同じ名前の箱があり、線の端を決められない（名前を直してから引いてください）');
+    return out;
+  }
+  function boardRemove(text, doc, di, id) {
+    var d = doc.diagrams[di], ids = boardDesc(d, id), t = splitText(text), drop = {}, cellCut = {};
+    ids.forEach(function (k) {
+      var it = d.items[k], ln = ownLine(it);
+      if (ln == null) throw new Error('この箱の場所が md の中で分からない');
+      if (it.across) { var row = d.items.filter(function (x) { return x.across === it.across; }); (cellCut[ln] = cellCut[ln] || { row: row, gone: [] }).gone.push(row.indexOf(it)); }
+      else drop[ln] = true;
+      (it.spans || []).forEach(function (q) { if (q.edge) drop[q.line] = true; });   // その箱が端の線の行
+    });
+    Object.keys(cellCut).forEach(function (ln) {
+      var c = cellCut[ln], L = t.lines[ln - 1], ind = /^[ \t　]*/.exec(L)[0], parts = L.slice(ind.length).split(/[\s　]*[|｜][\s　]*/);
+      var keep = parts.filter(function (p, k) { return c.gone.indexOf(k) < 0; });
+      if (!keep.length || parts.length !== c.row.length) drop[ln] = true; else t.lines[ln - 1] = ind + keep.join(' | ');
+    });
+    fixNoteLines(t, d, ids, null);   // 付けていた付箋は図に残す
+    Object.keys(drop).map(Number).sort(function (x, y) { return y - x; }).forEach(function (ln) { t.lines.splice(ln - 1, 1); });
+    var pks = ids.map(function (k) { return d.items[k].pk; });
+    return dropLayoutParts(joinText(t), doc, d, function (pk) { return pk.split('>').some(function (x) { return pks.indexOf(x) >= 0; }); });
+  }
   // 箱を足す：「新しい箱」（あれば 2, 3…）。lanes は最初の担当に入れる。{ text, name } を返す
-  function addBox(text, doc, di) {
+  function addBox(text, doc, di, fid) {
     var d = doc.diagrams[di];
     if (!d || !EDITABLE[d.type]) throw new Error('この図には箱を足せない');
     var used = {}, name = '新しい箱', n = 1;
     d.items.forEach(function (it) { used[it.key] = 1; });
     while (used[nk(name)]) name = '新しい箱' + (++n);
+    if (d.type === 'board') return { text: boardAddBox(text, doc, di, fid, name), name: name };   // 選んだ枠（なければ最後の外の枠）の中へ
     return { text: appendLine(text, d, (d.type === 'tree' ? '- ' : d.type === 'lanes' && d.lanes && d.lanes[0] ? '[' + d.lanes[0] + '] ' : '') + name), name: name };
   }
   // 線を引く：「A -> B」の行を足す（lanes は両方の担当も書く）
@@ -1200,6 +1377,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var d = doc.diagrams[di], a = d && d.items[from], b = d && d.items[to];
     if (!a || !b || !EDITABLE[d.type] || d.type === 'tree') throw new Error('この図には線を引けない');
     if (from === to) throw new Error('同じ箱には線を引けない');
+    if (d.type === 'board') return boardAddEdge(text, doc, di, from, to);
     var ln = function (it) { return (d.type === 'lanes' && it.lane ? '[' + it.lane + '] ' : '') + it.label; };
     return appendLine(text, d, ln(a) + ' -> ' + ln(b));
   }
@@ -1286,10 +1464,12 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   // 箱を消す（その箱が出てくる行すべて）。shortcut: layout の古い置き場所は残る（害はない）。同じ名前で足し直すと前の場所に出る
   function removeItem(text, doc, di, id) {
     var d = doc.diagrams[di], it = d && d.items[id];
+    if (d && it && d.type === 'board') return boardRemove(text, doc, di, id);
     if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
     var plan = {}, ids = d.type === 'tree' ? subtree(d, id) : [id];   // 木は、下の箱も一緒に消す（残すと、ちがう親の下に入るため）
     ids.forEach(function (k) { (d.items[k].spans || []).forEach(function (sp) { if (!sp.bad) (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); }); });
-    var keys = ids.map(function (k) { return d.items[k].key; });
+    var keys = ids.map(function (k) { return d.items[k].key; }), t0 = splitText(text);
+    fixNoteLines(t0, d, ids, null); text = joinText(t0);   // 付けていた付箋は図に残す（行の数は変えないので、場所はずれない）
     // その箱の置き場所・形と、その箱につながる線の置き場所も消す（残すと、同じ名前を足したとき前の場所に出る）
     return dropLayoutParts(cutLines(text, d, plan), doc, d, function (pk) { return pk.split('>').some(function (x) { return keys.indexOf(nk(x.replace(/#\d+$/, ''))) >= 0; }); });
   }
@@ -1367,7 +1547,8 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     tree: ['- 大きな分け方', '  - 小さな分け方1', '  - 小さな分け方2'], chart: ['4月 : 100', '5月 : 120', '6月 : 90'],
     hbar: ['A : 30', 'B : 50', 'C : 20'], pie: ['A : 50', 'B : 30', 'C : 20'], donut: ['A : 50', 'B : 30', 'C : 20'],
     line: ['系列 : 受付, 完了', '4月 : 10, 8', '5月 : 12, 11', '6月 : 15, 13'], stacked: ['系列 : 紙, Web', '1〜3月 : 8, 2', '4〜6月 : 6, 5'],
-    kpi: ['売上 : 1,000万円 : 前年比 +5%', '件数 : 42件 : 先月より +3'], compare: ['| 項目 | 案A | 案B |', '|---|---|---|', '| 値段 | ○ | △ |', '| 早さ | △ | ○ |']
+    kpi: ['売上 : 1,000万円 : 前年比 +5%', '件数 : 42件 : 先月より +3'],
+    board: ['[前] いまのやり方', '  受付 : 電話とメール', '[後] 新しいやり方', '  受付 : Web', '  #1 台帳を分ける', '[前] -> [後] : 変える'], compare: ['| 項目 | 案A | 案B |', '|---|---|---|', '| 値段 | ○ | △ |', '| 早さ | △ | ○ |']
   };
   function addDiagram(text, doc, type) {
     if (!TEMPLATE[type]) throw new Error('知らない種類');
@@ -1550,7 +1731,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     };
   }
 
-  var api = { addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
+  var api = { notesTo: notesTo, addSticky: addSticky, setSticky: setSticky, removeSticky: removeSticky, NOTE_WORD: NOTE_WORD, addNote: addNote, setLines: setLines, setDiagramHead: setDiagramHead, typeChoices: typeChoices, addDiagram: addDiagram, TEMPLATE: TEMPLATE, moveDiagram: moveDiagram, duplicateDiagram: duplicateDiagram, removeDiagram: removeDiagram, setCard: setCard, setTitle: setTitle, encodeText: encodeText, subtree: subtree, setLane: setLane, addBox: addBox, addEdge: addEdge, EDITABLE: EDITABLE, toggleMark: toggleMark, removeItem: removeItem, removeEdge: removeEdge, writeLayout: writeLayout, renameItem: renameItem, safeName: safeName, badInName: badInName, MOVABLE: MOVABLE, parseDoc: parseDoc, decodeBytes: decodeBytes, check: check, parseNumber: parseNumber, TYPES: TYPES, MAX_ITEMS: MAX_ITEMS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.DocParse = api;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -2027,6 +2208,150 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     return wrapSvg(W, H, body, 'tree');
   }
 
+  // ---- 図解 board（R9b-1）：いちばん外の枠は横に並べ、--- で次の段。枠の中は上から下、「a | b」は横 ----
+  var FRAME_FILL = ['#f4f7fc', '#e9f0f9', '#dfe8f5', '#d5e1f1', '#cbdaee', '#c1d3ea'];
+  var BOARD_MAX_FRAME = 5;   // 枠として描く深さ（0〜5 の6段。深い所は parse が知らせる）
+  function board(diag, d, opts) {
+    var fs = opts.fs, items = diag.items, pad = fs * 0.9, gap = fs * 0.7, hf = Math.max(11, Math.round(fs * 0.8));
+    var LIMIT = fs * 90;   // 横に長すぎる段は折り返す
+    var kids = items.map(function () { return []; }), roots = [], M = [], B = [], parentOf = [];
+    function asFrame(it) { return it.kind === 'frame' && it.depth <= BOARD_MAX_FRAME; }
+    items.forEach(function (it) {
+      var p = it.parent;
+      while (p != null && items[p].depth > BOARD_MAX_FRAME) p = items[p].parent;   // 7段目からは6段目の枠に並べる
+      parentOf[it.id] = p;
+      (p == null ? roots : kids[p]).push(it.id);
+    });
+    function marksW(it) { return it.marks.reduce(function (a, m) { return a + tw(m.text, Math.max(11, Math.round(fs * 0.78)), true) + 16; }, 0); }
+    function markGap(ids) { return ids.some(function (id) { return items[id].marks.length; }) ? fs * 1.2 : 0; }
+    function linesOf(list) {
+      var out = [];
+      list.forEach(function (id) { var c = items[id].across, last = out[out.length - 1]; if (c && last && last.across === c) last.ids.push(id); else out.push({ across: c, ids: [id] }); });
+      return out;
+    }
+    function mBox(it) {
+      var cell = !!it.across, lab = wrap(it.label, fs, fs * (cell ? 8 : 16), 3, it.kind === 'frame'), ds = it.desc ? wrap(it.desc, hf, fs * 16, 3) : [];
+      var numW = it.kind === 'step' ? fs * 2 : 0, tagW = it.tag ? tw(it.tag, hf, true) + hf * 1.2 + pad * 0.6 : 0;
+      var labH = lab.length * fs * 1.3, dsH = ds.length ? ds.length * hf * 1.3 + fs * 0.2 : 0;
+      return { lab: lab, ds: ds, labH: labH, dsH: dsH, numW: numW, tagW: tagW,
+        w: Math.max(Math.max(textW(lab, fs, it.kind === 'frame'), textW(ds, hf)) + pad * 2 + numW + tagW, fs * 4, marksW(it)),
+        h: Math.max(labH + dsH + pad * 1.2, it.kind === 'step' ? fs * 2.3 : 0) };
+    }
+    function mFrame(it) {
+      var head = wrap(it.label, fs, fs * 24, 2, true), ds = it.desc ? wrap(it.desc, hf, fs * 24, 2) : [];
+      var hh = head.length * fs * 1.3 + (ds.length ? ds.length * hf * 1.3 : 0) + pad * 0.6;
+      var L = linesOf(kids[it.id]);
+      L.forEach(function (l) {
+        l.ids.forEach(measure);
+        l.w = l.ids.reduce(function (a, id) { return a + M[id].w; }, 0) + gap * (l.ids.length - 1);
+        l.h = Math.max.apply(null, l.ids.map(function (id) { return M[id].h; }));
+        l.top = markGap(l.ids);
+      });
+      var inner = Math.max.apply(null, [0].concat(L.map(function (l) { return l.w; })));
+      return { frame: true, head: head, ds: ds, hh: hh, L: L,
+        w: Math.max(inner, textW(head, fs, true), textW(ds, hf), marksW(it)) + pad * 2,
+        h: pad * 0.8 + hh + L.reduce(function (a, l) { return a + l.top + l.h; }, 0) + gap * Math.max(0, L.length - 1) + pad };
+    }
+    function measure(id) { M[id] = asFrame(items[id]) ? mFrame(items[id]) : mBox(items[id]); }
+    // 置く：枠の中の1つだけの行は枠の幅いっぱい、「a | b」の行は余りを分ける
+    function put(id, x, y, w) {
+      var m = M[id];
+      B[id] = { x: x, y: y, w: w, h: m.h };
+      if (!m.frame) return;
+      var cy = y + pad * 0.8 + m.hh, iw = w - pad * 2;
+      m.L.forEach(function (l, li) {
+        cy += l.top;
+        if (!l.across) put(l.ids[0], x + pad, cy, iw);
+        else {
+          var extra = (iw - l.w) / l.ids.length, cx = x + pad;
+          l.ids.forEach(function (cid) { put(cid, cx, cy, M[cid].w + extra); cx += M[cid].w + extra + gap; });
+        }
+        cy += l.h + (li < m.L.length - 1 ? gap : 0);
+      });
+    }
+    var rows = [];
+    roots.forEach(function (id) { var rw = items[id].row || 0; (rows[rw] = rows[rw] || []).push(id); });
+    var y = 20;
+    rows.forEach(function (ids) {
+      if (!ids) return;
+      var x = 20, lineH = 0, top = 0;
+      ids.forEach(measure);
+      var chunk = [];
+      function flush() { top = markGap(chunk.map(function (c) { return c.id; })); chunk.forEach(function (c) { put(c.id, c.x, y + top, M[c.id].w); }); y += top + lineH + fs * 3; chunk = []; x = 20; lineH = 0; }
+      ids.forEach(function (id) {
+        if (chunk.length && x + M[id].w > 20 + LIMIT) flush();
+        chunk.push({ id: id, x: x }); x += M[id].w + fs * 2.5; lineH = Math.max(lineH, M[id].h);
+      });
+      if (chunk.length) flush();
+    });
+    // 動かした所（R9d）：外の枠・箱は図の中の位置、枠の中のものは枠の左上からの差。動かすと中身もついてくる
+    var lay = diag.layout || {};
+    function shift(id, dx, dy) { B[id].x += dx; B[id].y += dy; kids[id].forEach(function (c) { shift(c, dx, dy); }); }
+    items.forEach(function (it) {
+      var p = lay[it.pk], b = B[it.id], par = parentOf[it.id];
+      if (!p || p.x == null || !b) return;
+      var nx = par == null ? Math.max(0, p.x) : B[par].x + Math.max(pad * 0.3, p.x), ny = par == null ? Math.max(0, p.y) : B[par].y + Math.max(pad * 0.8 + M[par].hh, p.y);
+      shift(it.id, nx - b.x, ny - b.y);
+    });
+    for (var v = items.length - 1; v >= 0; v--) {   // 枠は中身に合わせて広げる（中から外へ）
+      if (!B[v] || !asFrame(items[v])) continue;
+      kids[v].forEach(function (c) { B[v].w = Math.max(B[v].w, B[c].x + B[c].w + pad - B[v].x); B[v].h = Math.max(B[v].h, B[c].y + B[c].h + pad - B[v].y); });
+    }
+    var W = Math.max.apply(null, B.map(function (b) { return b.x + b.w; }).concat([200])) + 20, H = Math.max.apply(null, B.map(function (b) { return b.y + b.h; }).concat([40])) + 20;
+    var body = '', E = boardEdges(diag, B, opts);
+    items.forEach(function (it) { B[it.id].p = parentOf[it.id]; if (asFrame(it)) body += drawFrame(d, it, B[it.id], M[it.id], opts); });   // 枠を先に（箱と入れ子にしない）
+    body += E.paths;   // 線は枠の上・箱の下。言葉はいちばん上
+    items.forEach(function (it) { if (!asFrame(it)) body += drawCard(d, it, B[it.id], M[it.id], opts); });
+    body += E.labels;
+    return wrapSvg(W, H, body, 'board');
+  }
+  // 線：ふちからふちへ。=> は強調の色で太く。自分へ戻る線は右に小さな輪
+  function boardEdges(diag, B, opts) {
+    var paths = '', labels = '', fs = Math.max(11, Math.round(opts.fs * 0.85)), strongId = ARW + '-s';
+    if (diag.edges.some(function (e) { return e.strong; })) paths += '<defs><marker id="' + strongId + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="' + C.accent + '"/></marker></defs>';
+    diag.edges.forEach(function (e) {
+      var a = B[e.from], b = B[e.to], lay = edgeLay(diag, e.pk), p;
+      if (!a || !b) return;
+      if (e.from === e.to) {
+        var x = a.x + a.w, y1 = a.y + a.h * 0.3, y2 = a.y + a.h * 0.7, k = opts.fs * 2;
+        p = { d: 'M' + r(x) + ' ' + r(y1) + ' C' + r(x + k) + ' ' + r(y1 - k / 2) + ' ' + r(x + k) + ' ' + r(y2 + k / 2) + ' ' + r(x + 2) + ' ' + r(y2), mx: x + k * 0.8, my: (y1 + y2) / 2 };
+      } else p = lay.route ? routeEdge(lay.route, a, b, opts.fs) : freeEdge(a, b, lay.bend, hasReverse(diag, e) ? opts.fs * 1.6 : 0);
+      var at = e.strong ? ' stroke="' + C.accent + '" stroke-width="3"' : ' stroke="' + C.edge + '" stroke-width="2"', ea = edgeAttrs(lay, true);
+      if (e.strong) ea = ea.replace(new RegExp('url\\(#' + ARW + '\\)', 'g'), 'url(#' + strongId + ')');
+      paths += '<path class="edge' + (e.strong ? ' strong' : '') + '"' + ekAttr(e.pk) + ' d="' + p.d + '" fill="none"' + at + ea + '/>';
+      // 縦の線の言葉は線の右へ（枠の名前は左寄せなので隠さない）
+      var side = !lay.label && e.from !== e.to && Math.abs(b.y + b.h / 2 - a.y - a.h / 2) > Math.abs(b.x + b.w / 2 - a.x - a.w / 2) ? tw(e.label || '', fs) / 2 + 12 : 0;
+      if (e.label) labels += edgeLabel(e.label, p.mx + side + (lay.label ? lay.label[0] : 0), p.my + (lay.label ? lay.label[1] : 0), fs, e.pk);
+    });
+    return { paths: paths, labels: labels };
+  }
+  function pAttr(b) { return b.p != null ? ' data-p="' + b.p + '"' : ''; }   // 入っている枠（動かすとき、枠からの差に直す）
+  function drawFrame(d, it, b, m, opts) {
+    var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it);
+    var hy = b.y + pad * 0.8, out = itemOpen(d, it, pAttr(b)).replace('class="item"', 'class="item frame"') +
+      '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="12" fill="' + FRAME_FILL[Math.min(it.depth, FRAME_FILL.length - 1)] + '" stroke="' + (k ? MARK_COLOR[k] : '#b8c7de') + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>' +
+      textEl(m.head, b.x + pad, hy + m.head.length * fs * 1.3 / 2, fs, { anchor: 'start', bold: true });
+    if (m.ds.length) out += textEl(m.ds, b.x + pad, hy + m.head.length * fs * 1.3 + m.ds.length * hf * 1.3 / 2, hf, { anchor: 'start', fill: C.sub });
+    return out + (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') + badges(it, b.x + b.w, b.y - 3, fs, true) + '</g>';
+  }
+  function drawCard(d, it, b, m, opts) {
+    var fs = opts.fs, pad = fs * 0.9, hf = Math.max(11, Math.round(fs * 0.8)), k = strongest(it), cell = !!it.across;
+    var stroke = k ? MARK_COLOR[k] : C.line, fill = k === 'red' ? '#fff7f7' : k === 'green' ? '#f6fcf8' : k === 'yellow' ? '#fffcf2' : C.box;
+    var out = itemOpen(d, it, pAttr(b)) + '<rect class="box" x="' + r(b.x) + '" y="' + r(b.y) + '" width="' + r(b.w) + '" height="' + r(b.h) + '" rx="8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (k ? 2.5 : 1.4) + '"/>';
+    var top = b.y + (b.h - m.labH - m.dsH) / 2, tx = b.x + pad + m.numW, mid = cell && !m.numW && !m.tagW;
+    if (m.numW) {
+      var cr = fs * 0.72, cx = b.x + pad + cr, cy = b.y + b.h / 2;
+      out += '<circle class="num" cx="' + r(cx) + '" cy="' + r(cy) + '" r="' + r(cr) + '" fill="' + C.accent + '"/>' + textEl([String(it.num)], cx, cy, Math.round(fs * 0.85), { bold: true, fill: '#fff' });
+    }
+    out += textEl(m.lab, mid ? b.x + b.w / 2 : tx, top + m.labH / 2, fs, { anchor: mid ? 'middle' : 'start', bold: it.kind === 'frame' });
+    if (m.ds.length) out += textEl(m.ds, mid ? b.x + b.w / 2 : tx, top + m.labH + fs * 0.2 + (m.dsH - fs * 0.2) / 2, hf, { anchor: mid ? 'middle' : 'start', fill: C.sub });
+    if (it.tag) {
+      var pw = m.tagW - pad * 0.6, ph = hf * 1.5, px = b.x + b.w - pad * 0.6 - pw, py = b.y + (b.h - ph) / 2;
+      out += '<g class="tag"><rect x="' + r(px) + '" y="' + r(py) + '" width="' + r(pw) + '" height="' + r(ph) + '" rx="' + r(ph / 2) + '" fill="' + C.head + '"/>' + textEl([it.tag], px + pw / 2, py + ph / 2, hf, { fill: C.sub, bold: true }) + '</g>';
+    }
+    return out + (info(it, opts) ? cornerDot(b.x + b.w - 1, b.y + 1) : '') + badges(it, b.x + b.w, b.y - 3, fs, true) + '</g>';
+  }
+
   // ---- 数字（棒グラフ） ----
   function niceStep(range) {
     var raw = range / 5, p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p;
@@ -2442,6 +2767,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       case 'stacked': return series(diag, d, opts, true);
       case 'kpi': return kpi(diag, d, opts);
       case 'compare': return compare(diag, d, opts);
+      case 'board': return board(diag, d, opts);
     }
     return '';
   }
@@ -2591,7 +2917,9 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   }
 
   var BEVEL = 1.2, SHADOW_H = 0.5, LIFT = BEVEL + 1.1;   // 箱の底（LIFT − BEVEL = 1.1）は影（0.5）より上
-  var DEPTH = { flowchart: 20, flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14 };
+  var DEPTH = { flowchart: 20, flow: 22, lanes: 22, tree: 16, timeline: 10, chart: 0, kpi: 18, compare: 14, board: 14 };
+  var FRAME_D = 6;   // 図解の枠は浅い台。中の箱は、枠の台の上に積む
+  function boardBase(diag, i) { var it = diag.type === 'board' && diag.items[i]; return it ? Math.min(it.depth, 6) * (FRAME_D + BEVEL * 2 + 1) : 0; }
   var CHARTS = { chart: 1, pie: 1, donut: 1, line: 1, hbar: 1, stacked: 1 };
   // 円グラフの扇は「M x y L x y … Z」の多角形。中心からの点に直す
   function polyOf(el) {
@@ -2650,10 +2978,10 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         });
         segs.forEach(function (el) { used.add(el); });
       } else {
-        regions = [{ r: br, poly: poly, depth: DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
+        regions = [{ r: br, poly: poly, depth: g.classList.contains('frame') ? FRAME_D : DEPTH[diag.type] || 16, fill: box.getAttribute('fill') || '#fff', side: box.getAttribute('stroke') || '#5b7db1' }];
       }
       used.add(box);
-      var group = new T.Group(), it = { i: i, group: group, center: null, top: 0, meshes: [], mats: [] };
+      var group = new T.Group(), it = { i: i, group: group, center: null, top: 0, meshes: [], mats: [] }, base = boardBase(diag, i);
       regions.forEach(function (R) {
         var r = R.r, d = R.depth;
         var face = R.solid ? [] : mine.filter(function (el) { return el !== box && inside(anchorPoint(el), r); });
@@ -2670,7 +2998,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         var mesh = new T.Mesh(geo, [capMat, sideMat]);
         // 箱は板から少し浮かせる：角の丸み（bevel）が板の下にもぐり、影の面が箱の側面を切ると、
         // 大きく回したときにその交わりが縞・階段になる。板 0 → 影 SHADOW_H → 箱の底 の順に、どの面も交わらない
-        var c = P(r.x + r.w / 2, r.y + r.h / 2, LIFT);
+        var c = P(r.x + r.w / 2, r.y + r.h / 2, LIFT + base);
         mesh.position.copy(c);
         orient(mesh);
         mesh.userData.item = i;
@@ -2680,7 +3008,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
           var tex = keep(texture(r, face, R.poly ? null : (R.fill || '#ffffff')));   // ひし形などは、形の外を透かす
           var fm = keep(new T.MeshBasicMaterial({ map: tex, transparent: true }));
           var plane = new T.Mesh(keep(new T.PlaneGeometry(r.w * S, r.h * S)), fm);
-          plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, LIFT + d + BEVEL + 0.4));   // 箱の上の面（丸みの分を含む）より少し上
+          plane.position.copy(P(r.x + r.w / 2, r.y + r.h / 2, LIFT + base + d + BEVEL + 0.4));   // 箱の上の面（丸みの分を含む）より少し上
           orient(plane);
           plane.userData.item = i;
           group.add(plane);
@@ -2691,7 +3019,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
         sh.position.copy(ground ? P(r.x + r.w / 2 + 4, r.y + r.h / 2 + 6, SHADOW_H) : P(r.x + r.w / 2 + 5, r.y + r.h / 2 + 7, SHADOW_H));
         orient(sh);
         group.add(sh);
-        it.top = Math.max(it.top, LIFT + d);
+        it.top = Math.max(it.top, LIFT + base + d);
       });
       // 扇の囲みの真ん中や点の平均は、扇の外（ドーナツの穴など）に出ることがある。2D が書いた扇の真ん中の角の点を使う
       var mid = box.getAttribute('data-cx') ? [+box.getAttribute('data-cx'), +box.getAttribute('data-cy')] : poly && poly.length ? poly.reduce(function (a, p) { return [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length]; }, [0, 0]) : [br.x + br.w / 2, br.y + br.h / 2];
@@ -2714,12 +3042,14 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       items[i] = it;
     });
 
+    // 図解：その点の下でいちばん高い台の上（線が枠の台にもぐらない）
+    function topAt(x, y) { var t = 6; items.forEach(function (it) { if (it && it.box && inside({ x: x, y: y }, it.box)) t = Math.max(t, it.top); }); return t; }
     // 矢印 → 管と、流れる光
     var flows = [];
     Array.prototype.forEach.call(svg.querySelectorAll('path.edge'), function (p, k) {
       used.add(p);
       var len = p.getTotalLength(), n = Math.max(8, Math.min(60, Math.round(len / 12))), pts = [];
-      for (var j = 0; j <= n; j++) { var q = p.getPointAtLength(len * j / n); pts.push(P(q.x, q.y, ground ? 5 : 6)); }
+      for (var j = 0; j <= n; j++) { var q = p.getPointAtLength(len * j / n); pts.push(P(q.x, q.y, diag.type === 'board' ? topAt(q.x, q.y) + 3 : ground ? 5 : 6)); }
       var curve = new T.CatmullRomCurve3(pts);
       var tube = new T.Mesh(keep(new T.TubeGeometry(curve, n * 2, 1.6 * S, 8, false)), keep(new T.MeshStandardMaterial({ color: 0x8a9bb5, roughness: 0.4 })));
       rootG.add(tube);
@@ -2748,7 +3078,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
       els.forEach(function (el) { used.add(el); });
       var sp = new T.Sprite(keep(new T.SpriteMaterial({ map: keep(texture(lr, els, null)), transparent: true })));
       sp.scale.set(lr.w * S, lr.h * S, 1);
-      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, (DEPTH[diag.type] || 16) + LIFT + 4));
+      sp.position.copy(P(lr.x + lr.w / 2, lr.y + lr.h / 2, diag.type === 'board' ? items.reduce(function (m, it) { return it ? Math.max(m, it.top) : m; }, 6) + 6 :   /* 言葉は箱の陰に隠れないよう、いちばん高い台より上 */ (DEPTH[diag.type] || 16) + LIFT + 4));
       sp.renderOrder = 5;
       rootG.add(sp);
     });
@@ -3567,7 +3897,18 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     return true;
   }
   // 図 i の部品 pk の配置を変える（patch が null なら、その図の配置を全部消す）
+  // 図解（R9d）：枠の中のものは、枠の左上からの差で残す（枠を動かすと中身もついてくる）。来るのは図の中の位置
+  function boardRel(i, pk, v) {
+    var d = state.doc.diagrams[i];
+    if (!d || d.type !== 'board' || !v || v.x == null) return v;
+    var it = d.items.filter(function (x) { return x.pk === pk; })[0], svg = $('dg' + i).querySelector('.svg-wrap svg'), g = it && svg && svg.querySelector('.item[data-i="' + it.id + '"]');
+    var pb = g && g.hasAttribute('data-p') && svg.querySelector('.item[data-i="' + g.getAttribute('data-p') + '"] .box');
+    if (!pb) return v;
+    var bb = pb.getBBox();
+    return Object.assign({}, v, { x: Math.round(v.x - bb.x), y: Math.round(v.y - bb.y) });
+  }
   function setLayout(i, pk, patch, merge) {
+    patch = boardRel(i, pk, patch);
     var doc = state.doc, d = doc.diagrams[i];
     var obj = doc.layout ? JSON.parse(JSON.stringify(doc.layout)) : { v: 1, diagrams: [] };
     var k = d.layoutIndex;
@@ -3587,7 +3928,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     applyText(text, true, merge);
   }
   // ---- 形・色・大きさ・線の形（R8b-2）：ポップアップの下の欄。値は layout にだけ書く ----
-  var STYLABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  var STYLABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, board: 1 };   // board：名前を直す・右クリック（形と色は、まだ図解では描かないので出さない）
   var OPT_BOX = [
     ['shape', '形', [['', '自動'], ['rect', '四角'], ['round', '角丸'], ['ellipse', '楕円'], ['diamond', 'ひし形'], ['para', '平行四辺形'], ['hexagon', '六角形'], ['chevron', '矢羽根'], ['cylinder', '円柱'], ['doc', '書類']]],
     ['color', '色', [['', '自動'], ['blue', '青'], ['green', '緑'], ['yellow', '黄'], ['red', '赤'], ['gray', '灰'], ['purple', '紫']]],
@@ -3830,7 +4171,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   }
   function previewDrag(t, v) {
     var d = state.doc.diagrams[t.i], keep = d.layout, tmp = JSON.parse(JSON.stringify(keep || {}));
-    tmp[t.pk] = Object.assign(tmp[t.pk] || {}, v);
+    tmp[t.pk] = Object.assign(tmp[t.pk] || {}, t.kind === 'box' ? boardRel(t.i, t.pk, v) : v);
     d.layout = tmp;
     try { redrawDiagram(t.i, true); } finally { d.layout = keep; }
   }
@@ -3972,7 +4313,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     if (g) g.classList.add('sel');
     state.scenes.forEach(function (sc, k) { if (sc) { sc.select(k === d ? i : null); redraw(k); } });
     state.sel = { d: d, i: i }; state.selEdge = null;
-    var n = noteFor(it.key), h = '<h2>' + esc(it.label) + '</h2>';
+    var n = noteFor(it.key) || (it.kind === 'frame' ? noteFor(it.key.slice(1, -1)) : null), h = '<h2>' + esc(it.label) + '</h2>';   // 図解の枠は「## 枠の名前」の説明も使う
     h += it.marks.map(function (m) { return '<span class="badge ' + m.kind + '">' + esc(m.text) + '</span>'; }).join('');
     var extra = [];
     if (it.dateText) extra.push('日付：' + esc(it.dateText) + (it.end ? '（' + esc(it.end) + ' まで）' : ''));
@@ -3984,6 +4325,13 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     }
     if (it.lane) extra.push('担当：' + esc(it.lane));
     if (diag.type === 'flowchart') extra.push('形：' + ({ terminal: '端（はじめ・終わり）', decision: '判断', subprocess: '別の手順', io: '入力・出力', process: '処理' })[it.style.shape]);
+    if (diag.type === 'board') {
+      if (it.kind === 'frame') extra.push('枠（中に ' + diag.items.filter(function (x) { return x.parent === it.id; }).length + ' 個）');
+      if (it.parent != null) extra.push('入っている枠：' + esc(diag.items[it.parent].label));
+      if (it.kind === 'step') extra.push('番号：' + it.num);
+      if (it.desc) extra.push('説明：' + esc(it.desc));
+      if (it.tag) extra.push('タグ：' + esc(it.tag));
+    }
     if (it.cells) extra.push(diag.options.map(function (o, j) { return esc(o) + '：' + esc(it.cells[j].text || '－'); }).join('<br>'));
     if (diag.edges) {
       var outs = diag.edges.filter(function (e) { return e.from === it.id; }).map(function (e) { return esc(diag.items[e.to].label) + (e.label ? '（' + esc(e.label) + '）' : ''); });
@@ -3996,7 +4344,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>' + (n ? '' : '<p class="acts note-add"><button type="button" class="act" data-act="add-note">＋ 説明を書く</button></p>');
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
-    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + (diag.end ? '<button type="button" class="act" data-act="note-add">＋ 付箋</button>' : '') + '</p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
+    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + (diag.end ? '<button type="button" class="act" data-act="note-add">＋ 付箋</button>' : '') + '</p>' + (diag.type === 'board' ? '' : styleHtml(d, it.pk, partNow(diag, it.pk), false));
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();
@@ -4023,9 +4371,10 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
   }
   function deleteItem(d, i) {
     var diag = state.doc.diagrams[d], it = diag.items[i], under = diag.type === 'tree' && it ? P.subtree(diag, i).length - 1 : 0;
-    if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + '（Ctrl+Z で戻せます）。よいですか？')) return;
+    var nn = it ? P.notesTo(diag, diag.type === 'tree' ? P.subtree(diag, i) : [i]).length : 0, nt = nn ? '付けていた付箋 ' + nn + ' 枚は、箱から外して図に残します' : '';
+    if (!it || !window.confirm('箱「' + it.label + '」を消します。' + (under ? 'その下の ' + under + ' 個の箱も消えます' : 'つながっている線も消えます') + (nt ? '。' + nt : '') + '（Ctrl+Z で戻せます）。よいですか？')) return;
     closePanel();
-    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました');
+    editMd(function () { return P.removeItem(state.text, state.doc, d, i); }, '箱を消せ', '箱「' + it.label + '」を消しました' + (nt ? '（' + nt.replace('します', 'しました') + '）' : ''));
   }
   function deleteEdge(d, pk) {
     var diag = state.doc.diagrams[d], e = diag.edges.filter(function (x) { return x.pk === pk; })[0];
@@ -4573,7 +4922,7 @@ window.DV_PROMPT = "あなたは、職場の資料を「図にできる md」に
     var nb = e.target.closest && e.target.closest('.add-box');
     if (nb) {
       var nd = +nb.getAttribute('data-d'), r;
-      try { r = P.addBox(state.text, state.doc, nd); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
+      try { r = P.addBox(state.text, state.doc, nd, state.sel && state.sel.d === nd ? state.sel.i : null); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
       applyText(r.text, true);
       var ni = state.doc.diagrams[nd].items.filter(function (x) { return x.label === r.name; })[0];
       if (ni) startRename(nd, ni.id, true);   // すぐ名前を入れられるように
