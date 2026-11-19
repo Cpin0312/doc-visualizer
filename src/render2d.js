@@ -979,7 +979,9 @@
   }
   // 箱の場所を svg の文字から読む（rect.box か circle）。なければ null
   function boxOf(s, d, i) {
-    var at = s.indexOf('class="item" data-d="' + d + '" data-i="' + i + '"'); if (at < 0) return null;
+    var tail = ' data-d="' + d + '" data-i="' + i + '"', at = s.indexOf('class="item"' + tail);
+    if (at < 0) at = s.indexOf('class="item frame"' + tail);   // 図解の枠
+    if (at < 0) return null;
     var seg = s.slice(at, at + 600), r = /<rect class="box" x="([\d.-]+)" y="([\d.-]+)" width="([\d.]+)" height="([\d.]+)"/.exec(seg);
     if (r) return { x: +r[1], y: +r[2], w: +r[3], h: +r[4] };
     var c = /<circle cx="([\d.-]+)" cy="([\d.-]+)" r="([\d.]+)"/.exec(seg);

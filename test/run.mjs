@@ -1741,6 +1741,19 @@ async function savePptx(T, md, tag) {
     for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, modifiers: process.platform === 'darwin' ? 4 : 2 }); await sleep(400);
     const t19 = await B.evalJs('DocVisualizer.text()'), d19 = P.parseDoc(t19).diagrams[0], s19 = (d19.stickies || []).filter(n => n.text === '枠の付箋の試し')[0];
     const err19 = await B.evalJs(`document.getElementById('error').hidden ? '' : document.getElementById('error').textContent`);
+    // B-19 後半：枠に付けた付箋は枠の近くに出て、枠への点線があり、枠をドラッグするとついてくる
+    const nOf = () => B.evalJs(`(() => { const g = [...document.querySelectorAll('#dg0 .sticky')].filter(x => (x.getAttribute('aria-label') || '').includes('枠の付箋の試し'))[0], f = document.querySelector('#dg0 .item.frame[aria-label="台帳"] .box'); if (!g || !f) return null; const a = g.querySelector('.box').getBBox(), b = f.getBBox(); return { nx: a.x, ny: a.y, nw: a.width, nh: a.height, fx: b.x, fy: b.y, fw: b.width, fh: b.height, links: document.querySelectorAll('#dg0 line.note-link').length }; })()`);
+    const n0 = await nOf(), near = n0 && n0.nx + n0.nw > n0.fx && n0.nx < n0.fx + n0.fw + 20 && n0.ny + n0.nh > n0.fy - 4 && n0.ny < n0.fy + n0.fh;
+    fp = await frameAt('台帳');
+    await B.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: fp.x, y: fp.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (let k = 1; k <= 6; k++) { await B.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: fp.x, y: fp.y + 40 * k / 6, button: 'left', buttons: 1 }); await sleep(40); }
+    await B.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: fp.x, y: fp.y + 40, button: 'left', buttons: 0, clickCount: 1 }); await sleep(400);
+    await keyPress('Escape', 'Escape', 27);
+    const n1 = await nOf(), dyF = n1 && n1.fy - n0.fy, dyN = n1 && n1.ny - n0.ny;
+    const tD = await B.evalJs('DocVisualizer.text()');
+    if (tD !== t19) await undo();
+    ok('図解 B-19 後半：枠に付けた付箋は枠のそばに出て枠への点線があり、枠をドラッグすると同じだけついてくる',
+      near && n0.links >= 1 && dyF > 20 && Math.abs(dyF - dyN) < 1, JSON.stringify({ n0, dyF, dyN }));
     await undo();
     ok('図解 B-19：枠に「＋ 付箋」で付けると note [台帳] : … と書かれ、枠に付く。Ctrl+Z で戻る',
       t19.includes('note [台帳] : 枠の付箋の試し @黄') && s19 && d19.items[s19.to] && d19.items[s19.to].label === '台帳' && !err19 && (await B.evalJs('DocVisualizer.text()')) === tA, JSON.stringify({ has: t19.includes('note [台帳]'), to: s19 && s19.to, err19 }));
