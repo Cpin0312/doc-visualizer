@@ -172,6 +172,21 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
         P.notesTo(fd1.diagrams[0], [1]).length === 1 && b1.split('\n')[4] === 'note [B] : 枠のメモ @黄' && bd1.diagrams[0].stickies[0].to === 0,
         JSON.stringify([f1.split('\n')[3], f2.split('\n'), b1.split('\n')[4]]));
     }
+    // ---- R9e-2：図解の編集（足す・線・消す・印） ----
+    {
+      const em = ['# t', '~~~board 図', '[A] 外', '  x', '  [B]', '    p | q | r', '[C]', '  y', 'x -> y', 'q -> y', '[B] -> [C]', 'note q : メモ @黄', '~~~'].join('\n'), ed = P.parseDoc(em), eg = ed.diagrams[0], idOf = l => eg.items.find(i => (i.kind === 'frame' ? '[' + i.label + ']' : i.label) === l).id;
+      const a1 = P.addBox(em, ed, 0, idOf('[B]')).text, a2 = P.addBox(em, ed, 0, null).text;
+      const e1 = P.addEdge(em, ed, 0, idOf('p'), idOf('[C]'));
+      const r1 = P.removeItem(em, ed, 0, idOf('q')), r2 = P.removeItem(em, ed, 0, idOf('[A]'));
+      const m1 = P.toggleMark(em, ed, 0, idOf('[C]'), 'red', '急ぎ'), md1 = P.parseDoc(m1);
+      const okAll = [a1, a2, e1, r1, r2, m1].every(x => !P.parseDoc(x).warnings.length);
+      ok('図解（編集）：選んだ枠の中に箱を足し、線を引き、横の箱は1つだけ消して線と付箋を直し、枠は中身ごと消す。枠の印は ] の外',
+        okAll && a1.split('\n')[6] === '    新しい箱' && a2.split('\n')[8] === '  新しい箱' && e1.split('\n')[12] === 'p -> [C]' && P.parseDoc(e1).diagrams[0].edges.length === 4 &&
+        r1.split('\n')[5] === '    p | r' && !r1.includes('q -> y') && r1.includes('note メモ @黄') && P.parseDoc(r1).diagrams[0].edges.length === 2 &&
+        !/\[A\]|  x|\[B\]|p \|/.test(r2.replace('~~~board 図', '')) && P.parseDoc(r2).diagrams[0].items.length === 2 && P.parseDoc(r2).diagrams[0].edges.length === 0 &&
+        m1.split('\n')[6] === '[C] !急ぎ' && md1.diagrams[0].items[idOf('[C]')].marks[0].text === '急ぎ',
+        JSON.stringify({ okAll, a1: a1.split('\n')[6], a2: a2.split('\n')[8], e1: e1.split('\n')[12], r1: r1.split('\n').slice(2, 12), r2: r2.split('\n'), m1: m1.split('\n')[6] }));
+    }
     const tdoc = P.parseDoc(P.addDiagram('# T\n', P.parseDoc('# T\n'), 'board'));
     ok('図解：「図を足す」のひな形が知らせなしで読め、描ける', tdoc.diagrams[0].type === 'board' && !tdoc.warnings.length && !layoutOk(tdoc.diagrams[0], RC.DocRender.svg(tdoc.diagrams[0], 0, { fs: 15 })).length);
   }

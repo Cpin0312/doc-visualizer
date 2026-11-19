@@ -1293,7 +1293,7 @@
     var nb = e.target.closest && e.target.closest('.add-box');
     if (nb) {
       var nd = +nb.getAttribute('data-d'), r;
-      try { r = P.addBox(state.text, state.doc, nd); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
+      try { r = P.addBox(state.text, state.doc, nd, state.sel && state.sel.d === nd ? state.sel.i : null); } catch (er) { showError('箱を足せませんでした：' + er.message); return; }
       applyText(r.text, true);
       var ni = state.doc.diagrams[nd].items.filter(function (x) { return x.label === r.name; })[0];
       if (ni) startRename(nd, ni.id, true);   // すぐ名前を入れられるように

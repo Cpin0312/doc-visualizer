@@ -903,8 +903,8 @@
     if (!has) {
       var mt = trim(label || '') || MARK_DEFAULT[kind], bad = badInName(mt).concat(/[\s\u3000]/.test(mt) ? ['空白'] : []);
       if (bad.length) throw new Error('印の言葉に ' + bad.join(' ') + ' は使えません');
-      var sp0 = it.spans[0];
-      replaceSpans(t, [{ line: sp0.line, start: sp0.end, end: sp0.end, text: ' ' + sym + mt }]);
+      var sp0 = it.spans[0], at0 = it.kind === 'frame' ? t.lines[sp0.line - 1].replace(/[\s\u3000]+$/, '').length : sp0.end;   // 図解の枠は行の終わり（] の外）に
+      replaceSpans(t, [{ line: sp0.line, start: at0, end: at0, text: ' ' + sym + mt }]);
       return joinText(t);
     }
     it.spans.slice().sort(function (a, b) { return b.line - a.line || b.start - a.start; }).forEach(function (sp) {
@@ -919,20 +919,63 @@
     });
     return joinText(t);
   }
-  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1, tree: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
+  var EDITABLE = { flow: 1, lanes: 1, flowchart: 1, tree: 1, board: 1 };   // 箱を足す・線を引く・消すができる図（行の場所を覚えている図）
   // 図の閉じの行のすぐ前に1行足す
   function appendLine(text, d, line) {
     var t = splitText(text);
     if (d.end) t.lines.splice(d.end - 1, 0, line); else t.lines.push(line);
     return joinText(t);
   }
+  // ---- 図解の編集（R9e-2）：箱を足す・線を引く・消す ----
+  function boardDesc(d, id) { var out = [id]; d.items.forEach(function (x) { if (x.parent != null && out.indexOf(x.parent) >= 0 && out.indexOf(x.id) < 0) out.push(x.id); }); return out; }
+  function ownLine(it) { var sp = (it.spans || []).filter(function (q) { return !q.edge && !q.bad; })[0]; return sp ? sp.line : null; }
+  function boardAddBox(text, doc, di, fid, name) {
+    var d = doc.diagrams[di], t = splitText(text), fr = fid != null && d.items[fid] && d.items[fid].kind === 'frame' ? d.items[fid] : null;
+    if (!fr) fr = d.items.filter(function (x) { return x.kind === 'frame' && x.parent == null; }).pop() || null;
+    if (!fr) { t.lines.splice(d.end - 1, 0, name); return joinText(t); }
+    var ids = boardDesc(d, fr.id), last = Math.max.apply(null, ids.map(function (k) { return ownLine(d.items[k]) || 0; }));
+    var kid = d.items.filter(function (x) { return x.parent === fr.id; })[0], ind = kid ? /^[ \t　]*/.exec(t.lines[ownLine(kid) - 1])[0] : /^[ \t　]*/.exec(t.lines[ownLine(fr) - 1])[0] + '  ';
+    t.lines.splice(last, 0, ind + name);
+    return joinText(t);
+  }
+  function boardRef(d, it) {
+    if (it.kind === 'frame') return '[' + it.label + ']';
+    var same = d.items.filter(function (x) { return x.kind !== 'frame' && x.key === it.key; }).length;
+    return same > 1 && it.parent != null ? '[' + d.items[it.parent].label + '] ' + it.label : it.label;
+  }
+  function boardAddEdge(text, doc, di, from, to) {
+    var d = doc.diagrams[di], a = d.items[from], b = d.items[to], out = appendLine(text, d, boardRef(d, a) + ' -> ' + boardRef(d, b));
+    var nd = parseDoc(out).diagrams[di], ok2 = nd && nd.edges.some(function (e) { return nd.items[e.from].pk === a.pk && nd.items[e.to].pk === b.pk; });
+    if (!ok2) throw new Error('同じ名前の箱があり、線の端を決められない（名前を直してから引いてください）');
+    return out;
+  }
+  function boardRemove(text, doc, di, id) {
+    var d = doc.diagrams[di], ids = boardDesc(d, id), t = splitText(text), drop = {}, cellCut = {};
+    ids.forEach(function (k) {
+      var it = d.items[k], ln = ownLine(it);
+      if (ln == null) throw new Error('この箱の場所が md の中で分からない');
+      if (it.across) { var row = d.items.filter(function (x) { return x.across === it.across; }); (cellCut[ln] = cellCut[ln] || { row: row, gone: [] }).gone.push(row.indexOf(it)); }
+      else drop[ln] = true;
+      (it.spans || []).forEach(function (q) { if (q.edge) drop[q.line] = true; });   // その箱が端の線の行
+    });
+    Object.keys(cellCut).forEach(function (ln) {
+      var c = cellCut[ln], L = t.lines[ln - 1], ind = /^[ \t　]*/.exec(L)[0], parts = L.slice(ind.length).split(/[\s　]*[|｜][\s　]*/);
+      var keep = parts.filter(function (p, k) { return c.gone.indexOf(k) < 0; });
+      if (!keep.length || parts.length !== c.row.length) drop[ln] = true; else t.lines[ln - 1] = ind + keep.join(' | ');
+    });
+    fixNoteLines(t, d, ids, null);   // 付けていた付箋は図に残す
+    Object.keys(drop).map(Number).sort(function (x, y) { return y - x; }).forEach(function (ln) { t.lines.splice(ln - 1, 1); });
+    var pks = ids.map(function (k) { return d.items[k].pk; });
+    return dropLayoutParts(joinText(t), doc, d, function (pk) { return pk.split('>').some(function (x) { return pks.indexOf(x) >= 0; }); });
+  }
   // 箱を足す：「新しい箱」（あれば 2, 3…）。lanes は最初の担当に入れる。{ text, name } を返す
-  function addBox(text, doc, di) {
+  function addBox(text, doc, di, fid) {
     var d = doc.diagrams[di];
     if (!d || !EDITABLE[d.type]) throw new Error('この図には箱を足せない');
     var used = {}, name = '新しい箱', n = 1;
     d.items.forEach(function (it) { used[it.key] = 1; });
     while (used[nk(name)]) name = '新しい箱' + (++n);
+    if (d.type === 'board') return { text: boardAddBox(text, doc, di, fid, name), name: name };   // 選んだ枠（なければ最後の外の枠）の中へ
     return { text: appendLine(text, d, (d.type === 'tree' ? '- ' : d.type === 'lanes' && d.lanes && d.lanes[0] ? '[' + d.lanes[0] + '] ' : '') + name), name: name };
   }
   // 線を引く：「A -> B」の行を足す（lanes は両方の担当も書く）
@@ -940,6 +983,7 @@
     var d = doc.diagrams[di], a = d && d.items[from], b = d && d.items[to];
     if (!a || !b || !EDITABLE[d.type] || d.type === 'tree') throw new Error('この図には線を引けない');
     if (from === to) throw new Error('同じ箱には線を引けない');
+    if (d.type === 'board') return boardAddEdge(text, doc, di, from, to);
     var ln = function (it) { return (d.type === 'lanes' && it.lane ? '[' + it.lane + '] ' : '') + it.label; };
     return appendLine(text, d, ln(a) + ' -> ' + ln(b));
   }
@@ -1026,6 +1070,7 @@
   // 箱を消す（その箱が出てくる行すべて）。shortcut: layout の古い置き場所は残る（害はない）。同じ名前で足し直すと前の場所に出る
   function removeItem(text, doc, di, id) {
     var d = doc.diagrams[di], it = d && d.items[id];
+    if (d && it && d.type === 'board') return boardRemove(text, doc, di, id);
     if (!it || !it.spans || !it.spans.length || it.spans.some(function (sp) { return sp.bad; })) throw new Error('この箱の場所が md の中で分からない');
     var plan = {}, ids = d.type === 'tree' ? subtree(d, id) : [id];   // 木は、下の箱も一緒に消す（残すと、ちがう親の下に入るため）
     ids.forEach(function (k) { (d.items[k].spans || []).forEach(function (sp) { if (!sp.bad) (plan[sp.line] = plan[sp.line] || { drop: [] }).drop.push(sp.seg); }); });
