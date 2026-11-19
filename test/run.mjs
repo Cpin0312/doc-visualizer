@@ -147,6 +147,21 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     ok('図解（動かす）：外の枠は書いた位置へ・中身もついてくる。枠の中の箱は枠からの差で置き、枠はそれに合わせて広がる。枠の外や名前の上には出ない',
       !mv.dd.warnings.length && mv.k('[A]').x === 300 && mv.k('[A]').y === 260 && eq(dA, dx2) && mv.k('z').x === mv.k('[B]').x + 30 && mv.k('z').y === mv.k('[B]').y + 200 && inR(mv.k('z'), mv.k('[B]')) && inR(mv.k('[B]'), mv.k('[A]')) && mv.k('[B]').h > base.k('[B]').h &&
       inR(neg.k('y'), neg.k('[B]')) && neg.k('y').y > neg.k('[B]').y + 15, JSON.stringify({ A: mv.k('[A]'), B: mv.k('[B]'), z: mv.k('z'), dA, dx2, ny: neg.k('y'), nB: neg.k('[B]') }));
+    // ---- R9e-1：図解の名前を直す（線の行・「[枠] 名前」・見出し・配置の名前も一緒に） ----
+    {
+      const src = ['# t', '~~~board 図', '[A] 外', '  受付 : 説明', '  [台帳]', '    申込', '[B]', '  受付', '受付 -> 台帳 : 見る', '[B] 受付 => 申込 !急ぎ', '[A] -> [B]', '~~~', '', '## A', '外の説明', '', '~~~layout', JSON.stringify({ v: 1, diagrams: [{ type: 'board', name: '図', parts: { '[a]': { x: 10, y: 10 }, '受付#2': { x: 5, y: 60 } } }] }), '~~~'].join('\n');
+      const d0 = P.parseDoc(src), g0 = d0.diagrams[0], id = l => g0.items.find(i => (i.kind === 'frame' ? '[' + i.label + ']' : i.label) === l && !(l === '受付' && i.parent !== 0)).id;
+      const r1 = P.renameItem(src, d0, 0, id('受付'), '窓口'), d1 = P.parseDoc(r1), L1 = r1.split('\n');
+      const r2 = P.renameItem(r1, d1, 0, d1.diagrams[0].items.find(i => i.key === '[台帳]').id, '帳簿'), L2 = r2.split('\n');
+      const d2 = P.parseDoc(r2), r3 = P.renameItem(r2, d2, 0, d2.diagrams[0].items.find(i => i.key === '[b]').id, 'C'), L3 = r3.split('\n'), d3 = P.parseDoc(r3);
+      const r4 = P.renameItem(r3, d3, 0, 0, 'まえ'), d4 = P.parseDoc(r4), parts4 = d4.layout.diagrams[0].parts;
+      ok('図解（名前を直す）：箱を直すと線の行の名前も直り、同じ名前の別の箱はそのまま。枠を直すと「[枠] 名前」・見出し・配置の名前も直る',
+        L1[3] === '  受付 : 説明'.replace('受付', '窓口') && L1[7] === '  受付' && L1[8] === '窓口 -> 台帳 : 見る' && L1[9] === '[B] 受付 => 申込 !急ぎ' &&
+        L2[4] === '  [帳簿]' && L2[8] === '窓口 -> 帳簿 : 見る' && L3[6] === '[C]' && L3[9] === '[C] 受付 => 申込 !急ぎ' && L3[10] === '[A] -> [C]' &&
+        r4.split('\n')[2] === '[まえ] 外' && r4.split('\n')[10] === '[まえ] -> [C]' && r4.split('\n')[13] === '## まえ' && parts4['[まえ]'] && parts4['受付'] && !parts4['窓口'] &&
+        [d1, d2, d3, d4].every(x => !x.warnings.length && x.diagrams[0].edges.length === 3),
+        JSON.stringify([L1.slice(3, 11), L3.slice(6, 11), r4.split('\n').slice(10, 14), Object.keys(parts4), [d1, d2, d3, d4].map(x => x.warnings.map(w => w.msg))]));
+    }
     const tdoc = P.parseDoc(P.addDiagram('# T\n', P.parseDoc('# T\n'), 'board'));
     ok('図解：「図を足す」のひな形が知らせなしで読め、描ける', tdoc.diagrams[0].type === 'board' && !tdoc.warnings.length && !layoutOk(tdoc.diagrams[0], RC.DocRender.svg(tdoc.diagrams[0], 0, { fs: 15 })).length);
   }
@@ -1636,6 +1651,18 @@ async function savePptx(T, md, tag) {
   ok('図解（動かす・画面）：外の枠をドラッグすると中身ごと動き、枠の中の箱は枠からの差で md に残り、枠の中にいる。Ctrl+Z 2回で md は元どおり',
     Math.abs((fr1.sy - fr0.sy) - (kid1.sy - kid0.sy)) < 1 && fr1.sy - fr0.sy > 50 && parts['[やったこと]'] && parts['申込.xlsx'] && parts['申込.xlsx'].y < 200 && parts['[やったこと]'].y > 100 && inside2 && t3 === t0,
     JSON.stringify({ d: [fr1.sy - fr0.sy, kid1.sy - kid0.sy], parts, inside2, back: t3 === t0 }));
+  // R9e-1：画面で名前を直す（2回押す → 入力 → Enter）。線の行も直り、Ctrl+Z で元どおり
+  {
+    const tA = await B.evalJs('DocVisualizer.text()');
+    const cc = await B.evalJs(`(() => { const e = document.querySelector('#dg0 .item[aria-label="申込.xlsx"] .box'); e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return { x: b.left + 12, y: b.top + b.height / 2 }; })()`);
+    for (const n of [1, 2]) for (const type of ['mousePressed', 'mouseReleased']) await B.send('Input.dispatchMouseEvent', { type, x: cc.x, y: cc.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: n });
+    const got = await waitFor(`document.querySelector('input.rename') && document.querySelector('input.rename').value`, 2000);
+    await B.evalJs(`document.querySelector('input.rename').value = '申込2.xlsx'`); await keyPress('Enter', 'Enter', 13); await sleep(400);
+    const tB = await B.evalJs('DocVisualizer.text()');
+    for (const type of ['keyDown', 'keyUp']) await B.send('Input.dispatchKeyEvent', { type, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: process.platform === 'darwin' ? 4 : 2 }); await sleep(300);
+    ok('図解（名前を直す・画面）：箱を2回押して直すと、md の箱の行と線の行が直り、Ctrl+Z で元どおり',
+      got === '申込.xlsx' && tB.includes('    申込2.xlsx @営業') && tB.includes('受付 => 申込2.xlsx : 合う台帳だけ見る') && (await B.evalJs('DocVisualizer.text()')) === tA, JSON.stringify({ got, has: tB.includes('申込2.xlsx') }));
+  }
   await B.evalJs('document.activeElement && document.activeElement.blur()');
   await keyPress('p', 'KeyP', 80); await keyPress('ArrowRight', 'ArrowRight', 39);
   const fitB = `(() => { const st = document.getElementById('pStage'), s = st.querySelector('svg.board'); if (!s) return null; const b = s.getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height), cw: st.clientWidth - 32, ch: st.clientHeight - 32 }; })()`;

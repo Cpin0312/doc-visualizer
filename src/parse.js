@@ -400,11 +400,11 @@
       var t = takeMarks(trim(takeSources(seg, []))).label, fm = RE_FRAME.exec(t);
       if (fm) {
         var frames = items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(fm[1]) + ']'; }), rest = trim(fm[2]);
-        if (!rest) return { name: t, list: frames };
-        return { name: t, list: items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(rest) && frames.some(function (f) { return inside(it, f); }); }) };
+        if (!rest) return { name: t, list: frames, word: trim(fm[1]) };
+        return { name: t, list: items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(rest) && frames.some(function (f) { return inside(it, f); }); }), word: rest, qword: trim(fm[1]), frames: frames };
       }
       var boxes = items.filter(function (it) { return it.kind !== 'frame' && it.key === nk(t); });
-      return { name: t, list: boxes.length ? boxes : items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(t) + ']'; }) };
+      return { name: t, word: t, list: boxes.length ? boxes : items.filter(function (it) { return it.kind === 'frame' && it.key === '[' + nk(t) + ']'; }) };
     }
     edgeLines.forEach(function (ln) {
       var body = trim(ln.text), cs = splitColon(body, 2), head = cs[0], label = cs[1] || '';
@@ -424,6 +424,13 @@
         pick[i] = es[i].list[0];
         var r = rootOf(pick[i]);
         warn(ln.no, '「' + es[i].name + '」が ' + es[i].list.length + ' つあり、どれか決められないので' + (r === pick[i] ? 'はじめのもの' : '「' + shown(r) + '」の中のもの') + 'にした（「[枠] 名前」と書くと選べる）', 'fix');
+      });
+      // 線の行の中の名前の場所（R9e：名前を直すと、線の行の名前も直る）
+      pick.forEach(function (it, i) {
+        var a = i ? arrows[i - 1][1] : off, b = i < arrows.length ? arrows[i][0] : off + head.length, from = a;
+        function put(x, w) { var at = ln.text.indexOf(w, from); if (at < 0 || at + w.length > b) return; (x.spans = x.spans || []).push({ line: ln.no, start: at, end: at + w.length, seg: i, segs: pick.length, edge: true }); from = at + w.length; }
+        if (es[i].qword) { var f = es[i].frames.filter(function (q) { return inside(it, q); })[0]; if (f) put(f, es[i].qword); }
+        if (es[i].word) put(it, es[i].word);
       });
       for (var e = 1; e < pick.length; e++) {
         var key = pick[e - 1].id + '>' + pick[e].id, lab = e === pick.length - 1 ? label : '', occ = { line: ln.no, arrow: arrows[e - 1], seg: e - 1 };
@@ -683,7 +690,7 @@
     }
     // 見出しの名前が箱の名前と同じなら、その箱の説明にする。違えば本文
     var keys = {};
-    doc.diagrams.forEach(function (d) { d.items.forEach(function (it) { keys[it.key] = true; }); });
+    doc.diagrams.forEach(function (d) { d.items.forEach(function (it) { keys[it.key] = true; if (it.kind === 'frame') keys[it.key.slice(1, -1)] = true; }); });   // 図解の枠は「## 枠の名前」で説明
     sections.forEach(function (s) {
       var textLines = [], srcs = [];
       s.lines.forEach(function (l) {
@@ -826,12 +833,22 @@
     replaceSpans(t, it.spans.map(function (sp) { return { line: sp.line, start: sp.start, end: sp.end, text: nn }; }));
     // 説明の見出し「## 名前」も直す
     doc.notes.forEach(function (n) {
-      if (n.key !== it.key) return;
+      if (n.key !== it.key && !(it.kind === 'frame' && n.key === it.key.slice(1, -1))) return;   // 図解の枠は「## 枠の名前」
       var L = t.lines[n.line - 1], m = /^([ \t\u3000]{0,3}#{1,6}[ \t\u3000]+)(.*?)([ \t\u3000#]*)$/.exec(L || '');
       if (m) t.lines[n.line - 1] = m[1] + nn + m[3];
     });
     var out = joinText(t);
-    if (doc.layout && d.layoutIndex != null) out = writeLayout(out, doc, renameLayoutKeys(JSON.parse(JSON.stringify(doc.layout)), d, it.pk.replace(/#\d+$/, ''), nk(nn)));
+    if (doc.layout && d.layoutIndex != null && d.type === 'board') {
+      // 図解は同じ名前の箱が別々にあり、番号（#2）が直したあとでずれる。読み直して、同じ順番の部品どうしで名前を付けかえる
+      var nd = parseDoc(out).diagrams[di], map = {}, obj = JSON.parse(JSON.stringify(doc.layout)), L = obj.diagrams[d.layoutIndex], parts = {};
+      if (nd && nd.items.length === d.items.length) {
+        d.items.forEach(function (x, k) { map[x.pk] = nd.items[k].pk; });
+        Object.keys((L && L.parts) || {}).forEach(function (k) { parts[k.split('>').map(function (x) { return map[x] || x; }).join('>')] = L.parts[k]; });
+        L.parts = parts;
+        return writeLayout(out, doc, obj);
+      }
+    }
+    if (doc.layout && d.layoutIndex != null) out = writeLayout(out, doc, renameLayoutKeys(JSON.parse(JSON.stringify(doc.layout)), d, it.pk.replace(/#\d+$/, ''), it.kind === 'frame' ? '[' + nk(nn) + ']' : nk(nn)));
     return out;
   }
 

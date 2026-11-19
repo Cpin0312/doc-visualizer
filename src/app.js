@@ -299,7 +299,7 @@
     applyText(text, true, merge);
   }
   // ---- 形・色・大きさ・線の形（R8b-2）：ポップアップの下の欄。値は layout にだけ書く ----
-  var STYLABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1 };
+  var STYLABLE = { flow: 1, lanes: 1, tree: 1, flowchart: 1, board: 1 };   // board：名前を直す・右クリック（形と色は、まだ図解では描かないので出さない）
   var OPT_BOX = [
     ['shape', '形', [['', '自動'], ['rect', '四角'], ['round', '角丸'], ['ellipse', '楕円'], ['diamond', 'ひし形'], ['para', '平行四辺形'], ['hexagon', '六角形'], ['chevron', '矢羽根'], ['cylinder', '円柱'], ['doc', '書類']]],
     ['color', '色', [['', '自動'], ['blue', '青'], ['green', '緑'], ['yellow', '黄'], ['red', '赤'], ['gray', '灰'], ['purple', '紫']]],
@@ -715,7 +715,7 @@
     h += n && n.lines.length ? md(n.lines) : '<p class="empty">説明は md に書かれていません（「## ' + esc(it.label) + '」の下に書くと、ここに出ます）。</p>' + (n ? '' : '<p class="acts note-add"><button type="button" class="act" data-act="add-note">＋ 説明を書く</button></p>');
     h += it.sources.length ? '<div class="src"><b>出どころ</b><br>' + it.sources.map(esc).join('<br>') + '</div>' : '<p class="empty">出どころは書かれていません。</p>';
     h += '<p class="empty">md の ' + it.line + ' 行目</p>';
-    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + (diag.end ? '<button type="button" class="act" data-act="note-add">＋ 付箋</button>' : '') + '</p>' + styleHtml(d, it.pk, partNow(diag, it.pk), false);
+    if (STYLABLE[diag.type]) h += '<p class="acts"><button type="button" class="act" data-act="rename">名前を直す</button>' + (P.EDITABLE[diag.type] ? editActs(diag, it) : '') + (diag.end ? '<button type="button" class="act" data-act="note-add">＋ 付箋</button>' : '') + '</p>' + (diag.type === 'board' ? '' : styleHtml(d, it.pk, partNow(diag, it.pk), false));
     $('panelBody').innerHTML = h;
     $('panel').hidden = false;
     placePanel();
