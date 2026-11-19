@@ -1,0 +1,11 @@
+import {openBrowser,sleep} from './h.mjs';
+const b=await openBrowser({offline:true,w:1400,h:900}); await b.goto('dist/DocVisualizer.html'); await b.pick('verify/md/25_move.md');
+await b.clickSel('#mode'); await sleep(500);
+const L=async()=>{const t=await b.ev(`DocVisualizer.text()`);const m=t.match(/~~~layout\r?\n([\s\S]*?)\r?\n~~~/);return m?m[1].replace(/\s+/g,''):'(なし)'};
+const info=()=>b.ev(`JSON.stringify({hidden:document.getElementById('panel').hidden,h2:document.querySelector('#panel h2')?.innerText,det:(()=>{const s=document.querySelector('#panel details.styl');return s?s.open:null})(),pk:document.querySelector('#panel details.styl')?.getAttribute('data-pk'),toast:document.getElementById('toast').innerText,err:document.getElementById('error').innerText})`);
+await b.clickSel('#dg0 .item[data-i="1"] .box'); console.log('開く',await info());
+await b.clickSel('#panel details.styl summary'); console.log('たたみを開く',await info());
+await b.clickSel(`#panel .styl button[data-k="color"][data-v='"green"']`); await sleep(500); console.log('緑',await info(),await L());
+await b.clickSel(`#panel .styl button[data-k="scale"][data-v='2']`); await sleep(500); console.log('大きさ200%',await info(),await L());
+await b.clickSel(`#panel .styl button[data-k="color"][data-v='"red"']`); await sleep(500); console.log('赤',await info(),await L());
+console.log('errors',b.logs); await b.close();

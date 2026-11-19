@@ -1,0 +1,10 @@
+import {start} from './r13lib.mjs';
+const t=await start({}); const {b,sleep,center}=t;
+await t.fresh('verify/md/50_board.md');
+const i=await t.idxOf(0,'台帳'); const r=await center(`#dg0 .item[data-i="${i}"] .box`); const open=()=>b.ev(`!document.getElementById('panel').hidden`);
+await b.mouse(r.x+12,r.y+9); await sleep(400); console.log('枠を押す→窓',await open());
+await b.mouse(5,300); await sleep(400); console.log('窓の外（左の余白）を押す→閉じる',!(await open()));
+await b.mouse(r.x+12,r.y+9); await sleep(400); const an=await center('#dg0 .add-note'); await b.mouse(an.cx,an.cy); await sleep(400); console.log('「＋ 付箋」を押す→窓は閉じて入力欄',!(await open()),await t.hasInp()); await b.key('Escape');
+await b.mouse(r.x+12,r.y+9); await sleep(400); const tt=await center('#title'); await b.mouse(tt.cx,tt.cy); await sleep(400); console.log('題名を押す→閉じる',!(await open()));
+await b.mouse(r.x+12,r.y+9); await sleep(400); const ab=await center('#dg0 .add-box:not(.add-note)'); await b.mouse(ab.cx,ab.cy); await sleep(500); console.log('「＋ 箱」を押す→窓は閉じて名前入力',!(await open()),await t.hasInp()); await b.key('Escape'); await sleep(300); console.log('Esc 後 md 変化なし',!(await t.dirty()));
+await b.close();

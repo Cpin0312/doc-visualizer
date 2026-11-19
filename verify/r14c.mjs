@@ -1,0 +1,64 @@
+// 図解(board)：読む・2D・押したときの窓・変な書き方・深い入れ子
+import {start} from './r13lib.mjs'; import fs from 'node:fs';
+const [,,SC]=process.argv;
+const t=await start({SC:+SC||0}); const {b,check,fresh,diff,T,sleep,clickS,dblSel,center,warn,lock,nDia}=t;
+const dump=()=>b.ev(`JSON.stringify({kind:document.querySelector('#dg0 .kind').innerText,items:[...document.querySelectorAll('#dg0 .svg-wrap svg .item')].map(g=>{const bx=g.querySelector('.box'),bb=bx?bx.getBBox():null;return {i:+g.dataset.i,cls:g.getAttribute('class'),label:g.getAttribute('aria-label'),p:g.dataset.p===undefined?null:+g.dataset.p,x:bb&&Math.round(bb.x),y:bb&&Math.round(bb.y),w:bb&&Math.round(bb.width),h:bb&&Math.round(bb.height),txt:g.textContent.replace(/\\s+/g,' ').trim().slice(0,60)}}),edges:[...document.querySelectorAll('#dg0 path.edge')].map(p=>({ek:p.dataset.ek,stroke:p.getAttribute('stroke'),d:p.getAttribute('d')})),W:+document.querySelector('#dg0 svg').dataset.w,H:+document.querySelector('#dg0 svg').dataset.h,warn:document.getElementById('warnings').innerText.replace(/\\n/g,' / ')})`).then(JSON.parse);
+const inside=(c,f)=>c.x>=f.x-1&&c.y>=f.y-1&&c.x+c.w<=f.x+f.w+1&&c.y+c.h<=f.y+f.h+1;
+const overlap=(a,c)=>a.x<c.x+c.w-1&&c.x<a.x+a.w-1&&a.y<c.y+c.h-1&&c.y<a.y+a.h-1;
+console.log('拡大',SC||1);
+console.log('=== 読む：50_board.md');
+await fresh('verify/md/50_board.md'); let D=await dump(); let fr=D.items.filter(x=>x.cls.includes('frame')), bx=D.items.filter(x=>!x.cls.includes('frame'));
+check('図の種類は「図解」・箱と枠で 18 個（枠 6・箱と札 12）・知らせ 0',D.kind.startsWith('図解')&&fr.length===6&&bx.length===12&&/（0 件）/.test(D.warn),D.kind+' 枠'+fr.length+' 箱'+bx.length+' '+D.warn.slice(0,40));
+const byL=n=>D.items.filter(x=>x.label===n); const par=x=>x.p===null?null:D.items.find(y=>y.i===x.p);
+check('  入れ子：台帳は「変える前」の中、申込・問い合わせ・苦情・見積は台帳の中、担当ごとは「変えた後」の中',par(byL('台帳')[0]).label==='変える前'&&['申込','問い合わせ','苦情','見積'].every(n=>par(byL(n)[0]).label==='台帳')&&par(byL('担当ごと')[0]).label==='変えた後');
+check('  同じ名前の箱「受付」が2つ（変える前・変えた後の中）',byL('受付').length===2&&new Set(byL('受付').map(x=>par(x).label)).size===2);
+check('  #1・#2 の札（やったこと の中）。丸い番号と文',['台帳を分ける','担当ごとの箱を作る'].every(n=>byL(n).length===1&&par(byL(n)[0]).label==='やったこと')&&await b.ev(`document.querySelectorAll('#dg0 .item circle, #dg0 .item .num').length>=2`),byL('台帳を分ける')[0]&&byL('台帳を分ける')[0].txt);
+check('  @タグ（営業・窓口）が右寄せの札で出る',byL('申込.xlsx')[0].txt.includes('営業')&&byL('問い合わせ.xlsx')[0].txt.includes('窓口'),byL('申込.xlsx')[0].txt);
+check('  !代償 の印が上の札で出る（増えた手間は1つ）',byL('増えた手間は1つ')[0].txt.includes('代償'),byL('増えた手間は1つ')[0].txt);
+check('  「12分 → 7分」は説明の字のまま（線にならない）',byL('1件あたり -40%')[0].txt.includes('12分 → 7分')&&D.edges.length===3,D.edges.map(e=>e.ek).join(' ; '));
+check('  段：「---」で「効果」が次の段（先の枠より下）',byL('効果')[0].y>Math.max(...['変える前','変えた後','やったこと'].map(n=>byL(n)[0].y+byL(n)[0].h))-1,'効果 y='+byL('効果')[0].y);
+check('  線は3本：受付>[台帳]・[変える前]>[変えた後]・受付#2>申込.xlsx（同じ名前の受付は同じ外の枠で決まる）',D.edges.map(e=>e.ek).join()==='受付>[台帳],[変える前]>[変えた後],受付#2>申込.xlsx',D.edges.map(e=>e.ek).join());
+check('  「=>」の線は強調の色（青）・「->」は灰色',D.edges[2].stroke!==D.edges[0].stroke&&/3b6fd8/i.test(D.edges[2].stroke),D.edges.map(e=>e.stroke).join());
+console.log('=== 2D のきまり');
+let bad=[]; for(const c of D.items){ if(c.p!==null){ const f=par(c); if(!inside(c,f)) bad.push(c.label+'が'+f.label+'からはみ出す'); } }
+check('枠の中身が全部、枠の中に入る（はみ出し 0）',bad.length===0,bad.join('、'));
+let ov=[]; for(let i=0;i<D.items.length;i++)for(let j=i+1;j<D.items.length;j++){const a=D.items[i],c=D.items[j]; if(a.cls.includes('frame')&&!c.cls.includes('frame')&&c.p===a.i)continue; if(!a.cls.includes('frame')&&c.cls.includes('frame')&&a.p===c.i)continue; const aa=a.cls.includes('frame'),cc=c.cls.includes('frame'); // 祖先と子孫の枠は重なってよい
+  const anc=(x,y)=>{let q=y;while(q&&q.p!==null){q=D.items.find(z=>z.i===q.p);if(q&&q.i===x.i)return true;}return false;}; if(anc(a,c)||anc(c,a))continue; if(overlap(a,c))ov.push(a.label+'×'+c.label); }
+check('関係のない箱・枠どうしが重ならない',ov.length===0,ov.join('、'));
+check('図の大きさ（svg）が全部の枠を含む（右・下にはみ出さない）',D.items.every(x=>x.x+x.w<=D.W+1&&x.y+x.h<=D.H+1),D.W+'x'+D.H);
+check('  線の両端が、箱か枠のふち（外側 2px 以内）にある',await b.ev(`(()=>{const ok=[];for(const p of document.querySelectorAll('#dg0 path.edge')){const L=p.getTotalLength();const a=p.getPointAtLength(0),z=p.getPointAtLength(L);const near=pt=>[...document.querySelectorAll('#dg0 .item .box')].some(r=>{const b=r.getBBox();const dx=Math.max(b.x-pt.x,0,pt.x-(b.x+b.width)),dy=Math.max(b.y-pt.y,0,pt.y-(b.y+b.height));return Math.hypot(dx,dy)<=3});ok.push(near(a)&&near(z))}return ok.length===3&&ok.every(Boolean)})()`));
+await b.rectOf('#dg0 .svg-wrap'); await sleep(300); await b.shot('verify/out/r14_board_'+(SC||1)+'.png');
+console.log('=== 押したときの窓');
+const pop=async(sel)=>{await b.key('Escape');await sleep(200);await clickS(sel);return b.ev(`document.getElementById('panel').hidden?null:document.getElementById('panel').innerText.replace(/\\n+/g,' / ').slice(0,260)`)};
+const iD=byL('台帳')[0].i, iU1=byL('受付')[0].i, iU2=byL('受付')[1].i, iX=byL('申込.xlsx')[0].i, iF=byL('変える前')[0].i, iC=byL('#1')[0]&&0;
+let p1=await pop(`#dg0 .item[data-i="${iU1}"] .box`); let p2=await pop(`#dg0 .item[data-i="${iU2}"] .box`);
+check('箱「受付」（変える前）を押すと窓が出る（前：次：などの関係・説明）',!!p1,String(p1)); check('  もう1つの「受付」（変えた後）も別の窓（同じ内容ではなく、自分の枠・線の相手が出る）',!!p2&&p1!==p2,String(p2));
+let pf=await pop(`#dg0 .item[data-i="${iD}"] .box`); check('枠「台帳」を押すと窓に「入っている箱の数」と入っている枠が出る',!!pf&&/4|台帳/.test(pf)&&/変える前|中|入っ/.test(pf),String(pf));
+let pc=await pop(`#dg0 .item[data-i="${byL('台帳を分ける')[0].i}"] .box`); check('札「台帳を分ける」の窓に番号・入っている枠',!!pc&&/1|台帳を分ける/.test(pc)&&/やったこと/.test(pc),String(pc));
+let px=await pop(`#dg0 .item[data-i="${iX}"] .box`); check('タグ付きの箱の窓にタグ（営業）が出る',!!px&&/営業/.test(px),String(px));
+await b.key('Escape'); await sleep(200);
+const ep=await b.ev(`(()=>{const p=document.querySelector('#dg0 path.edge[data-ek="受付#2>申込.xlsx"]');const l=p.getTotalLength(),s=p.ownerSVGElement.getScreenCTM();let best=null;let bd=1e9;for(let k=1;k<60;k++){const m=p.getPointAtLength(l*k/60);const x=m.x*s.a+s.e,y=m.y*s.d+s.f;if(document.elementFromPoint(x,y)===p){const d=Math.abs(k-30);if(d<bd){bd=d;best=[x,y];}}}return best})()`);
+if(ep){await b.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:ep[0],y:ep[1]}); await b.mouse(ep[0],ep[1]); await sleep(400); const left=await b.ev(`document.getElementById('panel').hidden`); console.log('   線を左で押した後の窓',left?'出ない（右クリックで開く作り。流れ図などと同じ）':'出る'); await b.rclick(ep[0],ep[1]); await sleep(500);}
+const pe=await b.ev(`document.getElementById('panel').hidden?null:document.getElementById('panel').innerText.replace(/\\n+/g,' / ').slice(0,200)`); check('線を右クリックすると窓が出る（線：受付 → 申込.xlsx、この線を消す）',!!pe&&/受付/.test(pe)&&/申込/.test(pe),String(pe));
+console.log('=== 変な書き方：52_board_odd.md');
+await fresh('verify/md/52_board_odd.md'); D=await dump(); const L=n=>D.items.filter(x=>x.label===n); const P=x=>x.p===null?null:D.items.find(y=>y.i===x.p);
+console.log('   知らせ:',D.warn.slice(0,900)); console.log('   項目:',D.items.map(x=>(x.cls.includes('frame')?'[':'')+x.label+(x.cls.includes('frame')?']':'')+'<'+(P(x)?P(x).label:'-')).join(' | '));
+check('全角のかっこ［ ］・【 】も枠になる',L('全角の枠').length===1&&L('隅付きの枠').length===1&&L('全角の枠')[0].cls.includes('frame')&&L('隅付きの枠')[0].cls.includes('frame'));
+check('  タブの字下げ（空白2つ分）：箱Aは「全角の枠」の中',L('箱A').length===1&&P(L('箱A')[0])&&P(L('箱A')[0]).label==='全角の枠');
+check('  字下げが3つずれた枠は、近い浅い親の中に入れて知らせる',/字下げ/.test(D.warn)&&L('三つずれた枠').length===1&&P(L('三つずれた枠')[0])&&P(L('三つずれた枠')[0]).label==='全角の枠',D.warn.slice(0,200));
+check('  箱の下の字下げは、その箱と同じ枠に入れて知らせる（箱Cの下の字下げ は 全角の枠 の中）',L('箱Cの下の字下げ').length===1&&P(L('箱Cの下の字下げ')[0]).label===P(L('箱C')[0]).label,P(L('箱Cの下の字下げ')[0])&&P(L('箱Cの下の字下げ')[0]).label);
+check('  全角｜で並ぶ箱 ａ・ｂ・ｃ が3つ、同じ枠・同じ高さ',['ａ','ｂ','ｃ'].every(n=>L(n).length===1)&&new Set(['ａ','ｂ','ｃ'].map(n=>L(n)[0].y)).size===1,['ａ','ｂ','ｃ'].map(n=>L(n)[0]&&L(n)[0].x+','+L(n)[0].y).join(' '));
+check('  ①・＃2 の札（丸数字・全角の＃）',D.items.some(x=>/丸数字の札/.test(x.label))&&D.items.some(x=>/全角の札/.test(x.label)),D.items.filter(x=>/札/.test(x.label)).map(x=>x.label).join(','));
+check('  「言葉 : 後ろに -> がある -> 線ではない」は箱（線にしない）',L('言葉').length===1&&!D.edges.some(e=>e.ek.startsWith('言葉')));
+check('  「@営業 @窓口」：タグは最後の1つだけ（窓口）。「@営業」は名前の字のまま',D.items.some(x=>x.label==='タグ付き @営業'&&x.txt.includes('窓口')),D.items.filter(x=>/タグ付き/.test(x.label)).map(x=>x.label+'/'+x.txt).join());
+check('  同じ名前が決まらない線は、決めて知らせる（「どの」の語）',/どの|決められ/.test(D.warn),'');
+check('  端の名前がない線（存在しない端）は飛ばして知らせる。md はそのまま',/存在しない端|端/.test(D.warn)&&!D.edges.some(e=>e.ek.startsWith('存在しない端')));
+check('  「> 吹き出し」は読まずに知らせる（R9 では読まない）',/吹き出し|>/.test(D.warn),'');
+check('  ［外B］ 同じ名前 -> 箱C は 外B の同じ名前（#2）から出る。決まらない方は 外A の同じ名前から箱A へ',D.edges.map(e=>e.ek).join()==='同じ名前>箱a,同じ名前#2>箱c',D.edges.map(e=>e.ek).join());
+console.log('=== 深い入れ子：51_board_deep.md');
+const o51=fs.readFileSync('verify/md/51_board_deep.md','utf8'); await fresh('verify/md/51_board_deep.md'); D=await dump(); const T0=await T();
+check('9段の入れ子と一番奥の箱が、全部出る（6段目までは枠・7〜9段の枠は箱として6段目の枠の中に並ぶ＝10 個）',D.items.length===10&&D.items.filter(x=>x.cls.includes('frame')).length===6&&D.items.some(x=>x.label==='枠9')&&D.items.some(x=>x.label==='一番奥の箱'),D.items.length+'個 枠'+D.items.filter(x=>x.cls.includes('frame')).length);
+check('  7段より深い所は、黙って捨てず知らせる',/段|深/.test(D.warn),D.warn.slice(0,160));
+check('  md はそのまま（書きかえない・未保存でない）',T0===o51&&!(await t.dirty()));
+let badf=[]; for(const c of D.items){ if(c.p!==null){const f=D.items.find(y=>y.i===c.p); if(!inside(c,f)) badf.push(c.label);} } check('  深い枠でも中身がはみ出さない・字が読める大きさ',badf.length===0&&D.items.every(x=>x.w>20&&x.h>10),badf.join());
+console.log('外',b.external(),'errors',b.logs,'集計',JSON.stringify({ok:t.tally().ok,ng:t.tally().ng})); await b.close();

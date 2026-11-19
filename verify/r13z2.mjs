@@ -1,0 +1,10 @@
+import {start} from './r13lib.mjs'; import fs from 'node:fs';
+const t=await start({}); const {b,diff,T,dblSel,fill,sleep}=t;
+const L=fs.readFileSync('verify/md/41_r8e.md','utf8').split('\n'); const idx=L.map((l,i)=>l==='~~~'?i:-1).filter(i=>i>=0);
+const M=L.slice(); M.splice(idx[0],1); fs.writeFileSync('verify/md/tmp_fence.md',M.join('\n'));
+await t.fresh('verify/md/tmp_fence.md'); const o=await T();
+console.log('図のタイトル',JSON.stringify(await t.dgTitles()),'箱',await b.ev(`JSON.stringify([...document.querySelectorAll('.item')].map(g=>g.getAttribute('aria-label')))`));
+const nm=await b.ev(`[...document.querySelectorAll('.item')].map(g=>g.getAttribute('aria-label'))[1]`);
+const i=await t.idxOf(0,nm); await dblSel(`#dg0 .item[data-i="${i}"] .box`); await fill(nm+'改'); const a=await T(); const d=diff(o,a);
+console.log('名前変更で変わった行:',JSON.stringify(d));
+await b.close();

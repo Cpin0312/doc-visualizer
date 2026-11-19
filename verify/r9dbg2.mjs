@@ -1,0 +1,13 @@
+import {openBrowser,sleep} from './h.mjs';
+const b=await openBrowser({offline:true,w:1400,h:900}); await b.goto('dist/DocVisualizer.html'); await b.pick('verify/md/25_move.md');
+await b.clickSel('#mode'); await sleep(500);
+const L=async()=>{const t=await b.ev(`DocVisualizer.text()`);const m=t.match(/~~~layout\r?\n([\s\S]*?)\r?\n~~~/);return m?m[1].replace(/\s+/g,''):'(なし)'};
+const info=()=>b.ev(`JSON.stringify({hidden:document.getElementById('panel').hidden,h2:document.querySelector('#panel h2')?.innerText,det:(()=>{const s=document.querySelector('#panel details.styl');return s?s.open:null})(),panel:(()=>{const r=document.getElementById('panel').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom].map(Math.round)})()})`);
+const open=async(d,i)=>{await b.clickSel(`#dg${d} .item[data-i="${i}"] .box`); const o=JSON.parse(await info()); if(o.det===false){await b.clickSel('#panel details.styl summary');} return o;};
+const set=async(k,v)=>{const sel=`#panel .styl button[data-k="${k}"][data-v='${JSON.stringify(v)}']`; const r=await b.rectOf(sel); await sleep(150); const r2=await b.rectOf(sel); const top=await b.ev(`(()=>{const e=document.elementFromPoint(${r2.cx},${r2.cy});return e?(e.tagName+':'+(e.getAttribute('data-k')||e.id||e.className)):'null'})()`); await b.mouse(r2.cx,r2.cy); await sleep(400); return top;};
+console.log('(0,1) 開く',await open(0,1)); console.log('shape round: 点にあるもの',await set('shape','round'),await L());
+await b.key('Escape'); console.log('Esc 後',await info());
+console.log('(0,1) 開き直し',await open(0,1)); console.log('scale 2: 点にあるもの',await set('scale',2),await L());
+await b.key('Escape');
+console.log('(3,1) 開く',await open(3,1)); console.log('green: 点にあるもの',await set('color','green'),await L());
+await b.close();
